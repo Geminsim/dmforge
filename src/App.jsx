@@ -241,7 +241,7 @@ const getSavedState = (key, fallback) => {
 export default function App() {
   // --- LAN Sync System States ---
   const clientId = React.useRef(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
-  const [lastUpdated, setLastUpdated] = useState(() => getSavedState('dmforge_lastUpdated', 0));
+  const lastUpdatedRef = React.useRef(getSavedState('dmforge_lastUpdated', 0));
   const isServerUpdateInProgress = React.useRef(false);
   const [isSyncConnected, setIsSyncConnected] = useState(true);
 
@@ -319,7 +319,7 @@ export default function App() {
   const [restModalType, setRestModalType] = useState('short'); // 'short' | 'long'
   const [restParticipants, setRestParticipants] = useState({}); // { charId: boolean }
 
-  const handleOpenAddCharModal = () => {
+  const handleOpenAddCharModal = React.useCallback(() => {
     setEditingCharId(null);
     setNewChar({
       name: '',
@@ -344,9 +344,9 @@ export default function App() {
     setTempResMax(4);
     setTempResResetType('long_rest');
     setIsAddCharModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenRestModal = (type) => {
+  const handleOpenRestModal = React.useCallback((type) => {
     setRestModalType(type);
     
     // Auto-select all PCs by default, NPCs unselected
@@ -356,7 +356,7 @@ export default function App() {
     });
     setRestParticipants(initialSelection);
     setIsRestModalOpen(true);
-  };
+  }, [characters]);
 
   const handleShortRest = (selectedIds) => {
     const restingNames = [];
@@ -428,7 +428,7 @@ export default function App() {
     });
   };
 
-  const handleOpenEditCharModal = (char) => {
+  const handleOpenEditCharModal = React.useCallback((char) => {
     setEditingCharId(char.id);
     setNewChar({
       name: char.name || '',
@@ -453,7 +453,7 @@ export default function App() {
     setTempResMax(4);
     setTempResResetType('long_rest');
     setIsAddCharModalOpen(true);
-  };
+  }, []);
 
 
   // --- LAN Sync Engine ---
@@ -523,7 +523,7 @@ export default function App() {
     if (data.combatParticipants) setCombatParticipants(data.combatParticipants);
     if (data.combatTurnOrder) setCombatTurnOrder(data.combatTurnOrder);
     
-    setLastUpdated(data.lastUpdated);
+    lastUpdatedRef.current = data.lastUpdated;
     localStorage.setItem('dmforge_lastUpdated', JSON.stringify(data.lastUpdated));
 
     // Also update all localStorage keys immediately for consistency (excluding local UI states)
@@ -557,7 +557,7 @@ export default function App() {
     }
 
     const now = Date.now();
-    setLastUpdated(now);
+    lastUpdatedRef.current = now;
     localStorage.setItem('dmforge_lastUpdated', JSON.stringify(now));
 
     const handler = setTimeout(() => {
@@ -881,9 +881,9 @@ export default function App() {
     }
   };
 
-  const addLog = (logObj) => {
+  const addLog = React.useCallback((logObj) => {
     setLogs(prev => [logObj, ...prev]);
-  };
+  }, []);
 
   const addFloatingNote = (title = '新对话笔记', content = '') => {
     const offset = (floatingNotes.length * 35) % 210;
@@ -913,7 +913,7 @@ export default function App() {
     }));
   };
 
-  const updateTokenPosition = (tokenId, x, y, mapId) => {
+  const updateTokenPosition = React.useCallback((tokenId, x, y, mapId) => {
     setCharacters(prev => {
       return prev.map(c => {
         if (c.id === tokenId) {
@@ -922,9 +922,9 @@ export default function App() {
         return c;
       });
     });
-  };
+  }, [activeMapId]);
 
-  const handleDuplicateChar = (char) => {
+  const handleDuplicateChar = React.useCallback((char) => {
     const newId = 'char_' + Date.now() + Math.floor(Math.random() * 1000);
     const newName = `${char.name} (副本)`;
     
@@ -960,7 +960,7 @@ export default function App() {
       content: `👥 **复制角色**: 成功克隆了角色 [${char.name}] -> **[${newName}]**`,
       timestamp: new Date().toLocaleTimeString()
     });
-  };
+  }, [addLog]);
 
   const handleLeftMouseDown = (e) => {
     e.preventDefault();
@@ -1002,7 +1002,7 @@ export default function App() {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const addMap = (name = '新战役地图', width = 40, height = 30, bgUrl = '') => {
+  const addMap = React.useCallback((name = '新战役地图', width = 40, height = 30, bgUrl = '') => {
     const newMap = {
       id: 'map_' + Date.now(),
       name,
@@ -1014,9 +1014,9 @@ export default function App() {
     };
     setMaps(prev => [...prev, newMap]);
     setActiveMapId(newMap.id);
-  };
+  }, []);
 
-  const deleteMap = (id) => {
+  const deleteMap = React.useCallback((id) => {
     setMaps(prev => {
       const remaining = prev.filter(m => m.id !== id);
       if (activeMapId === id && remaining.length > 0) {
@@ -1024,16 +1024,16 @@ export default function App() {
       }
       return remaining;
     });
-  };
+  }, [activeMapId]);
 
-  const updateMap = (id, updatedFields) => {
+  const updateMap = React.useCallback((id, updatedFields) => {
     setMaps(prev => prev.map(m => {
       if (m.id === id) {
         return { ...m, ...updatedFields };
       }
       return m;
     }));
-  };
+  }, []);
 
   return (
     <div className="app-container">

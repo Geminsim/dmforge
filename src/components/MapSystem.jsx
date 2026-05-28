@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2 } from 'lucide-react';
 
@@ -149,6 +149,86 @@ export default function MapSystem({
   const [hoveredTokenId, setHoveredTokenId] = useState(null);
   const [scale, setScale] = useState(1);
   const containerRef = useRef(null);
+  const blockedCanvasRef = useRef(null);
+
+  // Undo history states & refs
+  const [canUndo, setCanUndo] = useState(false);
+  const historyRef = useRef([]);
+  const lastPaintedCellRef = useRef(null);
+
+  const pushToHistory = () => {
+    const stateSnapshot = {
+      blockedCells: { ...blockedCells },
+      terrainAreas: JSON.parse(JSON.stringify(terrainAreas))
+    };
+    historyRef.current.push(stateSnapshot);
+    if (historyRef.current.length > 30) {
+      historyRef.current.shift();
+    }
+    setCanUndo(true);
+  };
+
+  const handleUndo = () => {
+    if (historyRef.current.length === 0) return;
+    const previousState = historyRef.current.pop();
+    
+    // Set states
+    setBlockedCells(previousState.blockedCells);
+    setTerrainAreas(previousState.terrainAreas);
+    
+    // Clear editing area if it's no longer in the restored state
+    if (editingAreaId && !previousState.terrainAreas.some(area => area.id === editingAreaId)) {
+      setEditingAreaId(null);
+    }
+    
+    setCanUndo(historyRef.current.length > 0);
+  };
+
+  // Redraw blocked cells on canvas whenever blockedCells or layout changes
+  useEffect(() => {
+    const canvas = blockedCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw each blocked cell in red stripes diagonal pattern
+    Object.keys(blockedCells).forEach(key => {
+      const [xStr, yStr] = key.split('_');
+      const cx = parseInt(xStr, 10);
+      const cy = parseInt(yStr, 10);
+      if (cx >= mapWidth || cy >= mapHeight) return;
+      
+      const x = cx * gridSize;
+      const y = cy * gridSize;
+      
+      // 1. Draw solid thin border
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, gridSize - 1, gridSize - 1);
+      
+      // 2. Draw background fill
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+      ctx.fillRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+      
+      // 3. Draw repeating linear stripes inside the cell
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+      ctx.clip();
+      
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+      ctx.lineWidth = 2.0;
+      
+      // Draw diagonal stripes spaced by 6px
+      for (let offset = -gridSize; offset < gridSize * 2; offset += 6) {
+        ctx.beginPath();
+        ctx.moveTo(x + offset, y);
+        ctx.lineTo(x + offset + gridSize, y + gridSize);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }, [blockedCells, gridSize, mapWidth, mapHeight]);
 
   // Token dragging real-time measurement states
   const [draggedToken, setDraggedToken] = useState(null); // { id, startX, startY, name }
@@ -469,11 +549,14 @@ export default function MapSystem({
     e.stopPropagation();
     e.preventDefault();
     setEditingAreaId(area.id);
+    pushToHistory();
 
     const startX = e.clientX;
     const startY = e.clientY;
     const initialGridX = area.gridX;
     const initialGridY = area.gridY;
+    let lastCommittedGridX = initialGridX;
+    let lastCommittedGridY = initialGridY;
 
     const handleMouseMove = (moveEvent) => {
       const dx = (moveEvent.clientX - startX) / scale;
@@ -485,7 +568,11 @@ export default function MapSystem({
       const nextGridX = Math.max(0, Math.min(mapWidth - 1, initialGridX + gridDx));
       const nextGridY = Math.max(0, Math.min(mapHeight - 1, initialGridY + gridDy));
 
-      handleUpdateArea(area.id, { gridX: nextGridX, gridY: nextGridY });
+      if (nextGridX !== lastCommittedGridX || nextGridY !== lastCommittedGridY) {
+        lastCommittedGridX = nextGridX;
+        lastCommittedGridY = nextGridY;
+        handleUpdateArea(area.id, { gridX: nextGridX, gridY: nextGridY }, true);
+      }
     };
 
     const handleMouseUp = () => {
@@ -503,11 +590,14 @@ export default function MapSystem({
     e.stopPropagation();
     e.preventDefault();
     setEditingAreaId(area.id);
+    pushToHistory();
 
     const startX = e.clientX;
     const startY = e.clientY;
     const initialWidth = area.width;
     const initialHeight = area.height;
+    let lastCommittedWidth = initialWidth;
+    let lastCommittedHeight = initialHeight;
 
     const handleMouseMove = (moveEvent) => {
       const dx = (moveEvent.clientX - startX) / scale;
@@ -519,7 +609,11 @@ export default function MapSystem({
       const nextWidth = Math.max(1, initialWidth + gridDx);
       const nextHeight = Math.max(1, initialHeight + gridDy);
 
-      handleUpdateArea(area.id, { width: nextWidth, height: nextHeight });
+      if (nextWidth !== lastCommittedWidth || nextHeight !== lastCommittedHeight) {
+        lastCommittedWidth = nextWidth;
+        lastCommittedHeight = nextHeight;
+        handleUpdateArea(area.id, { width: nextWidth, height: nextHeight }, true);
+      }
     };
 
     const handleMouseUp = () => {
@@ -537,9 +631,11 @@ export default function MapSystem({
     e.stopPropagation();
     e.preventDefault();
     setEditingAreaId(area.id);
+    pushToHistory();
 
     const startX = e.clientX;
     const initialRadius = area.radius;
+    let lastCommittedRadius = initialRadius;
 
     const handleMouseMove = (moveEvent) => {
       const dx = (moveEvent.clientX - startX) / scale;
@@ -547,7 +643,10 @@ export default function MapSystem({
 
       const nextRadius = Math.max(1, initialRadius + gridDx);
 
-      handleUpdateArea(area.id, { radius: nextRadius });
+      if (nextRadius !== lastCommittedRadius) {
+        lastCommittedRadius = nextRadius;
+        handleUpdateArea(area.id, { radius: nextRadius }, true);
+      }
     };
 
     const handleMouseUp = () => {
@@ -570,6 +669,8 @@ export default function MapSystem({
 
     if (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase') {
       e.preventDefault();
+      pushToHistory();
+      lastPaintedCellRef.current = null;
       setIsPainting(true);
       paintCellAtMouse(e);
     }
@@ -597,6 +698,34 @@ export default function MapSystem({
     }
   };
 
+  // Bresenham's line algorithm for smooth continuous grid painting/erasing
+  const getLinePoints = (x0, y0, x1, y1) => {
+    const points = [];
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = (x0 < x1) ? 1 : -1;
+    const sy = (y0 < y1) ? 1 : -1;
+    let err = dx - dy;
+
+    let x = x0;
+    let y = y0;
+
+    while (true) {
+      points.push({ x, y });
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) {
+        err -= dy;
+        x += sx;
+      }
+      if (e2 < dx) {
+        err += dx;
+        y += sy;
+      }
+    }
+    return points;
+  };
+
   const paintCellAtMouse = (e) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -610,15 +739,32 @@ export default function MapSystem({
     const gridY = Math.floor(unscaledY / gridSize);
 
     if (gridX >= 0 && gridX < mapWidth && gridY >= 0 && gridY < mapHeight) {
-      const cellKey = `${gridX}_${gridY}`;
+      let points = [];
+      if (lastPaintedCellRef.current) {
+        points = getLinePoints(lastPaintedCellRef.current.x, lastPaintedCellRef.current.y, gridX, gridY);
+      } else {
+        points = [{ x: gridX, y: gridY }];
+      }
+      
+      lastPaintedCellRef.current = { x: gridX, y: gridY };
+
       setBlockedCells(prev => {
         const next = { ...prev };
-        if (terrainEditTool === 'paint_block') {
-          next[cellKey] = true;
-        } else if (terrainEditTool === 'paint_erase') {
-          delete next[cellKey];
-        }
-        return next;
+        let changed = false;
+        points.forEach(pt => {
+          if (pt.x >= 0 && pt.x < mapWidth && pt.y >= 0 && pt.y < mapHeight) {
+            const cellKey = `${pt.x}_${pt.y}`;
+            const isCurrentlyBlocked = !!next[cellKey];
+            if (terrainEditTool === 'paint_block' && !isCurrentlyBlocked) {
+              next[cellKey] = true;
+              changed = true;
+            } else if (terrainEditTool === 'paint_erase' && isCurrentlyBlocked) {
+              delete next[cellKey];
+              changed = true;
+            }
+          }
+        });
+        return changed ? next : prev;
       });
     }
   };
@@ -1476,7 +1622,26 @@ export default function MapSystem({
               </div>
             </div>
 
-            <div style={{ marginLeft: 'auto' }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="btn btn-secondary"
+                style={{ 
+                  fontSize: '11px', 
+                  padding: '4px 10px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  opacity: canUndo ? 1 : 0.45,
+                  cursor: canUndo ? 'pointer' : 'not-allowed',
+                  border: canUndo ? '1px solid var(--accent-purple)' : '1px solid transparent',
+                  boxShadow: canUndo ? '0 0 6px var(--accent-purple-glow)' : 'none'
+                }}
+                title={canUndo ? '撤销上一步地形或阻挡绘制' : '暂无可以撤销的操作'}
+              >
+                <span>↩️ 撤销绘制</span>
+              </button>
               <button
                 onClick={handleClearAllTerrains}
                 className="btn btn-danger"
@@ -1963,6 +2128,22 @@ export default function MapSystem({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        {/* Ambient Atmosphere Background Image (DMForge Sleek Morandi Ambient Overlay) */}
+        {mapBgUrl && (
+          <div 
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundImage: `url(${mapBgUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              opacity: 0.35, // High-end dimmed ambient backdrop
+              zIndex: 0,
+              pointerEvents: 'none'
+            }}
+          />
+        )}
+
         <TransformWrapper
           initialScale={1}
           initialPositionX={0}
@@ -2005,10 +2186,11 @@ export default function MapSystem({
                     width: `${mapWidth * gridSize}px`,
                     height: `${mapHeight * gridSize}px`,
                     position: 'relative',
-                    backgroundImage: mapBgUrl ? `url(${mapBgUrl})` : 'none',
-                    backgroundSize: 'cover',
-                    backgroundColor: '#0a0c14',
-                    boxShadow: '0 0 40px rgba(0, 0, 0, 0.8)',
+                    backgroundColor: mapBgUrl ? 'rgba(10, 12, 20, 0.82)' : '#0a0c14',
+                    backdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
+                    WebkitBackdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
+                    border: mapBgUrl ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+                    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 0, 0, 0.4)',
                     cursor: isTerrainEditMode && terrainEditTool === 'paint_block' ? 'cell' :
                             isTerrainEditMode && terrainEditTool === 'paint_erase' ? 'no-drop' : 'default'
                   }}
@@ -2027,34 +2209,19 @@ export default function MapSystem({
                     }}
                   />
 
-                  {/* Render Impassable Blocked Cells */}
-                  {Object.keys(blockedCells).map(key => {
-                    const [xStr, yStr] = key.split('_');
-                    const cx = parseInt(xStr, 10);
-                    const cy = parseInt(yStr, 10);
-                    
-                    // Boundary control
-                    if (cx >= mapWidth || cy >= mapHeight) return null;
-
-                    return (
-                      <div
-                        key={key}
-                        style={{
-                          position: 'absolute',
-                          left: `${cx * gridSize}px`,
-                          top: `${cy * gridSize}px`,
-                          width: `${gridSize}px`,
-                          height: `${gridSize}px`,
-                          background: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 3px, rgba(239, 68, 68, 0.45) 3px, rgba(239, 68, 68, 0.45) 6px)',
-                          border: '1px solid rgba(239, 68, 68, 0.7)',
-                          boxShadow: 'inset 0 0 4px rgba(239, 68, 68, 0.4)',
-                          pointerEvents: 'none',
-                          zIndex: 1
-                        }}
-                        title="无法通过的阻挡网格"
-                      />
-                    );
-                  })}
+                  {/* Render Impassable Blocked Cells on Canvas for 60fps performance */}
+                  <canvas
+                    ref={blockedCanvasRef}
+                    width={mapWidth * gridSize}
+                    height={mapHeight * gridSize}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      pointerEvents: 'none',
+                      zIndex: 1
+                    }}
+                  />
 
                   {/* Render Custom Vector Hazard Regions */}
                   {visibleTerrains.map(area => {

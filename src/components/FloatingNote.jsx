@@ -1,7 +1,8 @@
 import React from 'react';
 import { X, Minus, Square, Minimize2, Maximize2 } from 'lucide-react';
 
-export default function FloatingNote({ note, onClose, onUpdate }) {
+function FloatingNote({ note, onClose, onUpdate }) {
+  const containerRef = React.useRef(null);
   
   const handleDragStart = (e) => {
     // Prevent dragging if the user is typing inside the inputs
@@ -14,16 +15,24 @@ export default function FloatingNote({ note, onClose, onUpdate }) {
     const startY = e.clientY;
     const initialX = note.x;
     const initialY = note.y;
+    let currentX = initialX;
+    let currentY = initialY;
 
     const handleMouseMove = (moveEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      onUpdate(note.id, { x: initialX + dx, y: initialY + dy });
+      currentX = initialX + dx;
+      currentY = initialY + dy;
+      if (containerRef.current) {
+        containerRef.current.style.left = `${currentX}px`;
+        containerRef.current.style.top = `${currentY}px`;
+      }
     };
 
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      onUpdate(note.id, { x: currentX, y: currentY });
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -38,18 +47,24 @@ export default function FloatingNote({ note, onClose, onUpdate }) {
     const startY = e.clientY;
     const startWidth = note.width || (note.isRulebook ? 380 : 260);
     const startHeight = note.height || (note.isRulebook ? 320 : 180);
+    let currentWidth = startWidth;
+    let currentHeight = startHeight;
 
     const handleMouseMove = (moveEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      const newWidth = Math.max(200, Math.min(800, startWidth + dx));
-      const newHeight = Math.max(120, Math.min(600, startHeight + dy));
-      onUpdate(note.id, { width: newWidth, height: newHeight });
+      currentWidth = Math.max(200, Math.min(800, startWidth + dx));
+      currentHeight = Math.max(120, Math.min(600, startHeight + dy));
+      if (containerRef.current) {
+        containerRef.current.style.width = `${currentWidth}px`;
+        containerRef.current.style.height = `${currentHeight}px`;
+      }
     };
 
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      onUpdate(note.id, { width: currentWidth, height: currentHeight });
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -68,6 +83,7 @@ export default function FloatingNote({ note, onClose, onUpdate }) {
 
   return (
     <div
+      ref={containerRef}
       style={{
         position: 'absolute',
         left: `${note.x}px`,
@@ -227,3 +243,5 @@ export default function FloatingNote({ note, onClose, onUpdate }) {
     </div>
   );
 }
+
+export default React.memo(FloatingNote);

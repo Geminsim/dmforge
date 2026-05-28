@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, History, HelpCircle } from 'lucide-react';
 
-export default function DiceRoller({ addLog }) {
+function DiceRoller({ addLog }) {
   const [customFormula, setCustomFormula] = useState('');
   const [history, setHistory] = useState([]);
   const [isRolling, setIsRolling] = useState(false);
@@ -183,3 +183,5 @@ export default function DiceRoller({ addLog }) {
     </div>
   );
 }
+
+export default React.memo(DiceRoller);

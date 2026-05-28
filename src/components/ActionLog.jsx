@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { History, MessageSquare, Swords, Package, Dices, Layers, Eye, EyeOff, Trash2 } from 'lucide-react';
 
-export default function ActionLog({ logs, floatingNotes = [], addFloatingNote, deleteFloatingNote, updateFloatingNote }) {
+function ActionLog({ logs, floatingNotes = [], addFloatingNote, deleteFloatingNote, updateFloatingNote }) {
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, COMBAT, ITEMS, DICE
 
   const handleCreateEmptyNote = () => {
@@ -304,3 +304,5 @@ export default function ActionLog({ logs, floatingNotes = [], addFloatingNote, d
     </div>
   );
 }
+
+export default React.memo(ActionLog);

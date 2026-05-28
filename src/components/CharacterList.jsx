@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Users, UserPlus, Heart, FileText, Settings, ShieldAlert, Award, Trash2, Plus, Minus, Shield, FolderPlus, Folder } from 'lucide-react';
 
-export default function CharacterList({ 
+function CharacterList({ 
   characters, 
   setCharacters, 
   addLog, 
@@ -1235,3 +1235,5 @@ export default function CharacterList({
     </div>
   );
 }
+
+export default React.memo(CharacterList);
