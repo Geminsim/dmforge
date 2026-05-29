@@ -8,7 +8,7 @@ const CATEGORIES = [
   { value: '武器', label: '⚔️ 武器' }
 ];
 
-export default function ItemManager({ characters, itemPool, setItemPool, itemTemplates = [], setItemTemplates, addLog }) {
+export default function ItemManager({ characters, itemPool, setItemPool, itemTemplates = [], setItemTemplates, addLog, groups = [] }) {
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('消耗品');
   const [newItemQty, setNewItemQty] = useState(1);
@@ -24,6 +24,25 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [sortBy, setSortBy] = useState('default'); // 'default' or 'name'
   const [charSortBy, setCharSortBy] = useState('default'); // 'default' or 'name'
+
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+
+  const toggleGroupCollapse = (groupId) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }));
+  };
+
+  const getCharGroupId = (char) => {
+    if (char.groupId) return char.groupId;
+    return char.type === 'PC' ? 'group_pcs' : 'group_npcs';
+  };
+
+  const allGroups = groups && groups.length > 0 ? groups : [
+    { id: 'group_pcs', name: '玩家角色' },
+    { id: 'group_npcs', name: '战役NPC/敌方' }
+  ];
 
   // Automatic consolidation effect for WORLD items
   React.useEffect(() => {
@@ -582,9 +601,17 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                     onChange={(e) => setSelectedCharId(e.target.value)}
                   >
                     <option value="">选择分发角色...</option>
-                    {characters.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                    {allGroups.map(group => {
+                      const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
+                      if (groupChars.length === 0) return null;
+                      return (
+                        <optgroup key={group.id} label={group.name} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                          {groupChars.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                   <input 
                     type="number" 
@@ -639,101 +666,163 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '600px', overflowY: 'auto' }}>
-          {characters.map(char => {
-            const rawCharItems = itemPool.filter(i => i.ownerId === char.id);
-            const charItems = charSortBy === 'name'
-              ? [...rawCharItems].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-              : rawCharItems;
+          {allGroups.map(group => {
+            const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
+            if (groupChars.length === 0) return null;
+
+            const sortedGroupChars = charSortBy === 'name'
+              ? [...groupChars].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+              : groupChars;
+
+            const isPcGroup = group.id === 'group_pcs';
+            const isNpcGroup = group.id === 'group_npcs';
+            const groupColor = isPcGroup ? 'var(--accent-blue)' : isNpcGroup ? 'var(--accent-red)' : 'var(--text-secondary)';
+
+            const isCollapsed = collapsedGroups[group.id];
 
             return (
-              <div 
-                key={char.id} 
-                style={{ 
-                  background: 'rgba(255,255,255,0.02)', 
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '10px',
-                  padding: '14px'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '8px', color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
-                  {char.name} 的背包
+              <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Group Header */}
+                <div 
+                  onClick={() => toggleGroupCollapse(group.id)}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    gap: '8px', 
+                    borderBottom: `2px solid ${groupColor}`, 
+                    paddingBottom: '6px', 
+                    marginTop: '6px', 
+                    marginBottom: '4px',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ 
+                      fontSize: '9px', 
+                      color: 'var(--text-muted)', 
+                      transition: 'transform 0.2s', 
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'none', 
+                      display: 'inline-block' 
+                    }}>
+                      ▼
+                    </span>
+                    <span style={{ fontWeight: 'bold', fontSize: '13px', color: groupColor }}>
+                      {group.name}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: '10px' }}>
+                    {sortedGroupChars.length} 个角色
+                  </span>
                 </div>
 
-                {charItems.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
-                    背包空空如也
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {charItems.map(item => (
-                      <div 
-                        key={item.id} 
-                        style={{ 
-                          display: 'flex', 
-                          flexDirection: 'column', 
-                          gap: '6px', 
-                          background: 'rgba(0,0,0,0.2)',
-                          padding: '8px',
-                          borderRadius: '6px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                          <div>
-                            <strong style={{ color: 'var(--accent-purple)' }}>{item.name}</strong>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                              ({item.category})
-                            </span>
-                          </div>
-                          <span>x{item.quantity}</span>
-                        </div>
+                {!isCollapsed && sortedGroupChars.map(char => {
+                  const rawCharItems = itemPool.filter(i => i.ownerId === char.id);
+                  const charItems = charSortBy === 'name'
+                    ? [...rawCharItems].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+                    : rawCharItems;
 
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select 
-                            className="input-text" 
-                            style={{ flex: 1, padding: '3px 6px', fontSize: '11px' }}
-                            onChange={(e) => setTransferTargetId(e.target.value)}
-                          >
-                            <option value="">转移给...</option>
-                            {characters.filter(c => c.id !== char.id).map(c => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                          </select>
-                          <input 
-                            type="number" 
-                            className="input-text" 
-                            style={{ width: '45px', padding: '3px 6px', fontSize: '11px' }} 
-                            value={transferQty}
-                            onChange={(e) => setTransferQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                          />
-                          <button 
-                            onClick={() => transferItem(item.id, char.id, transferTargetId, transferQty)}
-                            className="btn btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                            disabled={!transferTargetId}
-                          >
-                            转移
-                          </button>
-                          <button 
-                            onClick={() => consumeItem(item.id, char.id)}
-                            className="btn btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)', color: 'var(--accent-purple)' }}
-                            title="消耗1个物品"
-                          >
-                            消耗
-                          </button>
-                          <button 
-                            onClick={() => deleteItemFromPool(item.id)}
-                            className="btn btn-danger" 
-                            style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
-                            title="彻底删除物品"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
+                  return (
+                    <div 
+                      key={char.id} 
+                      style={{ 
+                        background: 'rgba(255,255,255,0.02)', 
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '10px',
+                        padding: '14px'
+                      }}
+                    >
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '8px', color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
+                        {char.name} 的背包
                       </div>
-                    ))}
-                  </div>
-                )}
+
+                      {charItems.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+                          背包空空如也
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {charItems.map(item => (
+                            <div 
+                              key={item.id} 
+                              style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column', 
+                                gap: '6px', 
+                                background: 'rgba(0,0,0,0.2)',
+                                padding: '8px',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                                <div>
+                                  <strong style={{ color: 'var(--accent-purple)' }}>{item.name}</strong>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                                    ({item.category})
+                                  </span>
+                                </div>
+                                <span>x{item.quantity}</span>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <select 
+                                  className="input-text" 
+                                  style={{ flex: 1, padding: '3px 6px', fontSize: '11px' }}
+                                  onChange={(e) => setTransferTargetId(e.target.value)}
+                                >
+                                  <option value="">转移给...</option>
+                                  {allGroups.map(g => {
+                                    const transferChars = characters.filter(c => getCharGroupId(c) === g.id && c.id !== char.id);
+                                    if (transferChars.length === 0) return null;
+                                    return (
+                                      <optgroup key={g.id} label={g.name} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                                        {transferChars.map(c => (
+                                          <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                      </optgroup>
+                                    );
+                                  })}
+                                </select>
+                                <input 
+                                  type="number" 
+                                  className="input-text" 
+                                  style={{ width: '45px', padding: '3px 6px', fontSize: '11px' }} 
+                                  value={transferQty}
+                                  onChange={(e) => setTransferQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                />
+                                <button 
+                                  onClick={() => transferItem(item.id, char.id, transferTargetId, transferQty)}
+                                  className="btn btn-secondary" 
+                                  style={{ padding: '4px 8px', fontSize: '11px' }}
+                                  disabled={!transferTargetId}
+                                >
+                                  转移
+                                </button>
+                                <button 
+                                  onClick={() => consumeItem(item.id, char.id)}
+                                  className="btn btn-secondary" 
+                                  style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)', color: 'var(--accent-purple)' }}
+                                  title="消耗1个物品"
+                                >
+                                  消耗
+                                </button>
+                                <button 
+                                  onClick={() => deleteItemFromPool(item.id)}
+                                  className="btn btn-danger" 
+                                  style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
+                                  title="彻底删除物品"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

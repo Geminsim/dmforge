@@ -1431,6 +1431,7 @@ export default function App() {
                 itemTemplates={itemTemplates}
                 setItemTemplates={setItemTemplates}
                 addLog={addLog}
+                groups={groups}
               />
             )}
             {currentTab === 'excel' && !isPlayerViewMode && (

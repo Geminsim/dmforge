@@ -23,6 +23,35 @@ function CharacterList({
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [dragOverGroupId, setDragOverGroupId] = useState(null);
 
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
+  const [editingGroupColor, setEditingGroupColor] = useState('');
+
+  const handleStartEditGroup = (e, group) => {
+    e.stopPropagation();
+    setEditingGroupId(group.id);
+    setEditingGroupName(group.name);
+    setEditingGroupColor(group.color || (group.id === 'group_pcs' ? '#60a5fa' : group.id === 'group_npcs' ? '#f87171' : '#c084fc'));
+  };
+
+  const handleSaveGroupEdit = (groupId) => {
+    if (!editingGroupName.trim()) return;
+    setGroups(prev => prev.map(g => {
+      if (g.id === groupId) {
+        return { ...g, name: editingGroupName.trim(), color: editingGroupColor };
+      }
+      return g;
+    }));
+    setEditingGroupId(null);
+    if (addLog) {
+      addLog({
+        type: 'COMBAT',
+        content: `📁 分组 [${editingGroupName.trim()}] 的名称与颜色已被更新。`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
+  };
+
   const getCharGroupId = (char) => {
     if (char.groupId) return char.groupId;
     return char.type === 'PC' ? 'group_pcs' : 'group_npcs';
@@ -599,6 +628,8 @@ function CharacterList({
           const isCollapsed = collapsedGroups[group.id];
           const isDragOver = dragOverGroupId === group.id;
 
+          const groupColor = group.color || (group.id === 'group_pcs' ? 'var(--accent-blue)' : group.id === 'group_npcs' ? 'var(--accent-red)' : 'var(--text-secondary)');
+
           return (
             <div 
               key={group.id} 
@@ -615,6 +646,7 @@ function CharacterList({
               }}
               style={{
                 border: isDragOver ? '2px dashed var(--accent-purple)' : '1px solid rgba(255,255,255,0.03)',
+                borderLeft: `3px solid ${groupColor}`,
                 background: isDragOver ? 'rgba(192, 132, 252, 0.06)' : 'rgba(18, 20, 28, 0.25)',
                 boxShadow: isDragOver ? '0 0 15px rgba(192, 132, 252, 0.15)' : 'none',
                 borderRadius: '10px',
@@ -636,58 +668,137 @@ function CharacterList({
                   paddingBottom: isCollapsed ? '0px' : '8px',
                   borderBottom: isCollapsed ? 'none' : '1px dashed rgba(255,255,255,0.06)'
                 }}
-                onClick={() => toggleGroupCollapse(group.id)}
+                onClick={() => {
+                  if (editingGroupId !== group.id) {
+                    toggleGroupCollapse(group.id);
+                  }
+                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', width: '12px', textAlign: 'center' }}>
-                    {isCollapsed ? '▶' : '▼'}
-                  </span>
-                  <span style={{ 
-                    fontWeight: '700', 
-                    fontSize: '12px', 
-                    color: group.id === 'group_pcs' ? 'var(--accent-blue)' : group.id === 'group_npcs' ? 'var(--accent-red)' : 'var(--text-secondary)',
-                    fontFamily: 'var(--font-heading)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    <Folder size={13} style={{ opacity: 0.7 }} />
-                    {group.name}
-                  </span>
-                  <span style={{
-                    fontSize: '10px',
-                    background: 'rgba(255,255,255,0.06)',
-                    padding: '1px 5px',
-                    borderRadius: '8px',
-                    color: 'var(--text-muted)',
-                    fontWeight: 'bold'
-                  }}>
-                    {groupChars.length}
-                  </span>
-                </div>
+                {editingGroupId === group.id ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
+                    <Folder size={13} style={{ color: editingGroupColor, opacity: 0.7 }} />
+                    <input
+                      type="text"
+                      value={editingGroupName}
+                      onChange={(e) => setEditingGroupName(e.target.value)}
+                      className="input-text"
+                      style={{ padding: '2px 6px', fontSize: '11px', width: '100px', height: '22px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-light)', borderRadius: '4px' }}
+                      placeholder="分组名称"
+                      autoFocus
+                    />
+                    <input
+                      type="color"
+                      value={editingGroupColor}
+                      onChange={(e) => setEditingGroupColor(e.target.value)}
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        padding: 0,
+                        border: '1px solid var(--border-light)',
+                        borderRadius: '4px',
+                        background: 'none',
+                        cursor: 'pointer'
+                      }}
+                      title="修改分组颜色"
+                    />
+                    <button
+                      onClick={() => handleSaveGroupEdit(group.id)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--accent-emerald)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center' }}
+                      title="保存修改"
+                    >
+                      ✔️
+                    </button>
+                    <button
+                      onClick={() => setEditingGroupId(null)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', marginLeft: '2px' }}
+                      title="取消"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', width: '12px', textAlign: 'center' }}>
+                        {isCollapsed ? '▶' : '▼'}
+                      </span>
+                      <span style={{ 
+                        fontWeight: '700', 
+                        fontSize: '12px', 
+                        color: groupColor,
+                        fontFamily: 'var(--font-heading)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <Folder size={13} style={{ color: groupColor, opacity: 0.7 }} />
+                        {group.name}
+                      </span>
+                      <span style={{
+                        fontSize: '10px',
+                        background: 'rgba(255,255,255,0.06)',
+                        padding: '1px 5px',
+                        borderRadius: '8px',
+                        color: 'var(--text-muted)',
+                        fontWeight: 'bold'
+                      }}>
+                        {groupChars.length}
+                      </span>
+                    </div>
 
-                {/* If it's a custom group, allow deleting it */}
-                {group.id !== 'group_pcs' && group.id !== 'group_npcs' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteGroup(group.id, group.name);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '2px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      transition: 'color 0.2s ease'
-                    }}
-                    className="delete-group-btn"
-                    title="删除此分组（分组内角色将退回到默认分组）"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <button
+                        onClick={(e) => handleStartEditGroup(e, group)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          fontSize: '11px',
+                          opacity: 0.6,
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
+                        title="更名与改色"
+                      >
+                        ✏️
+                      </button>
+                      {group.id !== 'group_pcs' && group.id !== 'group_npcs' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteGroup(group.id, group.name);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            opacity: 0.6,
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                            e.currentTarget.style.color = 'var(--accent-red)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.opacity = '0.6';
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                          title="删除分组"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
 

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2, Scissors } from 'lucide-react';
+import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2, Scissors, Copy } from 'lucide-react';
 
 // A* Pathfinding algorithm for 8-directional shortest path on tactical grids
 function findShortestPath(startX, startY, endX, endY, mapWidth, mapHeight, isBlocked, isDifficult) {
@@ -953,6 +953,27 @@ export default function MapSystem({
   const handleDeleteArea = (id) => {
     setTerrainAreas(terrainAreas.filter(area => area.id !== id));
     if (editingAreaId === id) setEditingAreaId(null);
+  };
+
+  const handleDuplicateArea = (area) => {
+    pushToHistory();
+    const newId = 'terrain_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    const newArea = {
+      ...area,
+      id: newId,
+      name: `${area.name} (副本)`,
+      gridX: Math.min(mapWidth - 2, area.gridX + 2),
+      gridY: Math.min(mapHeight - 2, area.gridY + 2)
+    };
+    setTerrainAreas([...terrainAreas, newArea]);
+    setEditingAreaId(newArea.id);
+    if (addLog) {
+      addLog({
+        type: 'COMBAT',
+        content: `🚧 复制了区域地形: **${area.name}** -> **${newArea.name}**`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
   };
 
   const handleClearAllTerrains = () => {
@@ -1922,6 +1943,13 @@ export default function MapSystem({
                             title={area.isSecret ? '玩家不可见 (隐秘陷阱)' : '玩家可见'}
                           >
                             {area.isSecret ? <EyeOff size={11} /> : <Eye size={11} />}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDuplicateArea(area); }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            title="快速复制此地形区域"
+                          >
+                            <Copy size={11} />
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteArea(area.id); }}
