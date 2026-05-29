@@ -3229,6 +3229,56 @@ export default function MapSystem({
                 </div>
               </div>
             </div>
+
+            {/* Remove from Map section */}
+            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '10px', marginTop: '6px' }}>
+              <button
+                onClick={() => {
+                  setCharacters(prev => prev.map(c => {
+                    if (c.id === selectedTokenObj.id) {
+                      return { ...c, mapId: null };
+                    }
+                    return c;
+                  }));
+                  if (addLog) {
+                    addLog({
+                      type: 'COMBAT',
+                      content: `📍 角色 [${selectedTokenObj.name}] 已手动从地图移出。`,
+                      timestamp: new Date().toLocaleTimeString()
+                    });
+                  }
+                  setSelectedTokenId(null);
+                }}
+                className="btn"
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  color: '#f87171',
+                  background: 'rgba(248, 113, 113, 0.05)',
+                  border: '1px solid rgba(248, 113, 113, 0.25)',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(248, 113, 113, 0.15)';
+                  e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.5)';
+                  e.currentTarget.style.boxShadow = '0 0 8px rgba(248, 113, 113, 0.2)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(248, 113, 113, 0.05)';
+                  e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.25)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                📍 手动从地图移出
+              </button>
+            </div>
           </div>
         )}
       </div>

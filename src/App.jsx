@@ -43,7 +43,11 @@ const sanitizeCharacters = (chars) => {
 
     return {
       ...c,
-      resources
+      resources,
+      level: c.level !== undefined ? c.level : 1,
+      hitDice: c.hitDice !== undefined ? c.hitDice : 'd8',
+      levelHpIncreases: c.levelHpIncreases ? [...c.levelHpIncreases] : [],
+      tempHp: c.tempHp !== undefined ? c.tempHp : 0
     };
   });
 };
@@ -311,6 +315,16 @@ export default function App() {
   // Custom Groups state
   const [groups, setGroups] = useState(() => getSavedState('dmforge_groups', INITIAL_GROUPS));
 
+  // Custom Core Attribute display labels state
+  const [customAttributeLabels, setCustomAttributeLabels] = useState(() => getSavedState('dmforge_customAttributeLabels', {
+    '力量 (Physical)': '力量 (Physical)',
+    '敏捷 (Agility)': '敏捷 (Agility)',
+    '体质 (Fortitude)': '体质 (Fortitude)',
+    '感知 (Perception)': '感知 (Perception)',
+    '智力 (Intellect)': '智力 (Intellect)',
+    '神秘 (Arcane)': '神秘 (Arcane)'
+  }));
+
   const handleSetAppRole = (role) => {
     setAppRole(role);
     if (role === 'PLAYER') {
@@ -338,7 +352,11 @@ export default function App() {
       '神秘 (Arcane)': 10
     },
     resources: [],
-    conditions: []
+    conditions: [],
+    level: 1,
+    hitDice: 'd8',
+    levelHpIncreases: [],
+    tempHp: 0
   });
   const [tempResName, setTempResName] = useState('');
   const [tempResMax, setTempResMax] = useState(4);
@@ -368,7 +386,11 @@ export default function App() {
         '神秘 (Arcane)': 10
       },
       resources: [],
-      conditions: []
+      conditions: [],
+      level: 1,
+      hitDice: 'd8',
+      levelHpIncreases: [],
+      tempHp: 0
     });
     setTempResName('');
     setTempResMax(4);
@@ -477,7 +499,11 @@ export default function App() {
         '神秘 (Arcane)': 10
       },
       resources: char.resources ? char.resources.map(r => ({ ...r })) : [],
-      conditions: char.conditions || []
+      conditions: char.conditions || [],
+      level: char.level !== undefined ? char.level : 1,
+      hitDice: char.hitDice !== undefined ? char.hitDice : 'd8',
+      levelHpIncreases: char.levelHpIncreases ? [...char.levelHpIncreases] : [],
+      tempHp: char.tempHp !== undefined ? char.tempHp : 0
     });
     setTempResName('');
     setTempResMax(4);
@@ -505,6 +531,7 @@ export default function App() {
       currentTurnIndex,
       combatParticipants,
       combatTurnOrder,
+      customAttributeLabels,
       lastUpdated: timestamp,
       clientId: clientId.current,
       version: '1.0.0'
@@ -554,6 +581,7 @@ export default function App() {
     if (data.currentTurnIndex !== undefined) setCurrentTurnIndex(data.currentTurnIndex);
     if (data.combatParticipants) setCombatParticipants(data.combatParticipants);
     if (data.combatTurnOrder) setCombatTurnOrder(data.combatTurnOrder);
+    if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
     
     lastUpdatedRef.current = data.lastUpdated;
     localStorage.setItem('dmforge_lastUpdated', JSON.stringify(data.lastUpdated));
@@ -573,6 +601,7 @@ export default function App() {
     if (data.currentTurnIndex !== undefined) localStorage.setItem('dmforge_currentTurnIndex', JSON.stringify(data.currentTurnIndex));
     if (data.combatParticipants) localStorage.setItem('dmforge_combatParticipants', JSON.stringify(data.combatParticipants));
     if (data.combatTurnOrder) localStorage.setItem('dmforge_combatTurnOrder', JSON.stringify(data.combatTurnOrder));
+    if (data.customAttributeLabels) localStorage.setItem('dmforge_customAttributeLabels', JSON.stringify(data.customAttributeLabels));
 
     setTimeout(() => {
       isServerUpdateInProgress.current = false;
@@ -611,6 +640,7 @@ export default function App() {
     characters, itemPool, logs, floatingNotes, maps, activeMapId,
     excelCards, groups, isInCombat,
     combatRound, currentTurnIndex, combatParticipants, combatTurnOrder,
+    customAttributeLabels,
     isSyncEnabled, appRole
   ]);
 
@@ -828,6 +858,10 @@ export default function App() {
     localStorage.setItem('dmforge_combatTurnOrder', JSON.stringify(combatTurnOrder));
   }, [combatTurnOrder]);
 
+  useEffect(() => {
+    localStorage.setItem('dmforge_customAttributeLabels', JSON.stringify(customAttributeLabels));
+  }, [customAttributeLabels]);
+
   // --- Campaign Import / Export / Reset Functions ---
   const handleExportCampaign = () => {
     const campaignData = {
@@ -849,6 +883,7 @@ export default function App() {
       currentTurnIndex,
       combatParticipants,
       combatTurnOrder,
+      customAttributeLabels,
       version: '1.0.0',
       timestamp: Date.now()
     };
@@ -908,6 +943,7 @@ export default function App() {
         if (data.leftSidebarWidth) setLeftSidebarWidth(data.leftSidebarWidth);
         if (data.rightSidebarWidth) setRightSidebarWidth(data.rightSidebarWidth);
         if (data.isPlayerViewMode !== undefined) handleSetAppRole(data.isPlayerViewMode ? 'PLAYER' : 'DM');
+        if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
 
         alert('战役存档导入成功！所有角色、地图、笔记以及 Excel 角色卡均已复原。');
 
@@ -949,6 +985,7 @@ export default function App() {
         localStorage.removeItem('dmforge_currentTurnIndex');
         localStorage.removeItem('dmforge_combatParticipants');
         localStorage.removeItem('dmforge_combatTurnOrder');
+        localStorage.removeItem('dmforge_customAttributeLabels');
 
         setCharacters(sanitizeCharacters(INITIAL_CHARACTERS));
         setItemPool(INITIAL_ITEM_POOL);
@@ -970,6 +1007,14 @@ export default function App() {
         setCurrentTurnIndex(0);
         setCombatParticipants([]);
         setCombatTurnOrder([]);
+        setCustomAttributeLabels({
+          '力量 (Physical)': '力量 (Physical)',
+          '敏捷 (Agility)': '敏捷 (Agility)',
+          '体质 (Fortitude)': '体质 (Fortitude)',
+          '感知 (Perception)': '感知 (Perception)',
+          '智力 (Intellect)': '智力 (Intellect)',
+          '神秘 (Arcane)': '神秘 (Arcane)'
+        });
 
         alert('出厂战役重置成功！已重新装载村口酒馆与地牢初始模版，并清空所有 Excel 角色卡。');
       }
@@ -1309,6 +1354,7 @@ export default function App() {
               combatTurnOrder={combatTurnOrder}
               currentTurnIndex={currentTurnIndex}
               onOpenRestModal={handleOpenRestModal}
+              customAttributeLabels={customAttributeLabels}
             />
           </aside>
         )}
@@ -1457,21 +1503,19 @@ export default function App() {
             <div 
               style={{
                 width: '540px',
-                maxHeight: '90vh',
+                maxHeight: '85vh',
                 background: 'var(--bg-secondary)',
                 border: '1px solid rgba(192, 132, 252, 0.2)',
                 borderRadius: '16px',
                 boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 25px rgba(192, 132, 252, 0.1)',
-                padding: '24px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
-                overflowY: 'auto'
+                overflow: 'hidden'
               }} 
               onClick={e => e.stopPropagation()}
             >
               {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', padding: '16px 20px 12px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <UserPlus size={20} style={{ color: 'var(--accent-purple)' }} />
                   <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, fontFamily: 'var(--font-heading)' }}>
@@ -1489,8 +1533,9 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Modal Form Content */}
-              {/* 1. Basic Info */}
+              {/* Modal Form Scrollable Content Body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* 1. Basic Info */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>1. 基础信息</span>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
@@ -1528,6 +1573,46 @@ export default function App() {
                       setNewChar({...newChar, maxHp: val});
                     }}
                   />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>初始/当前等级 (Level)</label>
+                    <input 
+                      type="number" 
+                      className="input-text" 
+                      placeholder="等级"
+                      value={newChar.level}
+                      onChange={e => setNewChar({...newChar, level: Math.max(1, parseInt(e.target.value, 10) || 1)})}
+                      style={{ padding: '6px 10px', fontSize: '12px' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>生命骰 (Hit Dice规格)</label>
+                    <select 
+                      className="input-text"
+                      style={{ height: '32px', cursor: 'pointer', padding: '4px 8px', fontSize: '12px' }}
+                      value={newChar.hitDice}
+                      onChange={e => setNewChar({...newChar, hitDice: e.target.value})}
+                    >
+                      <option value="d6">d6 (如法师/术士)</option>
+                      <option value="d8">d8 (如牧师/游侠/武僧)</option>
+                      <option value="d10">d10 (如战士/圣骑士)</option>
+                      <option value="d12">d12 (如野蛮人)</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>初始临时生命 (Temp HP, 选填)</label>
+                    <input 
+                      type="number" 
+                      className="input-text" 
+                      placeholder="初始临时生命值"
+                      value={newChar.tempHp || 0}
+                      onChange={e => setNewChar({...newChar, tempHp: Math.max(0, parseInt(e.target.value, 10) || 0)})}
+                      style={{ padding: '6px 10px', fontSize: '12px' }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1571,8 +1656,8 @@ export default function App() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                   {Object.entries(newChar.stats).map(([statKey, statVal]) => (
                     <div key={statKey} style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255,255,255,0.02)', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-                      <label style={{ fontSize: '9px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statKey}>
-                        {statKey.split(' ')[0]}
+                      <label style={{ fontSize: '9px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={customAttributeLabels[statKey] || statKey}>
+                        {customAttributeLabels[statKey] || statKey}
                       </label>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                         <button 
@@ -1694,8 +1779,10 @@ export default function App() {
                 </div>
               </div>
 
+              </div> {/* Close scrollable form body */}
+
               {/* Modal Controls */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-light)', paddingTop: '16px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-light)', padding: '12px 20px 16px 20px', marginTop: '0' }}>
                 <button 
                   type="button" 
                   onClick={() => {
@@ -1733,7 +1820,11 @@ export default function App() {
                               speed: newChar.speed,
                               stats: newChar.stats,
                               resources: newChar.resources,
-                              conditions: c.conditions || []
+                              conditions: c.conditions || [],
+                              level: newChar.level !== undefined ? newChar.level : (c.level || 1),
+                              hitDice: newChar.hitDice !== undefined ? newChar.hitDice : (c.hitDice || 'd8'),
+                              levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : (c.levelHpIncreases || []),
+                              tempHp: newChar.tempHp !== undefined ? newChar.tempHp : (c.tempHp || 0)
                             };
                           }
                           return c;
@@ -1772,7 +1863,11 @@ export default function App() {
                         conditions: [],
                         combatSpeedRemaining: newChar.speed !== undefined ? newChar.speed : 30,
                         combatStartGridX: 2,
-                        combatStartGridY: 2
+                        combatStartGridY: 2,
+                        level: newChar.level !== undefined ? newChar.level : 1,
+                        hitDice: newChar.hitDice !== undefined ? newChar.hitDice : 'd8',
+                        levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : [],
+                        tempHp: newChar.tempHp !== undefined ? newChar.tempHp : 0
                       };
 
                       setCharacters(prev => [...prev, sanitizeCharacters([newCharacterData])[0]]);
@@ -2069,6 +2164,33 @@ export default function App() {
               >
                 <span>{isFullscreen ? '🖥️ 退出浏览器全屏模式 (Exit Fullscreen)' : '🖥️ 进入浏览器全屏模式 (Enter Fullscreen)'}</span>
               </button>
+            </div>
+
+            {/* Section 1.8: Custom Core Attributes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>📊 战役角色六维核心属性自定义更名</label>
+              <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
+                您可以重命名六个核心属性的显示名称（如：力量 ➔ 体魄，敏捷 ➔ 反射等）。底层数据键名保持不变，完美兼容已有历史存档与导入数据。
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                {Object.entries(customAttributeLabels).map(([originalKey, customVal]) => (
+                  <div key={originalKey} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={originalKey}>
+                      原键: {originalKey}
+                    </span>
+                    <input
+                      type="text"
+                      className="input-text"
+                      style={{ padding: '6px 10px', fontSize: '11px', background: 'rgba(255,255,255,0.01)' }}
+                      value={customVal}
+                      onChange={(e) => {
+                        const updated = { ...customAttributeLabels, [originalKey]: e.target.value };
+                        setCustomAttributeLabels(updated);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Section 2: LAN Sync Engine */}

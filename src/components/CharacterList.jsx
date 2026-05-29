@@ -13,7 +13,8 @@ function CharacterList({
   isInCombat = false,
   combatTurnOrder = [],
   currentTurnIndex = 0,
-  onOpenRestModal
+  onOpenRestModal,
+  customAttributeLabels = {}
 }) {
   const [expandedCharId, setExpandedCharId] = useState(null);
   
@@ -165,6 +166,76 @@ function CharacterList({
       }
       return c;
     }));
+  };
+
+  const handleLevelChange = (char, direction) => {
+    const diceSize = parseInt((char.hitDice || 'd8').replace('d', ''), 10) || 8;
+    
+    if (direction === 1) {
+      // Level Up
+      const rolledHp = Math.floor(Math.random() * diceSize) + 1;
+      const nextLevel = (char.level || 1) + 1;
+      
+      setCharacters(prev => prev.map(c => {
+        if (c.id === char.id) {
+          const newHistory = [...(c.levelHpIncreases || []), rolledHp];
+          return {
+            ...c,
+            level: nextLevel,
+            maxHp: c.maxHp + rolledHp,
+            hp: c.hp + rolledHp,
+            levelHpIncreases: newHistory
+          };
+        }
+        return c;
+      }));
+
+      if (addLog) {
+        addLog({
+          type: 'COMBAT',
+          content: `👤 **角色升级**: **[${char.type}] ${char.name}** 提升至 **等级 ${nextLevel}**！生命骰 (${char.hitDice || 'd8'}) 掷出了 **${rolledHp}**，最大生命值从 ${char.maxHp} 提升至 ${char.maxHp + rolledHp}。`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+    } else if (direction === -1) {
+      // Level Down
+      const currentLevel = char.level || 1;
+      if (currentLevel <= 1) {
+        alert('⚠️ 角色等级不能低于 1 级！');
+        return;
+      }
+      
+      const nextLevel = currentLevel - 1;
+      const history = [...(char.levelHpIncreases || [])];
+      
+      // Pop the last value, fallback to average roll if history is empty
+      const rolledHp = history.length > 0 ? history.pop() : (Math.round(diceSize / 2) + 1);
+      
+      setCharacters(prev => prev.map(c => {
+        if (c.id === char.id) {
+          const newHistory = [...(c.levelHpIncreases || [])];
+          newHistory.pop(); // remove last rolled HP
+          const newMax = Math.max(1, c.maxHp - rolledHp);
+          const newHp = Math.max(1, c.hp - rolledHp);
+          return {
+            ...c,
+            level: nextLevel,
+            maxHp: newMax,
+            hp: newHp,
+            levelHpIncreases: newHistory
+          };
+        }
+        return c;
+      }));
+
+      if (addLog) {
+        addLog({
+          type: 'COMBAT',
+          content: `👤 **等级回滚**: **[${char.type}] ${char.name}** 回滚至 **等级 ${nextLevel}**。撤销了上次升级，最大生命值减少了 ${rolledHp}，恢复为 ${Math.max(1, char.maxHp - rolledHp)}。`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+    }
   };
 
   const handleAddFeat = (charId) => {
@@ -343,21 +414,60 @@ function CharacterList({
     }
   };
 
+  const handleRemoveFromMap = (charId, charName) => {
+    setCharacters(prev => prev.map(c => {
+      if (c.id === charId) {
+        return { ...c, mapId: null };
+      }
+      return c;
+    }));
+    if (addLog) {
+      addLog({
+        type: 'COMBAT',
+        content: `📍 角色 [${charName}] 已手动从地图移出。`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
+  };
+
   const adjustHp = (charId, amount) => {
     setCharacters(prev => {
       return prev.map(c => {
         if (c.id === charId) {
-          const newHp = Math.max(0, Math.min(c.maxHp, c.hp + amount));
+          const temp = c.tempHp || 0;
+          let newHp = c.hp;
+          let newTempHp = temp;
+
+          if (amount < 0) {
+            // Damage: absorb via temp HP first
+            const damage = Math.abs(amount);
+            if (newTempHp >= damage) {
+              newTempHp -= damage;
+            } else {
+              const remainingDamage = damage - newTempHp;
+              newTempHp = 0;
+              newHp = Math.max(0, newHp - remainingDamage);
+            }
+          } else {
+            // Healing: only heals actual HP up to maxHp
+            newHp = Math.max(0, Math.min(c.maxHp, c.hp + amount));
+          }
           
-          if (addLog && newHp !== c.hp) {
+          if (addLog && (newHp !== c.hp || newTempHp !== temp)) {
+            let logMsg = `❤️ 角色 [${c.name}] HP 变更: `;
+            if (temp > 0 || newTempHp > 0) {
+              logMsg += `生命值 **${c.hp}** (+${temp} 临时) -> **${newHp}** (+${newTempHp} 临时) (最大生命: ${c.maxHp})`;
+            } else {
+              logMsg += `**${c.hp}** -> **${newHp}** (最大值: ${c.maxHp})`;
+            }
             addLog({
               type: 'COMBAT',
-              content: `❤️ 角色 [${c.name}] HP 变更: **${c.hp}** -> **${newHp}** (最大值: ${c.maxHp})`,
+              content: logMsg,
               timestamp: new Date().toLocaleTimeString()
             });
           }
 
-          return { ...c, hp: newHp };
+          return { ...c, hp: newHp, tempHp: newTempHp };
         }
         return c;
       });
@@ -710,7 +820,13 @@ function CharacterList({
                                 <button onClick={() => adjustHp(char.id, -5)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>-5</button>
                                 
                                 <span style={{ fontSize: '11px', minWidth: '46px', textAlign: 'center', fontWeight: 'bold' }}>
-                                  {char.hp}/{char.maxHp}
+                                  {char.hp}
+                                  {char.tempHp > 0 && (
+                                    <span style={{ color: 'var(--accent-purple)', fontSize: '10px', marginLeft: '1.5px', textShadow: '0 0 4px var(--accent-purple-glow)' }} title={`包含 ${char.tempHp} 点临时生命缓冲垫`}>
+                                      +{char.tempHp}
+                                    </span>
+                                  )}
+                                  /{char.maxHp}
                                 </span>
                                 
                                 <button onClick={() => adjustHp(char.id, 1)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>+1</button>
@@ -815,6 +931,67 @@ function CharacterList({
                                     value={char.speed !== undefined ? char.speed : 30}
                                     onChange={(e) => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)}
                                   />
+                                </div>
+                                <div>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>临时生命 (Temp HP)</span>
+                                  <input 
+                                    type="number"
+                                    className="input-text"
+                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
+                                    value={char.tempHp !== undefined ? char.tempHp : 0}
+                                    onChange={(e) => {
+                                      const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                      handleUpdateBasicInfo(char.id, 'tempHp', val);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Level & Hit Dice Upgrade Controls */}
+                              <div style={{ borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  🛡️ 等级与生命骰升级 (Level & Hit Dice Upgrades)
+                                </span>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', alignItems: 'center' }}>
+                                  {/* Level Control */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-light)', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                      等级: <strong style={{ color: 'var(--accent-purple)', fontSize: '13px' }}>{char.level || 1}</strong>
+                                    </span>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLevelChange(char, -1)}
+                                        style={{ border: 'none', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', width: '22px', height: '22px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}
+                                        title="降低等级并撤销生命提升 (防止误操作)"
+                                      >
+                                        -
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLevelChange(char, 1)}
+                                        style={{ border: 'none', background: 'rgba(52, 211, 153, 0.15)', color: 'var(--accent-emerald)', width: '22px', height: '22px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}
+                                        title="升级并掷生命骰增加最大生命值"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Hit Dice Dropdown */}
+                                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <select
+                                      className="input-text"
+                                      style={{ height: '32px', padding: '0 6px', fontSize: '11px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)', width: '100%', outline: 'none' }}
+                                      value={char.hitDice || 'd8'}
+                                      onChange={(e) => handleUpdateBasicInfo(char.id, 'hitDice', e.target.value)}
+                                    >
+                                      <option value="d6">生命骰: d6</option>
+                                      <option value="d8">生命骰: d8</option>
+                                      <option value="d10">生命骰: d10</option>
+                                      <option value="d12">生命骰: d12</option>
+                                    </select>
+                                  </div>
                                 </div>
                               </div>
 
@@ -1060,7 +1237,7 @@ function CharacterList({
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                                   {Object.entries(char.stats || {}).map(([key, val]) => (
                                     <div key={key} className="custom-stat-pill" style={{ padding: '4px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
-                                      <span className="stat-name" style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85px' }} title={key}>{key}</span>
+                                      <span className="stat-name" style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85px' }} title={customAttributeLabels[key] || key}>{customAttributeLabels[key] || key}</span>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                         <button 
                                           type="button" 
@@ -1178,6 +1355,43 @@ function CharacterList({
                                   </div>
                                 </div>
                               </div>
+
+                              {char.mapId && (
+                                <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '10px', marginTop: '10px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFromMap(char.id, char.name)}
+                                    className="btn"
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 12px',
+                                      fontSize: '11px',
+                                      color: '#f87171',
+                                      background: 'rgba(248, 113, 113, 0.05)',
+                                      border: '1px solid rgba(248, 113, 113, 0.25)',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '4px',
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseOver={(e) => {
+                                      e.currentTarget.style.background = 'rgba(248, 113, 113, 0.15)';
+                                      e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.5)';
+                                      e.currentTarget.style.boxShadow = '0 0 8px rgba(248, 113, 113, 0.2)';
+                                    }}
+                                    onMouseOut={(e) => {
+                                      e.currentTarget.style.background = 'rgba(248, 113, 113, 0.05)';
+                                      e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.25)';
+                                      e.currentTarget.style.boxShadow = 'none';
+                                    }}
+                                  >
+                                    📍 手动从地图移出
+                                  </button>
+                                </div>
+                              )}
 
                               {/* Complete Delete, Edit & Duplicate buttons for this Character/NPC */}
                               <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '10px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
