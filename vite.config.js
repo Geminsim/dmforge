@@ -41,6 +41,13 @@ function campaignSyncPlugin() {
               try {
                 // Ensure it is valid JSON
                 JSON.parse(body)
+
+                // Safety insurance backup: copy current state to backup file before overwriting
+                if (fs.existsSync(filePath)) {
+                  const backupPath = path.resolve(process.cwd(), 'campaign_state_backup.json')
+                  fs.copyFileSync(filePath, backupPath)
+                }
+
                 fs.writeFileSync(filePath, body, 'utf-8')
                 res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
                 res.end(JSON.stringify({ success: true }))

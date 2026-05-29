@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { History, MessageSquare, Swords, Package, Dices, Layers, Eye, EyeOff, Trash2 } from 'lucide-react';
 
-function ActionLog({ logs, floatingNotes = [], addFloatingNote, deleteFloatingNote, updateFloatingNote }) {
+function ActionLog({ logs, setLogs, floatingNotes = [], addFloatingNote, deleteFloatingNote, updateFloatingNote }) {
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, COMBAT, ITEMS, DICE
 
   const handleCreateEmptyNote = () => {
@@ -146,9 +146,45 @@ function ActionLog({ logs, floatingNotes = [], addFloatingNote, deleteFloatingNo
       </div>
 
       {/* History Log Title */}
-      <div className="panel-title" style={{ marginBottom: '4px' }}>
-        <History size={18} style={{ color: 'var(--accent-purple)' }} />
-        <span>📜 战役历史记录</span>
+      <div className="panel-title" style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <History size={18} style={{ color: 'var(--accent-purple)' }} />
+          <span>📜 战役历史记录</span>
+        </div>
+        <button
+          onClick={() => {
+            if (window.confirm('确定要清空所有战役历史记录吗？（此操作不可撤销）')) {
+              setLogs && setLogs([]);
+            }
+          }}
+          className="btn"
+          style={{ 
+            padding: '2px 8px', 
+            fontSize: '11px', 
+            height: '22px', 
+            borderRadius: '4px', 
+            background: 'rgba(239, 68, 68, 0.1)', 
+            border: '1px solid rgba(239, 68, 68, 0.2)', 
+            color: 'var(--accent-red)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+          title="清空所有战役历史记录"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.3)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <Trash2 size={12} />
+          <span>清空记录</span>
+        </button>
       </div>
 
       {/* Log Tabs Category Filter */}

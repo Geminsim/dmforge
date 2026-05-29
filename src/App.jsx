@@ -92,11 +92,17 @@ const INITIAL_CHARACTERS = [
   }
 ];
 
+const INITIAL_ITEM_TEMPLATES = [
+  { name: '远古圣水', category: '消耗品', description: '饮用后回复20点生命，并对不死生物产生5d6的真实灼烧伤害。' },
+  { name: '魔岩大剑', category: '武器', description: '需要力量15以上。攻击伤害为 2d8+3 物理碎甲伤害。' },
+  { name: '初级治疗药水', category: '消耗品', description: '饮用回复1d8+2点生命值。' }
+];
+
 const INITIAL_ITEM_POOL = [
   {
     id: 'item_initial_1',
     name: '远古圣水',
-    category: '地底遗迹神殿',
+    category: '消耗品',
     quantity: 3,
     description: '饮用后回复20点生命，并对不死生物产生5d6的真实灼烧伤害。',
     ownerId: 'WORLD'
@@ -104,7 +110,7 @@ const INITIAL_ITEM_POOL = [
   {
     id: 'item_initial_2',
     name: '魔岩大剑',
-    category: '强盗藏宝箱',
+    category: '武器',
     quantity: 1,
     description: '需要力量15以上。攻击伤害为 2d8+3 物理碎甲伤害。',
     ownerId: 'WORLD'
@@ -112,7 +118,7 @@ const INITIAL_ITEM_POOL = [
   {
     id: 'item_initial_3',
     name: '初级治疗药水',
-    category: '个人持有',
+    category: '消耗品',
     quantity: 2,
     description: '饮用回复1d8+2点生命值。',
     ownerId: 'char_player_a'
@@ -243,10 +249,26 @@ export default function App() {
   const clientId = React.useRef(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
   const lastUpdatedRef = React.useRef(getSavedState('dmforge_lastUpdated', 0));
   const isServerUpdateInProgress = React.useRef(false);
+  const isSyncInitialized = React.useRef(false);
+  const [isSyncEnabled, setIsSyncEnabled] = useState(() => getSavedState('dmforge_isSyncEnabled', true));
   const [isSyncConnected, setIsSyncConnected] = useState(true);
 
   const [currentTab, setCurrentTab] = useState('map'); // map, items, excel
-  const [isPlayerViewMode, setIsPlayerViewMode] = useState(() => getSavedState('dmforge_isPlayerViewMode', false));
+  const [appRole, setAppRole] = useState(() => getSavedState('dmforge_appRole', 'DM'));
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const isPlayerViewMode = appRole === 'PLAYER';
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   // Resizable sidebar widths
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => getSavedState('dmforge_leftSidebarWidth', 320));
@@ -269,6 +291,7 @@ export default function App() {
     return sanitizeCharacters(sanitized);
   });
   const [itemPool, setItemPool] = useState(() => getSavedState('dmforge_itemPool', INITIAL_ITEM_POOL));
+  const [itemTemplates, setItemTemplates] = useState(() => getSavedState('dmforge_itemTemplates', INITIAL_ITEM_TEMPLATES));
   const [logs, setLogs] = useState(() => getSavedState('dmforge_logs', INITIAL_LOGS));
   const [floatingNotes, setFloatingNotes] = useState(() => getSavedState('dmforge_floatingNotes', INITIAL_FLOATING_NOTES));
   const [maps, setMaps] = useState(() => getSavedState('dmforge_maps', INITIAL_MAPS));
@@ -287,6 +310,13 @@ export default function App() {
 
   // Custom Groups state
   const [groups, setGroups] = useState(() => getSavedState('dmforge_groups', INITIAL_GROUPS));
+
+  const handleSetAppRole = (role) => {
+    setAppRole(role);
+    if (role === 'PLAYER') {
+      setCurrentTab('map');
+    }
+  };
 
   // Root-level Character creation modal states
   const [isAddCharModalOpen, setIsAddCharModalOpen] = useState(false);
@@ -463,6 +493,7 @@ export default function App() {
     return {
       characters,
       itemPool,
+      itemTemplates,
       logs,
       floatingNotes,
       maps,
@@ -511,6 +542,7 @@ export default function App() {
     
     if (data.characters) setCharacters(sanitizeCharacters(data.characters));
     if (data.itemPool) setItemPool(data.itemPool);
+    if (data.itemTemplates) setItemTemplates(data.itemTemplates);
     if (data.logs) setLogs(data.logs);
     if (data.floatingNotes) setFloatingNotes(data.floatingNotes);
     if (data.maps) setMaps(data.maps);
@@ -529,6 +561,7 @@ export default function App() {
     // Also update all localStorage keys immediately for consistency (excluding local UI states)
     if (data.characters) localStorage.setItem('dmforge_characters', JSON.stringify(data.characters));
     if (data.itemPool) localStorage.setItem('dmforge_itemPool', JSON.stringify(data.itemPool));
+    if (data.itemTemplates) localStorage.setItem('dmforge_itemTemplates', JSON.stringify(data.itemTemplates));
     if (data.logs) localStorage.setItem('dmforge_logs', JSON.stringify(data.logs));
     if (data.floatingNotes) localStorage.setItem('dmforge_floatingNotes', JSON.stringify(data.floatingNotes));
     if (data.maps) localStorage.setItem('dmforge_maps', JSON.stringify(data.maps));
@@ -548,6 +581,15 @@ export default function App() {
 
   // Effect 1: Auto-push local changes to server (Debounced)
   useEffect(() => {
+    if (appRole === 'PLAYER') {
+      return;
+    }
+    // DO NOT auto-push local changes until the initial handshake/alignment has finished successfully.
+    // This prevents a newly opened device (e.g. tablet with empty/default state) from racing and overwriting the host's actual server data.
+    if (!isSyncEnabled || !isSyncInitialized.current) {
+      return;
+    }
+
     if (isServerUpdateInProgress.current) {
       // Clear flag since we just finished applying server state
       setTimeout(() => {
@@ -568,11 +610,17 @@ export default function App() {
   }, [
     characters, itemPool, logs, floatingNotes, maps, activeMapId,
     excelCards, groups, isInCombat,
-    combatRound, currentTurnIndex, combatParticipants, combatTurnOrder
+    combatRound, currentTurnIndex, combatParticipants, combatTurnOrder,
+    isSyncEnabled, appRole
   ]);
 
-  // Effect 2: Initial alignment on mount and Background polling (800ms)
+  // Effect 2: Initial alignment on mount and Background polling (1500ms)
   useEffect(() => {
+    if (!isSyncEnabled) {
+      setIsSyncConnected(false);
+      return;
+    }
+
     let active = true;
 
     const alignAndSync = () => {
@@ -588,34 +636,62 @@ export default function App() {
           if (data && data.lastUpdated !== undefined) {
             // Server has state! Check if it is newer
             const localLU = getSavedState('dmforge_lastUpdated', 0);
-            if (data.lastUpdated > localLU) {
-              // Server is newer, pull it!
-              console.log('LAN Sync: Pulling newer state from server (Server:', data.lastUpdated, 'Local:', localLU, ')');
-              applyServerState(data);
-            } else if (data.lastUpdated < localLU) {
-              // Local is newer, push it!
-              console.log('LAN Sync: Initial push of newer local state to server (Server:', data.lastUpdated, 'Local:', localLU, ')');
-              pushCampaignToServer(localLU);
+            if (appRole === 'PLAYER') {
+              if (data.lastUpdated !== localLU) {
+                console.log('LAN Sync (PLAYER): Aligning with server state (Server:', data.lastUpdated, 'Local:', localLU, ')');
+                applyServerState(data);
+              }
+              isSyncInitialized.current = true;
+            } else {
+              if (data.lastUpdated > localLU) {
+                // Server is newer, pull it!
+                console.log('LAN Sync: Pulling newer state from server (Server:', data.lastUpdated, 'Local:', localLU, ')');
+                applyServerState(data);
+                // Delay enabling auto-push until the pulled state is fully rendered and settled
+                setTimeout(() => {
+                  isSyncInitialized.current = true;
+                }, 500);
+              } else if (data.lastUpdated < localLU) {
+                // Local is newer, push it!
+                console.log('LAN Sync: Initial push of newer local state to server (Server:', data.lastUpdated, 'Local:', localLU, ')');
+                pushCampaignToServer(localLU);
+                setTimeout(() => {
+                  isSyncInitialized.current = true;
+                }, 500);
+              } else {
+                console.log('LAN Sync: Initial align matched. Device is in sync.');
+                isSyncInitialized.current = true;
+              }
             }
-            // If they are equal, they are in sync! Do nothing.
           } else {
-            // Server is empty, initialize server with local state
-            console.log('LAN Sync: Server is empty. Initializing server with local state.');
-            const localLU = getSavedState('dmforge_lastUpdated', 0) || Date.now();
-            pushCampaignToServer(localLU);
+            // Server is empty
+            if (appRole === 'PLAYER') {
+              console.log('LAN Sync (PLAYER): Server is empty, nothing to pull.');
+              isSyncInitialized.current = true;
+            } else {
+              // Server is empty, initialize server with local state
+              console.log('LAN Sync: Server is empty. Initializing server with local state.');
+              const localLU = getSavedState('dmforge_lastUpdated', 0) || Date.now();
+              pushCampaignToServer(localLU);
+              setTimeout(() => {
+                isSyncInitialized.current = true;
+              }, 500);
+            }
           }
         })
         .catch(err => {
           if (!active) return;
           console.warn('LAN Sync initial align failed (server offline):', err);
           setIsSyncConnected(false);
+          // Fallback to allow auto-saves locally even if offline
+          isSyncInitialized.current = true;
         });
     };
 
     // Run initial align
     alignAndSync();
 
-    // Setup 800ms Polling
+    // Setup 1500ms Polling
     const pollInterval = setInterval(() => {
       if (isServerUpdateInProgress.current) return;
 
@@ -641,9 +717,16 @@ export default function App() {
 
           if (data && data.lastUpdated !== undefined) {
             const localLU = getSavedState('dmforge_lastUpdated', 0);
-            if (data.clientId !== clientId.current && data.lastUpdated > localLU) {
-              console.log('LAN Sync: Polling found newer state from another device. Syncing.');
-              applyServerState(data);
+            if (appRole === 'PLAYER') {
+              if (data.lastUpdated !== localLU) {
+                console.log('LAN Sync (PLAYER): Polled server state changed. Syncing.');
+                applyServerState(data);
+              }
+            } else {
+              if (data.clientId !== clientId.current && data.lastUpdated > localLU) {
+                console.log('LAN Sync: Polling found newer state from another device. Syncing.');
+                applyServerState(data);
+              }
             }
           }
         })
@@ -652,15 +735,19 @@ export default function App() {
           console.warn('LAN Sync polling failed:', err);
           setIsSyncConnected(false);
         });
-    }, 800);
+    }, 1500);
 
     return () => {
       active = false;
       clearInterval(pollInterval);
     };
-  }, []);
+  }, [isSyncEnabled, appRole]);
 
   // --- Auto-Save Effects ---
+  useEffect(() => {
+    localStorage.setItem('dmforge_isSyncEnabled', JSON.stringify(isSyncEnabled));
+  }, [isSyncEnabled]);
+
   useEffect(() => {
     localStorage.setItem('dmforge_leftSidebarWidth', JSON.stringify(leftSidebarWidth));
   }, [leftSidebarWidth]);
@@ -678,8 +765,8 @@ export default function App() {
   }, [isRightSidebarCollapsed]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_isPlayerViewMode', JSON.stringify(isPlayerViewMode));
-  }, [isPlayerViewMode]);
+    localStorage.setItem('dmforge_appRole', JSON.stringify(appRole));
+  }, [appRole]);
 
   useEffect(() => {
     localStorage.setItem('dmforge_characters', JSON.stringify(characters));
@@ -688,6 +775,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('dmforge_itemPool', JSON.stringify(itemPool));
   }, [itemPool]);
+
+  useEffect(() => {
+    localStorage.setItem('dmforge_itemTemplates', JSON.stringify(itemTemplates));
+  }, [itemTemplates]);
 
   useEffect(() => {
     localStorage.setItem('dmforge_logs', JSON.stringify(logs));
@@ -742,6 +833,7 @@ export default function App() {
     const campaignData = {
       characters,
       itemPool,
+      itemTemplates,
       logs,
       floatingNotes,
       maps,
@@ -795,6 +887,7 @@ export default function App() {
 
         setCharacters(sanitizeCharacters(data.characters));
         setItemPool(data.itemPool || []);
+        setItemTemplates(data.itemTemplates || INITIAL_ITEM_TEMPLATES);
         setLogs(data.logs || []);
         setFloatingNotes(data.floatingNotes || []);
         setMaps(data.maps);
@@ -814,7 +907,7 @@ export default function App() {
 
         if (data.leftSidebarWidth) setLeftSidebarWidth(data.leftSidebarWidth);
         if (data.rightSidebarWidth) setRightSidebarWidth(data.rightSidebarWidth);
-        if (data.isPlayerViewMode !== undefined) setIsPlayerViewMode(data.isPlayerViewMode);
+        if (data.isPlayerViewMode !== undefined) handleSetAppRole(data.isPlayerViewMode ? 'PLAYER' : 'DM');
 
         alert('战役存档导入成功！所有角色、地图、笔记以及 Excel 角色卡均已复原。');
 
@@ -838,13 +931,14 @@ export default function App() {
       if (window.confirm('⚠️ 第二重防手误安全确认 ⚠️\n您真的确定要恢复初始的战役模版吗？')) {
         localStorage.removeItem('dmforge_characters');
         localStorage.removeItem('dmforge_itemPool');
+        localStorage.removeItem('dmforge_itemTemplates');
         localStorage.removeItem('dmforge_logs');
         localStorage.removeItem('dmforge_floatingNotes');
         localStorage.removeItem('dmforge_maps');
         localStorage.removeItem('dmforge_activeMapId');
         localStorage.removeItem('dmforge_leftSidebarWidth');
         localStorage.removeItem('dmforge_rightSidebarWidth');
-        localStorage.removeItem('dmforge_isPlayerViewMode');
+        localStorage.removeItem('dmforge_appRole');
         localStorage.removeItem('dmforge_isLeftSidebarCollapsed');
         localStorage.removeItem('dmforge_isRightSidebarCollapsed');
         localStorage.removeItem('dmforge_excelCards');
@@ -858,13 +952,14 @@ export default function App() {
 
         setCharacters(sanitizeCharacters(INITIAL_CHARACTERS));
         setItemPool(INITIAL_ITEM_POOL);
+        setItemTemplates(INITIAL_ITEM_TEMPLATES);
         setLogs(INITIAL_LOGS);
         setFloatingNotes(INITIAL_FLOATING_NOTES);
         setMaps(INITIAL_MAPS);
         setActiveMapId('map_initial_1');
         setLeftSidebarWidth(320);
         setRightSidebarWidth(320);
-        setIsPlayerViewMode(false);
+        setAppRole('DM');
         setIsLeftSidebarCollapsed(false);
         setIsRightSidebarCollapsed(false);
         setExcelCards([]);
@@ -1049,74 +1144,75 @@ export default function App() {
 
         {/* Presentation & Toggle Controls */}
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {/* DM Campaign Save controls (Hidden in player mode) */}
-          {!isPlayerViewMode && (
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', marginRight: '4px' }}>💾 战役存档:</span>
-              <button
-                onClick={handleExportCampaign}
-                className="btn btn-secondary"
-                style={{ fontSize: '11px', padding: '4px 8px', height: '26px' }}
-                title="导出整个战役推演进度为本地 JSON 文件备份存档"
-              >
-                <span>📤 导出存档</span>
-              </button>
-              
-              <label
-                className="btn btn-secondary"
-                style={{ fontSize: '11px', padding: '4px 8px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', margin: 0 }}
-                title="从外部 JSON 文件恢复导入已存战役存档"
-              >
-                <span>📥 导入存档</span>
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportCampaign}
-                  style={{ display: 'none' }}
-                />
-              </label>
-              
-              <button
-                onClick={handleResetCampaign}
-                className="btn btn-danger"
-                style={{ fontSize: '11px', padding: '4px 8px', height: '26px', background: 'rgba(239,68,68,0.2)' }}
-                title="清空本地缓存，恢复酒馆/地底初始战术模板"
-              >
-                <span>🔄 重置出厂</span>
-              </button>
-            </div>
-          )}
+
 
           {/* LAN Sync Status Indicator Pill */}
-          <div 
+          <button 
+            onClick={() => setIsSyncEnabled(!isSyncEnabled)}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 
               gap: '6px', 
-              background: isSyncConnected ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)', 
+              background: !isSyncEnabled 
+                ? 'rgba(255, 255, 255, 0.05)' 
+                : isSyncConnected 
+                  ? 'rgba(52, 211, 153, 0.12)' 
+                  : 'rgba(239, 68, 68, 0.12)', 
               padding: '4px 10px', 
               borderRadius: '20px', 
-              border: `1px solid ${isSyncConnected ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
-              boxShadow: isSyncConnected ? '0 0 8px rgba(52,211,153,0.1)' : 'none',
+              border: `1px solid ${
+                !isSyncEnabled 
+                  ? 'rgba(255, 255, 255, 0.15)' 
+                  : isSyncConnected 
+                    ? 'rgba(52, 211, 153, 0.4)' 
+                    : 'rgba(239, 68, 68, 0.4)'
+              }`,
+              boxShadow: isSyncEnabled && isSyncConnected ? '0 0 10px rgba(52, 211, 153, 0.2)' : 'none',
               transition: 'all 0.3s ease',
-              height: '28px'
+              height: '28px',
+              cursor: 'pointer',
+              outline: 'none'
             }}
-            title={isSyncConnected ? "局域网实时数据同步中，其他设备更改会秒级自动在此拉取" : "局域网服务器连接断开或处于离线模式"}
+            title={
+              !isSyncEnabled 
+                ? "局域网实时数据同步已关闭（单机离线模式，完全无网络请求消耗）。点击开启局域网同步" 
+                : isSyncConnected 
+                  ? "局域网实时数据同步开启中，其他设备更改会秒级在此拉取。点击关闭局域网同步" 
+                  : "局域网服务器连接断开或处于离线模式。点击关闭局域网同步"
+            }
           >
             <span 
-              className={isSyncConnected ? "sync-dot-active" : ""}
+              className={isSyncEnabled && isSyncConnected ? "sync-dot-active" : ""}
               style={{ 
                 width: '6px', 
                 height: '6px', 
                 borderRadius: '50%', 
-                background: isSyncConnected ? '#34d399' : '#ef4444',
+                background: !isSyncEnabled 
+                  ? '#9ca3af' 
+                  : isSyncConnected 
+                    ? '#34d399' 
+                    : '#ef4444',
                 display: 'inline-block'
               }} 
             />
-            <span style={{ fontSize: '11px', color: isSyncConnected ? '#34d399' : '#ef4444', fontWeight: '600', fontFamily: 'var(--font-heading)' }}>
-              {isSyncConnected ? '局域网云同步中' : '离线模式'}
+            <span style={{ 
+              fontSize: '11px', 
+              color: !isSyncEnabled 
+                ? '#9ca3af' 
+                : isSyncConnected 
+                  ? '#34d399' 
+                  : '#ef4444', 
+              fontWeight: '700', 
+              fontFamily: 'var(--font-heading)',
+              userSelect: 'none'
+            }}>
+              {!isSyncEnabled 
+                ? '📡 同步已关闭' 
+                : isSyncConnected 
+                  ? '📡 局域网同步中' 
+                  : '📡 同步离线模式'}
             </span>
-          </div>
+          </button>
 
           {/* Sidebar Collapse Controls (Hidden in Player View Mode) */}
           {!isPlayerViewMode && (
@@ -1174,12 +1270,22 @@ export default function App() {
           )}
 
           <button 
-            onClick={() => setIsPlayerViewMode(!isPlayerViewMode)} 
-            className={`btn ${isPlayerViewMode ? 'btn-danger' : 'btn-secondary'}`}
-            title="隐藏左右栏目并脱敏隐藏DM隐私笔记，以便将平板翻给玩家看"
+            onClick={() => setIsSettingsModalOpen(true)} 
+            className="btn btn-secondary"
+            style={{ 
+              fontSize: '11px', 
+              padding: '4px 10px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              border: '1px solid rgba(192, 132, 252, 0.3)',
+              boxShadow: '0 0 6px rgba(192, 132, 252, 0.15)',
+              height: '28px'
+            }}
+            title="打开全局战役与多端系统设置面板"
           >
-            {isPlayerViewMode ? <EyeOff size={16} /> : <Eye size={16} />}
-            <span>{isPlayerViewMode ? '退出物理展示模式' : '一键物理脱敏展示'}</span>
+            <span style={{ fontSize: '12px' }}>⚙️</span>
+            <span>系统设置</span>
           </button>
         </div>
       </header>
@@ -1258,6 +1364,7 @@ export default function App() {
                 deleteMap={deleteMap}
                 updateMap={updateMap}
                 isPlayerViewMode={isPlayerViewMode}
+                appRole={appRole}
                 isInCombat={isInCombat}
                 setIsInCombat={setIsInCombat}
                 combatRound={combatRound}
@@ -1275,6 +1382,8 @@ export default function App() {
                 characters={characters}
                 itemPool={itemPool}
                 setItemPool={setItemPool}
+                itemTemplates={itemTemplates}
+                setItemTemplates={setItemTemplates}
                 addLog={addLog}
               />
             )}
@@ -1310,6 +1419,7 @@ export default function App() {
             <div style={{ flex: 1 }}>
               <ActionLog 
                 logs={logs} 
+                setLogs={setLogs}
                 floatingNotes={floatingNotes}
                 addFloatingNote={addFloatingNote} 
                 deleteFloatingNote={deleteFloatingNote}
@@ -1818,6 +1928,239 @@ export default function App() {
             </div>
           </div>
         )}
+
+      {/* Campaign System Settings Modal */}
+      {isSettingsModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(5, 6, 10, 0.75)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999, // Over everything, including build loaders
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            background: 'var(--bg-glass)',
+            border: '1px solid rgba(192, 132, 252, 0.25)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(192, 132, 252, 0.15)',
+            borderRadius: '12px',
+            width: '560px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            color: 'var(--text-primary)',
+            position: 'relative'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>⚙️</span>
+                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, letterSpacing: '0.5px' }}>战役系统设置 (Campaign Settings)</h3>
+              </div>
+              <button 
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="btn-close" 
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  color: 'var(--text-secondary)', 
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Section 1: Page Running Role */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>🎭 页面运行角色 (Page Running Role)</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSetAppRole('DM')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: appRole === 'DM' ? '1px solid var(--accent-purple)' : '1px solid var(--border-light)',
+                    background: appRole === 'DM' ? 'rgba(192, 132, 252, 0.12)' : 'rgba(255,255,255,0.02)',
+                    boxShadow: appRole === 'DM' ? '0 0 10px rgba(192, 132, 252, 0.15)' : 'none',
+                    color: appRole === 'DM' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s ease-out'
+                  }}
+                >
+                  <span style={{ fontSize: '18px' }}>🧙</span>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold' }}>DM 掌控端 (Full Control)</span>
+                  <span style={{ fontSize: '9px', opacity: 0.75, textAlign: 'center' }}>显示所有UI面板及编辑工具，修改将实时推送到局域网</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSetAppRole('PLAYER')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: appRole === 'PLAYER' ? '1px solid var(--accent-blue)' : '1px solid var(--border-light)',
+                    background: appRole === 'PLAYER' ? 'rgba(96, 165, 250, 0.12)' : 'rgba(255,255,255,0.02)',
+                    boxShadow: appRole === 'PLAYER' ? '0 0 10px rgba(96, 165, 250, 0.15)' : 'none',
+                    color: appRole === 'PLAYER' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.2s ease-out'
+                  }}
+                >
+                  <span style={{ fontSize: '18px' }}>👥</span>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold' }}>玩家展示端 (Read-Only)</span>
+                  <span style={{ fontSize: '9px', opacity: 0.75, textAlign: 'center' }}>只读不改展示大地图，隐藏所有边栏，绝不篡改/覆写数据</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Section 1.5: Screen Control */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>🖥️ 屏幕显示控制 (Screen Display Control)</label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                      alert(`进入全屏模式失败: ${err.message}`);
+                    });
+                  } else {
+                    document.exitFullscreen();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: isFullscreen ? 'rgba(192, 132, 252, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                  border: isFullscreen ? '1px solid var(--accent-purple)' : '1px solid var(--border-light)',
+                  color: isFullscreen ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: isFullscreen ? '0 0 10px rgba(192, 132, 252, 0.15)' : 'none',
+                  transition: 'all 0.2s ease-out'
+                }}
+              >
+                <span>{isFullscreen ? '🖥️ 退出浏览器全屏模式 (Exit Fullscreen)' : '🖥️ 进入浏览器全屏模式 (Enter Fullscreen)'}</span>
+              </button>
+            </div>
+
+            {/* Section 2: LAN Sync Engine */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>📡 局域网实时云同步 (LAN Data Sync)</label>
+                <div 
+                  onClick={() => setIsSyncEnabled(!isSyncEnabled)}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '6px', 
+                    background: !isSyncEnabled ? 'rgba(255,255,255,0.05)' : isSyncConnected ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
+                    border: `1px solid ${!isSyncEnabled ? 'rgba(255,255,255,0.15)' : isSyncConnected ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSyncEnabled}
+                    onChange={() => {}}
+                    style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)' }}
+                  />
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: !isSyncEnabled ? '#9ca3af' : isSyncConnected ? '#34d399' : '#ef4444' }}>
+                    {isSyncEnabled ? '同步已开启' : '同步已禁用'}
+                  </span>
+                </div>
+              </div>
+              <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
+                {isSyncEnabled 
+                  ? '目前以 1.5 秒频率智能进行增量对比轮询（修改时 150ms 瞬时推送）。' 
+                  : '单机离线模式已激活，完全不产生后台网络请求消耗，战役数据已安全保存在本地。'}
+              </p>
+            </div>
+
+            {/* Section 3: Campaign Save Database File */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>💾 战役物理存档数据管理 (Campaign File Database)</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    setIsSettingsModalOpen(false);
+                    handleExportCampaign();
+                  }}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '11px', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', height: '32px' }}
+                  title="导出整个战役推演进度为本地 JSON 文件备份存档"
+                >
+                  <span>📤 导出战役存档</span>
+                </button>
+                
+                <label
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '11px', padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', height: '32px', margin: 0 }}
+                  title="从外部 JSON 文件恢复导入已存战役存档"
+                >
+                  <span>📥 导入外部存档</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => {
+                      setIsSettingsModalOpen(false);
+                      handleImportCampaign(e);
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                <button
+                  onClick={() => {
+                    setIsSettingsModalOpen(false);
+                    handleResetCampaign();
+                  }}
+                  className="btn btn-danger"
+                  style={{ flex: '1 1 100%', fontSize: '11px', padding: '8px 12px', height: '32px', background: 'rgba(239,68,68,0.15)' }}
+                  title="清空本地缓存，恢复酒馆/地底初始战术模板"
+                >
+                  <span>🔄 恢复出厂设置 (还原预设初始数据)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Footer info */}
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', textAlign: 'center', borderTop: '1px solid var(--border-light)', paddingTop: '12px', marginTop: '4px' }}>
+              DMForge Campaign Assistant v1.0.0 • ClientID: {clientId.current.substring(0, 8)}...
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

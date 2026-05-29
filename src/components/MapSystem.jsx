@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2 } from 'lucide-react';
+import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2, Scissors } from 'lucide-react';
 
 // A* Pathfinding algorithm for 8-directional shortest path on tactical grids
 function findShortestPath(startX, startY, endX, endY, mapWidth, mapHeight, isBlocked, isDifficult) {
@@ -104,6 +104,7 @@ export default function MapSystem({
   deleteMap,
   updateMap,
   isPlayerViewMode = false,
+  appRole = 'DM',
   isInCombat = false,
   setIsInCombat,
   combatRound = 1,
@@ -144,6 +145,13 @@ export default function MapSystem({
     const nextAreas = typeof updater === 'function' ? updater(terrainAreas) : updater;
     updateMap(activeMap.id, { terrainAreas: nextAreas });
   };
+
+  // Box selection states for blocked cells (Declared high up to prevent TDZ reference issues in useEffect)
+  const [selectionBox, setSelectionBox] = useState(null); // { startX, startY, endX, endY }
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [isDraggingSelection, setIsDraggingSelection] = useState(false);
+  const [dragStartCell, setDragStartCell] = useState(null); // { x, y }
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); // { x: dx, y: dy }
 
   const [selectedTokenId, setSelectedTokenId] = useState(null);
   const [hoveredTokenId, setHoveredTokenId] = useState(null);
@@ -198,6 +206,17 @@ export default function MapSystem({
       const cy = parseInt(yStr, 10);
       if (cx >= mapWidth || cy >= mapHeight) return;
       
+      // If we are currently dragging a selection box, hide the original blocked cells inside it from the canvas
+      if (isDraggingSelection && selectionBox) {
+        const minX = Math.min(selectionBox.startX, selectionBox.endX);
+        const maxX = Math.max(selectionBox.startX, selectionBox.endX);
+        const minY = Math.min(selectionBox.startY, selectionBox.endY);
+        const maxY = Math.max(selectionBox.startY, selectionBox.endY);
+        if (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY) {
+          return;
+        }
+      }
+
       const x = cx * gridSize;
       const y = cy * gridSize;
       
@@ -228,7 +247,7 @@ export default function MapSystem({
       }
       ctx.restore();
     });
-  }, [blockedCells, gridSize, mapWidth, mapHeight]);
+  }, [blockedCells, gridSize, mapWidth, mapHeight, selectionBox, isDraggingSelection]);
 
   // Token dragging real-time measurement states
   const [draggedToken, setDraggedToken] = useState(null); // { id, startX, startY, name }
@@ -236,10 +255,12 @@ export default function MapSystem({
 
   // Terrain editing states
   const [isTerrainEditMode, setIsTerrainEditMode] = useState(false);
-  const [terrainEditTool, setTerrainEditTool] = useState('select'); // paint_block, paint_erase, select
+  const [terrainEditTool, setTerrainEditTool] = useState('select'); // paint_block, paint_erase, select, box_select
   const [isPainting, setIsPainting] = useState(false);
   const [editingAreaId, setEditingAreaId] = useState(null);
   const [defaultImpassable, setDefaultImpassable] = useState(false);
+
+
 
   // Turn-based Combat Local UI states
   const [showInitiativePrep, setShowInitiativePrep] = useState(false);
@@ -261,6 +282,10 @@ export default function MapSystem({
   const unplacedPCs = characters.filter(char => char.type === 'PC' && char.mapId !== activeMapId);
 
   const handleTokenDragStart = (e, tokenId) => {
+    if (appRole === 'PLAYER') {
+      e.preventDefault();
+      return;
+    }
     // If we're painting, don't drag tokens
     if (isTerrainEditMode && terrainEditTool !== 'select') {
       e.preventDefault();
@@ -318,6 +343,7 @@ export default function MapSystem({
 
   const handleDrop = (e) => {
     e.preventDefault();
+    if (appRole === 'PLAYER') return;
     setDraggedToken(null);
     setDragHoverCoords(null);
     const tokenId = e.dataTransfer.getData('text/plain');
@@ -539,6 +565,7 @@ export default function MapSystem({
 
   // Direct dragging of terrain areas (snapped to 1ft grids, zoom-compensated)
   const handleTerrainDragStart = (e, area) => {
+    if (appRole === 'PLAYER') return;
     if (!isTerrainEditMode || terrainEditTool !== 'select') return;
     
     // Do not drag if clicking resize handle
@@ -586,6 +613,7 @@ export default function MapSystem({
 
   // Resizing rectangle terrain areas (width and height snapped to ft)
   const handleRectResizeStart = (e, area) => {
+    if (appRole === 'PLAYER') return;
     if (!isTerrainEditMode || terrainEditTool !== 'select') return;
     e.stopPropagation();
     e.preventDefault();
@@ -627,6 +655,7 @@ export default function MapSystem({
 
   // Resizing circular terrain areas (radius snapped to ft)
   const handleCircleResizeStart = (e, area) => {
+    if (appRole === 'PLAYER') return;
     if (!isTerrainEditMode || terrainEditTool !== 'select') return;
     e.stopPropagation();
     e.preventDefault();
@@ -660,10 +689,11 @@ export default function MapSystem({
 
   // Brush Painting functions
   const handleMapMouseDown = (e) => {
+    if (appRole === 'PLAYER') return;
     if (!isTerrainEditMode) return;
     
     // Ignore clicks on token handles or form inputs
-    if (e.target.closest('.token-node') || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') {
+    if (e.target.closest('.token-node') || e.target.closest('.terrain-resize-handle') || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') {
       return;
     }
 
@@ -673,20 +703,128 @@ export default function MapSystem({
       lastPaintedCellRef.current = null;
       setIsPainting(true);
       paintCellAtMouse(e);
+    } else if (terrainEditTool === 'box_select') {
+      e.preventDefault();
+      
+      const rect = containerRef.current.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) / scale;
+      const clickY = (e.clientY - rect.top) / scale;
+      const gridX = Math.floor(clickX / gridSize);
+      const gridY = Math.floor(clickY / gridSize);
+      
+      // Check if clicking inside an existing selection box to drag/move it!
+      const isInside = selectionBox && 
+        gridX >= Math.min(selectionBox.startX, selectionBox.endX) && 
+        gridX <= Math.max(selectionBox.startX, selectionBox.endX) && 
+        gridY >= Math.min(selectionBox.startY, selectionBox.endY) && 
+        gridY <= Math.max(selectionBox.startY, selectionBox.endY);
+        
+      if (isInside) {
+        setIsDraggingSelection(true);
+        setDragStartCell({ x: gridX, y: gridY });
+        setDragOffset({ x: 0, y: 0 });
+      } else {
+        // Drawing a new selection box
+        setIsSelecting(true);
+        setSelectionBox({ startX: gridX, startY: gridY, endX: gridX, endY: gridY });
+        setDragOffset({ x: 0, y: 0 });
+      }
     }
   };
 
   const handleMapMouseMove = (e) => {
-    if (!isTerrainEditMode || !isPainting) return;
-    paintCellAtMouse(e);
+    if (!isTerrainEditMode) return;
+    
+    if (isPainting && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase')) {
+      paintCellAtMouse(e);
+    } else if (terrainEditTool === 'box_select') {
+      const rect = containerRef.current.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) / scale;
+      const clickY = (e.clientY - rect.top) / scale;
+      const gridX = Math.floor(clickX / gridSize);
+      const gridY = Math.floor(clickY / gridSize);
+      
+      if (isSelecting) {
+        setSelectionBox(prev => prev ? { ...prev, endX: gridX, endY: gridY } : null);
+      } else if (isDraggingSelection && dragStartCell) {
+        const dx = gridX - dragStartCell.x;
+        const dy = gridY - dragStartCell.y;
+        setDragOffset({ x: dx, y: dy });
+      }
+    }
   };
 
   const handleMapMouseUp = () => {
     setIsPainting(false);
+    
+    if (terrainEditTool === 'box_select') {
+      if (isSelecting) {
+        setIsSelecting(false);
+        // If selection size is 0 (just a click), clear the selectionBox!
+        if (selectionBox && selectionBox.startX === selectionBox.endX && selectionBox.startY === selectionBox.endY) {
+          setSelectionBox(null);
+        }
+      } else if (isDraggingSelection) {
+        setIsDraggingSelection(false);
+        if (dragStartCell && (dragOffset.x !== 0 || dragOffset.y !== 0)) {
+          // Push history for undo support!
+          pushToHistory();
+          
+          // Move the blocked cells inside the selection!
+          setBlockedCells(prev => {
+            const next = { ...prev };
+            const cellsToMove = [];
+            
+            const minX = Math.min(selectionBox.startX, selectionBox.endX);
+            const maxX = Math.max(selectionBox.startX, selectionBox.endX);
+            const minY = Math.min(selectionBox.startY, selectionBox.endY);
+            const maxY = Math.max(selectionBox.startY, selectionBox.endY);
+            
+            // Collect cells to move and delete their old keys
+            Object.keys(next).forEach(key => {
+              const [xs, ys] = key.split('_');
+              const x = parseInt(xs, 10);
+              const y = parseInt(ys, 10);
+              if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                cellsToMove.push({ x, y });
+                delete next[key];
+              }
+            });
+            
+            // Insert cells at the new offsetted positions
+            cellsToMove.forEach(cell => {
+              const newX = cell.x + dragOffset.x;
+              const newY = cell.y + dragOffset.y;
+              if (newX >= 0 && newX < mapWidth && newY >= 0 && newY < mapHeight) {
+                next[`${newX}_${newY}`] = true;
+              }
+            });
+            
+            return next;
+          });
+          
+          // Shift the selectionBox coordinates as well so it stays with the cells!
+          setSelectionBox(prev => prev ? {
+            startX: prev.startX + dragOffset.x,
+            startY: prev.startY + dragOffset.y,
+            endX: prev.endX + dragOffset.x,
+            endY: prev.endY + dragOffset.y
+          } : null);
+        }
+        setDragStartCell(null);
+        setDragOffset({ x: 0, y: 0 });
+      }
+    }
   };
 
   const handleMapMouseLeave = () => {
     setIsPainting(false);
+    if (terrainEditTool === 'box_select') {
+      setIsSelecting(false);
+      setIsDraggingSelection(false);
+      setDragStartCell(null);
+      setDragOffset({ x: 0, y: 0 });
+    }
   };
 
   const handleMapClick = (e) => {
@@ -1569,7 +1707,78 @@ export default function MapSystem({
                 <Compass size={11} />
                 <span>🖐️ 漫游与拖拽地形</span>
               </button>
+              <button
+                onClick={() => {
+                  setTerrainEditTool('box_select');
+                  setSelectionBox(null);
+                }}
+                className={`btn ${terrainEditTool === 'box_select' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="框选区域模式（在地图上拖拽出选区，框内阻挡格可进行平移或消除）"
+              >
+                <Scissors size={11} />
+                <span>✂️ 区域选择/框选阻挡</span>
+              </button>
             </div>
+
+            {terrainEditTool === 'box_select' && selectionBox && (
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(168, 85, 247, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(168, 85, 247, 0.25)' }}>
+                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>已框选区域:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Push to history for undo
+                    pushToHistory();
+                    
+                    // Delete all blocked cells in the selection box
+                    setBlockedCells(prev => {
+                      const next = { ...prev };
+                      const minX = Math.min(selectionBox.startX, selectionBox.endX);
+                      const maxX = Math.max(selectionBox.startX, selectionBox.endX);
+                      const minY = Math.min(selectionBox.startY, selectionBox.endY);
+                      const maxY = Math.max(selectionBox.startY, selectionBox.endY);
+                      
+                      Object.keys(next).forEach(key => {
+                        const [xs, ys] = key.split('_');
+                        const x = parseInt(xs, 10);
+                        const y = parseInt(ys, 10);
+                        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                          delete next[key];
+                        }
+                      });
+                      return next;
+                    });
+                    setSelectionBox(null);
+                  }}
+                  className="btn"
+                  style={{ 
+                    padding: '2px 8px', 
+                    fontSize: '11px', 
+                    height: '22px', 
+                    borderRadius: '4px', 
+                    background: 'rgba(239, 68, 68, 0.15)', 
+                    border: '1px solid rgba(239, 68, 68, 0.3)', 
+                    color: 'var(--accent-red)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="删除框选区域内的所有实体阻挡格"
+                >
+                  <Trash2 size={11} />
+                  <span>🗑️ 消除框内阻挡</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectionBox(null)}
+                  className="btn btn-secondary"
+                  style={{ padding: '2px 8px', fontSize: '11px', height: '22px', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  取消框选
+                </button>
+              </div>
+            )}
 
             <div style={{ width: '1px', height: '16px', background: 'var(--border-light)' }} />
 
@@ -2152,7 +2361,7 @@ export default function MapSystem({
           maxScale={4}
           onTransformed={handleTransform}
           onZoom={handleTransform}
-          panning={{ disabled: isTerrainEditMode && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase') }}
+          panning={{ disabled: isTerrainEditMode && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase' || terrainEditTool === 'box_select') }}
           wheel={{ step: 0.05 }}
           smooth={false}
           limitToBounds={false}
@@ -2222,6 +2431,96 @@ export default function MapSystem({
                       zIndex: 1
                     }}
                   />
+
+                  {/* Render selection box and real-time drag translation preview */}
+                  {selectionBox && (
+                    (() => {
+                      const minX = Math.min(selectionBox.startX, selectionBox.endX);
+                      const maxX = Math.max(selectionBox.startX, selectionBox.endX);
+                      const minY = Math.min(selectionBox.startY, selectionBox.endY);
+                      const maxY = Math.max(selectionBox.startY, selectionBox.endY);
+                      
+                      const displayLeft = (minX + (isDraggingSelection ? dragOffset.x : 0)) * gridSize;
+                      const displayTop = (minY + (isDraggingSelection ? dragOffset.y : 0)) * gridSize;
+                      const displayWidth = (maxX - minX + 1) * gridSize;
+                      const displayHeight = (maxY - minY + 1) * gridSize;
+                      
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${displayLeft}px`,
+                            top: `${displayTop}px`,
+                            width: `${displayWidth}px`,
+                            height: `${displayHeight}px`,
+                            border: '2px dashed var(--accent-purple)',
+                            background: 'rgba(168, 85, 247, 0.08)',
+                            boxShadow: '0 0 12px rgba(168, 85, 247, 0.4), inset 0 0 6px rgba(168, 85, 247, 0.2)',
+                            pointerEvents: 'none',
+                            zIndex: 3
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute',
+                            top: '-20px',
+                            left: 0,
+                            background: 'rgba(20,20,25,0.85)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: '4px',
+                            padding: '2px 6px',
+                            fontSize: '10px',
+                            color: 'var(--accent-purple)',
+                            whiteSpace: 'nowrap',
+                            pointerEvents: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
+                          }}>
+                            <span>✥ 按住框选区可拖动平移</span>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+
+                  {/* Real-time dragging cells translation preview pattern */}
+                  {isDraggingSelection && selectionBox && (
+                    (() => {
+                      const minX = Math.min(selectionBox.startX, selectionBox.endX);
+                      const maxX = Math.max(selectionBox.startX, selectionBox.endX);
+                      const minY = Math.min(selectionBox.startY, selectionBox.endY);
+                      const maxY = Math.max(selectionBox.startY, selectionBox.endY);
+                      
+                      const previewCells = [];
+                      Object.keys(blockedCells).forEach(key => {
+                        const [xs, ys] = key.split('_');
+                        const x = parseInt(xs, 10);
+                        const y = parseInt(ys, 10);
+                        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                          previewCells.push({ x, y });
+                        }
+                      });
+                      
+                      return previewCells.map((cell, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            position: 'absolute',
+                            left: `${(cell.x + dragOffset.x) * gridSize}px`,
+                            top: `${(cell.y + dragOffset.y) * gridSize}px`,
+                            width: `${gridSize}px`,
+                            height: `${gridSize}px`,
+                            background: 'repeating-linear-gradient(45deg, rgba(168, 85, 247, 0.3), rgba(168, 85, 247, 0.3) 4px, rgba(239, 68, 68, 0.3) 4px, rgba(239, 68, 68, 0.3) 8px)',
+                            border: '1px solid var(--accent-purple)',
+                            boxShadow: '0 0 8px rgba(168, 85, 247, 0.5)',
+                            pointerEvents: 'none',
+                            zIndex: 2
+                          }}
+                        />
+                      ));
+                    })()
+                  )}
 
                   {/* Render Custom Vector Hazard Regions */}
                   {visibleTerrains.map(area => {
@@ -2611,7 +2910,7 @@ export default function MapSystem({
         </TransformWrapper>
 
         {/* Selected Token Floating Interaction Panel */}
-        {selectedTokenObj && (
+        {selectedTokenObj && appRole !== 'PLAYER' && (
           <div 
             style={{
               position: 'absolute',
