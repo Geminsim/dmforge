@@ -517,13 +517,13 @@ export default function ExcelImporter({
     // Safety limit of 2MB to protect LocalStorage quota limits
     const extension = file.name.split('.').pop()?.toLowerCase();
     if (!extension || !ALLOWED_EXCEL_EXTENSIONS.has(extension)) {
-      alert('⚠️ 上传失败\n仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
+      alert('上传失败\n仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
       e.target.value = '';
       return;
     }
 
     if (file.size > MAX_EXCEL_FILE_BYTES) {
-      alert('⚠️ 上传失败\n为了保证本地存盘性能与浏览器流畅度，角色卡文件大小不能超过 2MB。请裁剪或精简您的 Excel 表格。');
+      alert('上传失败\n为了保证本地存盘性能与浏览器流畅度，角色卡文件大小不能超过 2MB。请裁剪或精简您的 Excel 表格。');
       e.target.value = '';
       return;
     }
@@ -554,7 +554,7 @@ export default function ExcelImporter({
           setActiveExcelCardId(newCard.id);
           addLog?.({
             type: 'SYSTEM',
-            content: `📊 **成功载入 Excel 角色卡**: [${file.name}]，包含 ${tempWb.SheetNames.length} 个工作表。已在隔离进程中解析。`,
+            content: `**成功载入 Excel 角色卡**: [${file.name}]，包含 ${tempWb.SheetNames.length} 个工作表。已在隔离进程中解析。`,
             timestamp: new Date().toLocaleTimeString()
           });
         } catch (readErr) {
@@ -562,7 +562,7 @@ export default function ExcelImporter({
         }
       } catch (err) {
         console.error('Import failed:', err);
-        alert(`❌ 导入角色卡失败:\n${err.message || '未知文件读取错误'}`);
+        alert(`导入角色卡失败:\n${err.message ||'未知文件读取错误'}`);
       }
     };
     reader.readAsDataURL(file); // Native, extremely fast base64 reader
@@ -607,7 +607,7 @@ export default function ExcelImporter({
             if (addLog) {
               addLog({
                 type: 'SYSTEM',
-                content: `📖 **成功批量载入 JSON 规则书**: [${file.name}]，共导入 ${newNotes.length} 条参考条目。`,
+                content: `**成功批量载入 JSON 规则书**: [${file.name}]，共导入 ${newNotes.length} 条参考条目。`,
                 timestamp: new Date().toLocaleTimeString()
               });
             }
@@ -629,7 +629,7 @@ export default function ExcelImporter({
             if (addLog) {
               addLog({
                 type: 'SYSTEM',
-                content: `📖 **成功载入 JSON 规则书**: [${file.name}]。已创建悬浮窗参考笔记。`,
+                content: `**成功载入 JSON 规则书**: [${file.name}]。已创建悬浮窗参考笔记。`,
                 timestamp: new Date().toLocaleTimeString()
               });
             }
@@ -657,7 +657,7 @@ export default function ExcelImporter({
             const maxRow = range.e.r;
             const maxCol = range.e.c;
             
-            let sheetText = `\n### 📋 工作表: [${sheetName}]\n`;
+ let sheetText =`\n### 工作表: [${sheetName}]\n`;
             
             for (let r = 0; r <= maxRow; r++) {
               const rowValues = [];
@@ -685,7 +685,7 @@ export default function ExcelImporter({
           const newNote = {
             id: 'note_rule_' + Date.now(),
             title: file.name.replace(/\.[^/.]+$/, ""),
-            content: `📖 规则表: [${file.name}]\n` + combinedText.trim(),
+            content: `规则表: [${file.name}]\n`+ combinedText.trim(),
             x: 120 + (floatingNotes.length * 30) % 210,
             y: 120 + (floatingNotes.length * 30) % 210,
             color: 'emerald',
@@ -701,13 +701,13 @@ export default function ExcelImporter({
           if (addLog) {
             addLog({
               type: 'SYSTEM',
-              content: `📖 **成功转化导入 Excel 规则表**: [${file.name}]，已重载转换为文本对照表。`,
+              content: `**成功转化导入 Excel 规则表**: [${file.name}]，已重载转换为文本对照表。`,
               timestamp: new Date().toLocaleTimeString()
             });
           }
         } catch (err) {
           console.error(err);
-          alert(`❌ 导入规则表失败:\n${err.message || '未知文件读取错误'}`);
+          alert(`导入规则表失败:\n${err.message ||'未知文件读取错误'}`);
         }
       };
       reader.readAsDataURL(file);
@@ -735,7 +735,7 @@ export default function ExcelImporter({
         if (addLog) {
           addLog({
             type: 'SYSTEM',
-            content: `📖 **成功载入文本规则书**: [${file.name}]，共 ${text.length} 个字符。已创建悬浮窗参考笔记。`,
+            content: `**成功载入文本规则书**: [${file.name}]，共 ${text.length} 个字符。已创建悬浮窗参考笔记。`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -747,7 +747,7 @@ export default function ExcelImporter({
 
   const handleDeleteCard = (e, id, name) => {
     e.stopPropagation(); // Avoid activating the card upon deletion click
-    if (window.confirm(`🚨 删除确认 🚨\n确定要永久从战役中删除已导入的玩家 Excel 角色卡 [${name}] 吗？`)) {
+    if (window.confirm(`删除确认\n确定要永久从战役中删除已导入的玩家 Excel 角色卡 [${name}] 吗？`)) {
       setExcelCards(prev => {
         const remaining = prev.filter(c => c.id !== id);
         if (activeExcelCardId === id) {
@@ -759,7 +759,7 @@ export default function ExcelImporter({
       if (addLog) {
         addLog({
           type: 'SYSTEM',
-          content: `🗑️ **已移除 Excel 角色卡**: [${name}]。`,
+          content: `**已移除 Excel 角色卡**: [${name}]。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -781,13 +781,13 @@ export default function ExcelImporter({
           borderRight: 'var(--border-hairline)'
         }}
       >
-        <SideKey code="Sheets" title="已导入角色卡" count={excelCards.length} />
+        <SideKey code="Sheets" title= "已导入角色卡" count={excelCards.length} />
         <div style={{ padding: 'var(--space-3)' }}>
           <UploadLabel
             accept=".xlsx, .xls"
             onChange={handleFileChange}
             icon="file-xls"
-            title="导入 .xlsx / .xls 玩家角色卡（单文件最大 2MB，最多 50 个工作表）"
+            title= "导入 .xlsx / .xls 玩家角色卡（单文件最大 2MB，最多 50 个工作表）"
           >
             导入 Excel 角色卡
           </UploadLabel>
@@ -795,7 +795,7 @@ export default function ExcelImporter({
 
         <div className="no-scrollbar" style={{ maxHeight: 220, overflowY: 'auto', padding: '0 var(--space-3) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {excelCards.length === 0 ? (
-            <EmptyState compact icon="file-plus" text="暂无导入的角色卡" />
+            <EmptyState compact icon="file-plus" text= "暂无导入的角色卡" />
           ) : (
             excelCards.map(card => {
               const isActive = card.id === activeExcelCardId;
@@ -830,7 +830,7 @@ export default function ExcelImporter({
                       size="sm"
                       tone="danger"
                       onClick={(e) => handleDeleteCard(e, card.id, card.filename)}
-                      title="彻底从本战役中移除此角色卡"
+                      title= "彻底从本战役中移除此角色卡"
                     />
                   </span>
                 </div>
@@ -839,13 +839,13 @@ export default function ExcelImporter({
           )}
         </div>
 
-        <SideKey code="Rulebooks" title="已导入规则书" count={rulebooks.length} tone="verdigris" />
+        <SideKey code="Rulebooks" title= "已导入规则书" count={rulebooks.length} tone="verdigris" />
         <div style={{ padding: 'var(--space-3)' }}>
           <UploadLabel
             accept=".txt, .md, .json, .xlsx, .xls"
             onChange={handleRulebookFileChange}
             icon="book-open-text"
-            title="导入 TXT / MD / JSON 纯文本，或把 Excel 规则表自动解析为文本规则书"
+            title= "导入 TXT / MD / JSON 纯文本，或把 Excel 规则表自动解析为文本规则书"
           >
             导入规则书
           </UploadLabel>
@@ -853,7 +853,7 @@ export default function ExcelImporter({
 
         <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 var(--space-3) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {rulebooks.length === 0 ? (
-            <EmptyState compact icon="book-open-text" text="暂无已上传的规则书" hint="可点击上方导入规则书。" />
+            <EmptyState compact icon="book-open-text" text= "暂无已上传的规则书" hint= "可点击上方导入规则书。" />
           ) : (
             rulebooks.map(note => {
               const isActive = note.id === activeExcelCardId;
@@ -894,7 +894,7 @@ export default function ExcelImporter({
                       icon="trash"
                       size="sm"
                       tone="danger"
-                      title="永久删除规则书"
+                      title= "永久删除规则书"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (window.confirm(`确定要永久从战役中删除此规则书 [${note.title}] 吗？`)) {
@@ -926,7 +926,7 @@ export default function ExcelImporter({
                 accept=".xlsx, .xls"
                 onChange={handleFileChange}
                 icon="file-xls"
-                title="导入 Excel 玩家角色卡"
+                title= "导入 Excel 玩家角色卡"
                 body="一键还原并复刻玩家的 .xlsx 电子表格，支持合并单元格与多工作表 Sheets 快速检索。"
                 note="支持标准 Excel 格式，单文件最大 2MB"
               />
@@ -935,7 +935,7 @@ export default function ExcelImporter({
                 accept=".txt, .md, .json, .xlsx, .xls"
                 onChange={handleRulebookFileChange}
                 icon="book-open-text"
-                title="导入游戏规则书 / 设定集"
+                title= "导入游戏规则书 / 设定集"
                 body="支持 TXT、MD、JSON 纯文本或把 Excel 规则表自动解析成文本，以便随时悬浮查阅。"
                 note="支持 TXT / MD / JSON / XLSX"
               />
@@ -952,8 +952,8 @@ export default function ExcelImporter({
                 type="text"
                 value={selectedRuleNote.title}
                 onChange={(e) => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { title: e.target.value })}
-                title="点击可直接重命名规则书"
-                placeholder="规则书标题..."
+                title= "点击可直接重命名规则书"
+                placeholder= "规则书标题..."
                 style={{
                   width: 220,
                   background: 'transparent',
@@ -978,16 +978,16 @@ export default function ExcelImporter({
               </Button>
               <ToolbarDivider />
               <ToolbarLabel>Size</ToolbarLabel>
-              <IconButton icon="minus" size="sm" onClick={() => setFontSize(prev => Math.max(10, prev - 1))} title="减小字号" />
+              <IconButton icon="minus" size="sm" onClick={() => setFontSize(prev => Math.max(10, prev - 1))} title= "减小字号" />
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', minWidth: 30, textAlign: 'center' }}>{fontSize}px</span>
-              <IconButton icon="plus" size="sm" onClick={() => setFontSize(prev => Math.min(24, prev + 1))} title="增大字号" />
-              <IconButton icon="arrow-counter-clockwise" size="sm" onClick={() => setFontSize(14)} title="默认字号 (14px)" />
+              <IconButton icon="plus" size="sm" onClick={() => setFontSize(prev => Math.min(24, prev + 1))} title= "增大字号" />
+              <IconButton icon="arrow-counter-clockwise" size="sm" onClick={() => setFontSize(14)} title= "默认字号 (14px)" />
               <span style={{ flex: 1 }} />
               <Button
                 size="sm"
                 variant="secondary"
                 icon={copySuccess ? 'check' : 'copy'}
-                title="复制规则书全文到剪贴板"
+                title= "复制规则书全文到剪贴板"
                 onClick={() => {
                   navigator.clipboard.writeText(selectedRuleNote.content || '');
                   setCopySuccess(true);
@@ -1011,11 +1011,11 @@ export default function ExcelImporter({
               <TextInput
                 size="sm"
                 icon="magnifying-glass"
-                placeholder="输入关键字进行高亮检索..."
+                placeholder= "输入关键字进行高亮检索..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              {searchQuery && <Button size="sm" variant="secondary" icon="x" onClick={() => setSearchQuery('')} title="清空搜索" />}
+              {searchQuery && <Button size="sm" variant="secondary" icon="x" onClick={() => setSearchQuery('')} title= "清空搜索" />}
             </div>
 
             <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--space-7)' }}>
@@ -1023,7 +1023,7 @@ export default function ExcelImporter({
                 <textarea
                   value={selectedRuleNote.content}
                   onChange={(e) => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { content: e.target.value })}
-                  placeholder="输入规则、法术列表、判定公式或备忘录细节..."
+                  placeholder= "输入规则、法术列表、判定公式或备忘录细节..."
                   style={{
                     width: '100%',
                     height: '100%',
@@ -1067,12 +1067,12 @@ export default function ExcelImporter({
                 <TextInput
                   size="sm"
                   icon="magnifying-glass"
-                  placeholder="输入关键字进行高亮检索..."
+                  placeholder= "输入关键字进行高亮检索..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </span>
-              {searchQuery && <IconButton icon="x" size="sm" onClick={() => setSearchQuery('')} title="清空搜索" />}
+              {searchQuery && <IconButton icon="x" size="sm" onClick={() => setSearchQuery('')} title= "清空搜索" />}
             </Toolbar>
 
             <div className="no-scrollbar" style={{ flexShrink: 0, overflowX: 'auto' }}>
@@ -1113,7 +1113,7 @@ export default function ExcelImporter({
                     size="sm"
                     variant="secondary"
                     icon="arrow-counter-clockwise"
-                    title="重新解析这份表格"
+                    title= "重新解析这份表格"
                     onClick={() => {
                       const temp = activeExcelCardId;
                       setActiveExcelCardId('');
@@ -1124,11 +1124,11 @@ export default function ExcelImporter({
                   </Button>
                 </div>
               ) : !parsedSheets ? (
-                <EmptyState icon="hourglass-medium" text="正在解析表格结构并复现合并单元格，请稍候…" />
+                <EmptyState icon="hourglass-medium" text= "正在解析表格结构并复现合并单元格，请稍候…" />
               ) : (() => {
                 const sheetData = parsedSheets[activeSheetName];
                 if (!sheetData || !sheetData.cells || sheetData.cells.length === 0) {
-                  return <EmptyState icon="table" text="此工作表为空或解析失败" />;
+                  return <EmptyState icon="table" text= "此工作表为空或解析失败" />;
                 }
                 return (
                   <table

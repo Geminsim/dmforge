@@ -146,7 +146,7 @@ export default function SettingsModal({
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <SectionKey code="ATTRS">六维核心属性自定义更名</SectionKey>
         <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)' }}>
-          您可以重命名六个核心属性的显示名称（如：力量 ➔ 体魄，敏捷 ➔ 反射等）。底层数据键名保持不变，完美兼容已有历史存档与导入数据。
+          您可以重命名六个核心属性的显示名称（如：力量 → 体魄，敏捷 → 反射等）。底层数据键名保持不变，完美兼容已有历史存档与导入数据。
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
           {Object.entries(customAttributeLabels).map(([originalKey, customVal]) => (

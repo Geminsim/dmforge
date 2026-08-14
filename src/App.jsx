@@ -143,7 +143,7 @@ const INITIAL_ITEM_POOL = [
 const INITIAL_LOGS = [
   {
     type: 'SYSTEM',
-    content: '🚀 **DMForge 战役辅助系统** 已成功初始化。',
+    content: '**DMForge 战役辅助系统** 已成功初始化。',
     timestamp: new Date().toLocaleTimeString()
   }
 ];
@@ -517,7 +517,7 @@ export default function App() {
 
     addLog({
       type: 'COMBAT',
-      content: `⏳ **战役短休**: 角色 [${restingNames.join(', ')}] 完成了短休整顿，生命值恢复 50%，并充能重置了短休和回合技能资源槽！`,
+      content: `**战役短休**: 角色 [${restingNames.join(',')}] 完成了短休整顿，生命值恢复 50%，并充能重置了短休和回合技能资源槽！`,
       timestamp: new Date().toLocaleTimeString()
     });
   };
@@ -550,7 +550,7 @@ export default function App() {
 
     addLog({
       type: 'COMBAT',
-      content: `💤 **战役长休**: 角色 [${restingNames.join(', ')}] 完成了长休整顿！生命恢复 100%，所有资源槽满额重载，且身上的特殊状态与移动限制已完全清除！`,
+      content: `**战役长休**: 角色 [${restingNames.join(',')}] 完成了长休整顿！生命恢复 100%，所有资源槽满额重载，且身上的特殊状态与移动限制已完全清除！`,
       timestamp: new Date().toLocaleTimeString()
     });
   };
@@ -1028,7 +1028,7 @@ export default function App() {
 
     addLog({
       type: 'SYSTEM',
-      content: '📤 **导出战役存档成功**！您已顺利下载物理备份 JSON 文件（含已导入的玩家 Excel 角色卡）。',
+      content: '**导出战役存档成功**！您已顺利下载物理备份 JSON 文件（含已导入的玩家 Excel 角色卡）。',
       timestamp: new Date().toLocaleTimeString()
     });
   };
@@ -1081,7 +1081,7 @@ export default function App() {
 
         addLog({
           type: 'SYSTEM',
-          content: '📥 **成功导入外部战役存档**！所有战场数据、备考日志及 Excel 玩家卡已完美复原。',
+          content: '**成功导入外部战役存档**！所有战场数据、备考日志及 Excel 玩家卡已完美复原。',
           timestamp: new Date().toLocaleTimeString()
         });
 
@@ -1190,8 +1190,8 @@ export default function App() {
   };
 
   const handleResetCampaign = async () => {
-    if (window.confirm('🚨 危险警告 🚨\n确定要将当前推演进度恢复为“出厂设置”吗？\n当前内容会先保存为本机恢复点，随后重置地图、角色、Excel 看板和日志。')) {
-      if (window.confirm('⚠️ 第二重防手误安全确认 ⚠️\n您真的确定要恢复初始的战役模版吗？')) {
+    if (window.confirm('危险警告\n确定要将当前推演进度恢复为“出厂设置”吗？\n当前内容会先保存为本机恢复点，随后重置地图、角色、Excel 看板和日志。')) {
+      if (window.confirm('第二重防手误安全确认\n您真的确定要恢复初始的战役模版吗？')) {
         try {
           await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '恢复出厂设置前版本');
         } catch (error) {
@@ -1331,7 +1331,7 @@ export default function App() {
 
     addLog({
       type: 'COMBAT',
-      content: `👥 **复制角色**: 成功克隆了角色 [${char.name}] -> **[${newName}]**`,
+      content: `**复制角色**: 成功克隆了角色 [${char.name}] -> **[${newName}]**`,
       timestamp: new Date().toLocaleTimeString()
     });
   }, [addLog]);
@@ -1572,7 +1572,7 @@ export default function App() {
           </aside>
         )}
 
-        {showLeftSidebar && <ResizeHandle onMouseDown={handleLeftMouseDown} title="拖拽调整左侧栏宽度" />}
+        {showLeftSidebar && <ResizeHandle onMouseDown={handleLeftMouseDown} title= "拖拽调整左侧栏宽度" />}
 
         <CampaignWorkspace {...{
           currentTab, setCurrentTab, isPlayerViewMode, appRole, characters, setCharacters,
@@ -1586,7 +1586,7 @@ export default function App() {
           onPresentationInteractionChange: setPresentationInteraction
         }} />
 
-        {showRightRail && <ResizeHandle onMouseDown={handleRightMouseDown} title="拖拽调整右侧栏宽度" />}
+        {showRightRail && <ResizeHandle onMouseDown={handleRightMouseDown} title= "拖拽调整右侧栏宽度" />}
 
         {showRightRail && (
           <aside

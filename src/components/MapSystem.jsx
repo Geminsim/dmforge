@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
-import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2, Scissors, Copy } from 'lucide-react';
+import {
+  Button, IconButton, TextInput, Select, Checkbox, Badge, StatPill, Meter,
+  ResourceSlot, MapToken, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState, Modal
+} from '../ds';
 import { findShortestPath } from '../utils/pathfinding';
 import { advanceCombatTurn, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
 
@@ -187,6 +190,9 @@ export default function MapSystem({
 
   // Turn-based Combat Local UI states
   const [showInitiativePrep, setShowInitiativePrep] = useState(false);
+  // The map token panel's custom-condition field used to be read back through
+  // document.getElementById; hold the draft in state instead.
+  const [mapCondDraft, setMapCondDraft] = useState('');
   const [tempParticipants, setTempParticipants] = useState({}); // { charId: boolean }
   const [, setManualInitiatives] = useState({}); // { charId: number }
   const [, setShowConditionPopupId] = useState(null);
@@ -341,7 +347,7 @@ export default function MapSystem({
       if (!isForced) {
         const activeParticipant = combatTurnOrder[currentTurnIndex];
         if (activeParticipant?.id !== tokenId) {
-          alert(`⚠️ 无法拖动：当前非 [${token.name}] 的行动回合！`);
+          alert(`无法拖动：当前非 [${token.name}] 的行动回合！`);
           return;
         }
       }
@@ -383,13 +389,13 @@ export default function MapSystem({
 
       if (!isForced) {
         if (!path) {
-          alert(`❌ 无法移动：该路线受阻，无法绕过障碍物！`);
+          alert(`无法移动：该路线受阻，无法绕过障碍物！`);
           return;
         }
 
         const speedRemaining = token.combatSpeedRemaining !== undefined ? token.combatSpeedRemaining : (token.speed !== undefined ? token.speed : 30);
         if (movementCost > speedRemaining) {
-          alert(`❌ 移动力不足！当前回合仅剩 ${speedRemaining.toFixed(1)} ft 移动力，无法移动 ${movementCost.toFixed(1)} ft。`);
+          alert(`移动力不足！当前回合仅剩 ${speedRemaining.toFixed(1)} ft 移动力，无法移动 ${movementCost.toFixed(1)} ft。`);
           return;
         }
 
@@ -411,7 +417,7 @@ export default function MapSystem({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `🏃 **[${token.name}]** 消耗了 **${movementCost.toFixed(1)} ft** 移动力，本回合还剩 **${remainingSpeed.toFixed(1)} ft**。`,
+            content: `**[${token.name}]** 消耗了 **${movementCost.toFixed(1)} ft** 移动力，本回合还剩 **${remainingSpeed.toFixed(1)} ft**。`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -432,7 +438,7 @@ export default function MapSystem({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `💥 **[${token.name}]** 遭受了**强制位移 / 传送**，位移了 **${movementCost.toFixed(1)} ft**（本次移动未消耗其回合移动力）。`,
+            content: `**[${token.name}]** 遭受了**强制位移 / 传送**，位移了 **${movementCost.toFixed(1)} ft**（本次移动未消耗其回合移动力）。`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -444,7 +450,7 @@ export default function MapSystem({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `📍 棋子 [${token.name}] 移动到位置: (${gridX}ft, ${gridY}ft) [地图: ${activeMap.name}]`,
+          content: `棋子 [${token.name}] 移动到位置: (${gridX}ft, ${gridY}ft) [地图: ${activeMap.name}]`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -480,7 +486,7 @@ export default function MapSystem({
       if (isImpassableBlock) {
         addLog({
           type: 'COMBAT',
-          content: `⚠️ 警告：棋子 [${token.name}] 移动到了不可通过的 [${blockedAreaName ? `阻挡地形: ${blockedAreaName}` : '阻挡格'}] 障碍物上！`,
+          content: `警告：棋子 [${token.name}] 移动到了不可通过的 [${blockedAreaName ?`阻挡地形: ${blockedAreaName}`:'阻挡格'}] 障碍物上！`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -499,17 +505,17 @@ export default function MapSystem({
         if (intersected) {
           let warningText;
           if (area.color === 'red') {
-            warningText = `🔥 警告：[${token.name}] 踏入了 [${area.name}] (烈火地形)！请注意扣减生命值并做反射豁免！`;
+            warningText = `警告：[${token.name}] 踏入了 [${area.name}] (烈火地形)！请注意扣减生命值并做反射豁免！`;
           } else if (area.color === 'emerald') {
-            warningText = `🤢 警告：[${token.name}] 踏入了 [${area.name}] (毒性/酸性地形)！请每回合进行体质豁免鉴定！`;
+            warningText = `警告：[${token.name}] 踏入了 [${area.name}] (毒性/酸性地形)！请每回合进行体质豁免鉴定！`;
           } else if (area.color === 'blue') {
-            warningText = `❄️ 提示：[${token.name}] 进入了 [${area.name}] (寒冰/水体地形)，移动速度可能受阻。`;
+            warningText = `提示：[${token.name}] 进入了 [${area.name}] (寒冰/水体地形)，移动速度可能受阻。`;
           } else if (area.color === 'amber') {
-            warningText = `🧱 提示：[${token.name}] 进入了 [${area.name}] (困难地形/碎石)，在困难地形内移动需要消耗双倍移动力。`;
+            warningText = `提示：[${token.name}] 进入了 [${area.name}] (困难地形/碎石)，在困难地形内移动需要消耗双倍移动力。`;
           } else if (area.color === 'purple') {
-            warningText = `🔮 警告：[${token.name}] 进入了 [${area.name}] (法术/诅咒地形)，请进行意志豁免判定！`;
+            warningText = `警告：[${token.name}] 进入了 [${area.name}] (法术/诅咒地形)，请进行意志豁免判定！`;
           } else {
-            warningText = `⚠️ 提示：[${token.name}] 进入了 [${area.name}] 地形区。`;
+            warningText = `提示：[${token.name}] 进入了 [${area.name}] 地形区。`;
           }
 
           addLog({
@@ -937,7 +943,7 @@ export default function MapSystem({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `🚧 复制了区域地形: **${area.name}** -> **${newArea.name}**`,
+        content: `复制了区域地形: **${area.name}** -> **${newArea.name}**`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -971,7 +977,7 @@ export default function MapSystem({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `🔮 DM 一键召唤了所有玩家角色至当前地图 **[${activeMap.name}]** 视口中央，开启战役推演！`,
+        content: `DM 一键召唤了所有玩家角色至当前地图 **[${activeMap.name}]** 视口中央，开启战役推演！`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -1008,7 +1014,7 @@ export default function MapSystem({
       if (character && addLog) {
         addLog({
           type: 'DICE',
-          content: `🎲 先攻投掷: [${character.name}] 1d20(${result.roll}) + 修正(${result.modifier}) = **${result.total}**`,
+          content: `先攻投掷: [${character.name}] 1d20(${result.roll}) + 修正(${result.modifier}) = **${result.total}**`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -1035,7 +1041,7 @@ export default function MapSystem({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `⚔️ **战斗正式爆发 (回合 1)**！当前共有 ${activeParticipantsIds.length} 位角色参战。先攻行动首发者为: **[${firstChar ? firstChar.name : '未知'}]**！`,
+        content: `**战斗正式爆发 (回合 1)**！当前共有 ${activeParticipantsIds.length} 位角色参战。先攻行动首发者为: **[${firstChar ? firstChar.name :'未知'}]**！`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -1052,7 +1058,7 @@ export default function MapSystem({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `🟢 退出战斗，系统回归自由行动模式。所有角色的行动限制已解除。`,
+          content: `退出战斗，系统回归自由行动模式。所有角色的行动限制已解除。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -1071,7 +1077,7 @@ export default function MapSystem({
         const result = tickRoundConditions(previous);
         result.expired.forEach(({ characterName, condition }) => addLog?.({
           type: 'COMBAT',
-          content: `🟢 状态消除：角色 [${characterName}] 身上的 [${condition.name}] 持续时间到期，状态已被完全清除。`,
+          content: `状态消除：角色 [${characterName}] 身上的 [${condition.name}] 持续时间到期，状态已被完全清除。`,
           timestamp: new Date().toLocaleTimeString()
         }));
         return result.characters;
@@ -1094,7 +1100,7 @@ export default function MapSystem({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `⏭️ 行动权交接 (回合 ${nextRound})：当前轮到 **[${nextChar ? nextChar.name : '未知'}]** 执行战术决策！`,
+        content: `行动权交接 (回合 ${nextRound})：当前轮到 **[${nextChar ? nextChar.name :'未知'}]** 执行战术决策！`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -1124,7 +1130,7 @@ export default function MapSystem({
       const char = characters.find(ch => ch.id === charId);
       addLog({
         type: 'COMBAT',
-        content: `🩸 状态变更：为 [${char ? char.name : '未知'}] 附加了特殊状态 [${name}] (持续 ${duration === 'permanent' ? '永久' : `${duration} 回合`})。`,
+        content: `状态变更：为 [${char ? char.name :'未知'}] 附加了特殊状态 [${name}] (持续 ${duration ==='permanent'?'永久':`${duration} 回合`})。`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -1140,7 +1146,7 @@ export default function MapSystem({
         if (removed && addLog) {
           addLog({
             type: 'COMBAT',
-            content: `🟢 状态消除：DM 手动清除了 [${c.name}] 身上的特殊状态 [${removed.name}]。`,
+            content: `状态消除：DM 手动清除了 [${c.name}] 身上的特殊状态 [${removed.name}]。`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -1158,7 +1164,7 @@ export default function MapSystem({
         if (addLog && newHp !== c.hp) {
           addLog({
             type: 'COMBAT',
-            content: `❤️ 角色 [${c.name}] HP 变更: **${c.hp}** -> **${newHp}** (最大值: ${c.maxHp})`,
+            content: `角色 [${c.name}] HP 变更: **${c.hp}** -> **${newHp}** (最大值: ${c.maxHp})`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -1201,7 +1207,7 @@ export default function MapSystem({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `🔄 **重置回合**: [${char.name}] 撤销了本回合的战术跑位！棋子闪回至起点 (${startX}ft, ${startY}ft)，已用移动力完全复原！`,
+        content: `**重置回合**: [${char.name}] 撤销了本回合的战术跑位！棋子闪回至起点 (${startX}ft, ${startY}ft)，已用移动力完全复原！`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -1355,441 +1361,268 @@ export default function MapSystem({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      
-      {/* Map Control Header */}
-      <div className="panel-header" style={{ background: 'var(--surface-panel)', borderBottom: '1px solid var(--line-hairline)', flexWrap: 'wrap', gap: '12px' }}>
-        <div className="panel-title">
-          <Map size={18} style={{ color: 'var(--accent)' }} />
-          <span>🗺 战术网格地图 (1格 = 1ft)</span>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
 
-        {/* Map switching selector dropdown */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>当前地图:</label>
-          <select
+      {/* Map control toolbar */}
+      <Toolbar style={{ borderBottom: 'var(--border-hairline)', background: 'var(--surface-panel)', flexShrink: 0 }} dense>
+        <ToolbarLabel>Map</ToolbarLabel>
+        <span style={{ width: 200 }}>
+          <Select
+            size="sm"
             value={activeMapId}
-            onChange={(e) => {
-              setActiveMapId(e.target.value);
-              setSelectedTokenId(null);
-              setEditingAreaId(null);
-            }}
-            className="input-text"
-            style={{ 
-              padding: '4px 8px', 
-              fontSize: '11px', 
-              background: 'var(--surface-raised)', 
-              border: '1px solid var(--line-hairline)', 
-              color: 'var(--text-body)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              height: '30px'
-            }}
-          >
-            {maps.map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
-        </div>
+            onChange={(e) => { setActiveMapId(e.target.value); setSelectedTokenId(null); setEditingAreaId(null); }}
+            options={maps.map(m => ({ value: m.id, label: m.name }))}
+          />
+        </span>
 
-        {/* Map Creator and config trigger buttons (DM Private) */}
         {!isPlayerViewMode && (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <button
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="plus"
+              title= "新建一张空白推演地图"
               onClick={() => {
                 const name = prompt('请输入新准备的战役地图名称:', `新战役地图 ${maps.length + 1}`);
                 if (name) {
                   addMap(name, 40, 30, '');
-                  setShowMapConfig(true); // Auto-open config to let DM customize dimensions/background URL
+                  setShowMapConfig(true); // let the DM set dimensions / background straight away
                 }
               }}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px' }}
-              title="新建一张空白推演地图"
             >
-              <Plus size={12} />
-              <span>新建地图</span>
-            </button>
-            
-            <button
+              新建地图
+            </Button>
+            <Button
+              size="sm"
+              variant={showMapConfig ? 'primary' : 'ghost'}
+              icon="sliders-horizontal"
+              title= "配置当前激活地图的名字、背景图片 URL 与网格尺幅"
               onClick={() => setShowMapConfig(!showMapConfig)}
-              className={`btn ${showMapConfig ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: '11px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px' }}
-              title="配置当前激活地图的名字、背景图片 URL 与网格尺幅"
             >
-              <span>⚙️ 地图配置</span>
-            </button>
-          </div>
+              地图配置
+            </Button>
+          </>
         )}
 
-        {/* Combat Mode Controls */}
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
+          {activeMap.width}×{activeMap.height} · 1格 = 1ft
+        </span>
+
+        <span style={{ flex: 1 }} />
+
         {!isPlayerViewMode && (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <>
             {isInCombat ? (
               <>
-                <button
-                  onClick={handleExitCombat}
-                  className="btn btn-danger"
-                  style={{ fontSize: '11px', padding: '6px 12px', height: '30px', border: '1px solid rgba(239,68,68,0.5)', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  title="退出当前战斗模式，清除先攻行动队列"
-                >
-                  <span>⚔️ 退出战斗</span>
-                </button>
-                
-                <button
+                <Button size="sm" variant="danger" icon="flag-checkered" onClick={handleExitCombat} title= "退出当前战斗模式，清除先攻行动队列">
+                  退出战斗
+                </Button>
+                <Button
+                  size="sm"
+                  variant={isForcedMoveMode ? 'primary' : 'secondary'}
+                  icon="arrows-out-cardinal"
                   onClick={() => setIsForcedMoveMode(!isForcedMoveMode)}
-                  className={`btn ${isForcedMoveMode ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ 
-                    fontSize: '11px', 
-                    padding: '6px 12px', 
-                    height: '30px', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '4px',
-                    background: isForcedMoveMode ? 'var(--pigment-woad)' : 'var(--surface-raised)',
-                    border: isForcedMoveMode ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid var(--line-hairline)',
-                    boxShadow: isForcedMoveMode ? '0 0 10px rgba(6, 182, 212, 0.3)' : 'none'
-                  }}
-                  title="开启后，战斗中可无视回合与移动力限制强制移动任何棋子，且不扣减其移动力（或在拖拽时按住 Shift 键触发临时强制位移）"
+                  title= "开启后，战斗中可无视回合与移动力限制强制移动任何棋子，且不扣减其移动力（或在拖拽时按住 Shift 键触发临时强制位移）"
                 >
-                  <span>💥 强制位移: {isForcedMoveMode ? '开启' : '关闭'}</span>
-                </button>
+                  强制位移: {isForcedMoveMode ? '开启' : '关闭'}
+                </Button>
               </>
             ) : (
-              <button
-                onClick={handleOpenCombatSetup}
-                className="btn btn-primary"
-                style={{ fontSize: '11px', padding: '6px 12px', height: '30px', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--accent)' }}
-                title="发起战斗回合，选择参战角色投先攻"
-              >
-                <span>⚔️ 发起战斗</span>
-              </button>
+              <Button size="sm" icon="sword" onClick={handleOpenCombatSetup} title= "发起战斗回合，选择参战角色投先攻">
+                发起战斗
+              </Button>
             )}
-          </div>
+            <ToolbarDivider />
+            <Button
+              size="sm"
+              variant={isTerrainEditMode ? 'primary' : 'secondary'}
+              icon={isTerrainEditMode ? 'check' : 'paint-brush'}
+              onClick={() => { setIsTerrainEditMode(!isTerrainEditMode); setEditingAreaId(null); setTerrainEditTool('select'); }}
+              title={isTerrainEditMode ? '保存并退出地形编辑模式' : '进入地形编辑模式，绘制阻挡格与地形区域'}
+            >
+              {isTerrainEditMode ? '保存并退出编辑' : '地形编辑画笔'}
+            </Button>
+          </>
         )}
+      </Toolbar>
 
-        {/* DM Edit Mode Switch (Hidden in presentation mode) */}
-        {!isPlayerViewMode && (
-          <button
-            onClick={() => {
-              setIsTerrainEditMode(!isTerrainEditMode);
-              setEditingAreaId(null);
-              setTerrainEditTool('select');
-            }}
-            className={`btn ${isTerrainEditMode ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '6px 12px', height: '30px', marginLeft: 'auto' }}
-          >
-            <span>{isTerrainEditMode ? '💾 保存并退出编辑' : '🛠️ 地形编辑画笔'}</span>
-          </button>
-        )}
-      </div>
-
-      {/* Map Property Configuration Panel (DM Only) */}
+      {/* Map properties (DM only) */}
       {showMapConfig && !isPlayerViewMode && (
         <div
           style={{
-            background: 'var(--surface-raised)',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--line-hairline)',
+            flexShrink: 0,
             display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-            boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.4)',
-            zIndex: 5
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            gap: 'var(--space-4)',
+            padding: 'var(--space-4) var(--space-5)',
+            background: 'var(--surface-sunken)',
+            borderBottom: 'var(--border-hairline)'
           }}
         >
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>重命名当前地图:</label>
-              <input
-                type="text"
-                value={activeMap.name}
-                onChange={(e) => updateMap(activeMap.id, { name: e.target.value })}
-                className="input-text"
-                style={{ width: '150px', padding: '4px 8px', fontSize: '11px', height: '28px' }}
-                placeholder="地图名称"
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>宽度 (ft):</label>
-              <input
-                type="number"
-                value={activeMap.width}
-                onChange={(e) => updateMap(activeMap.id, { width: Math.max(10, parseInt(e.target.value, 10) || 40) })}
-                className="input-text"
-                style={{ width: '55px', padding: '4px 8px', fontSize: '11px', height: '28px' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>高度 (ft):</label>
-              <input
-                type="number"
-                value={activeMap.height}
-                onChange={(e) => updateMap(activeMap.id, { height: Math.max(10, parseInt(e.target.value, 10) || 30) })}
-                className="input-text"
-                style={{ width: '55px', padding: '4px 8px', fontSize: '11px', height: '28px' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '220px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>背景图片大图 URL (可选):</label>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input
-                  type="text"
-                  value={activeMap.bgUrl || ''}
-                  onChange={(e) => updateMap(activeMap.id, { bgUrl: e.target.value })}
-                  className="input-text"
-                  style={{ flex: 1, padding: '4px 8px', fontSize: '11px', height: '28px' }}
-                  placeholder="可粘贴外部网络或本地图片 URL 地址"
-                />
-                {activeMap.bgUrl && (
-                  <button
-                    onClick={() => updateMap(activeMap.id, { bgUrl: '' })}
-                    className="btn btn-secondary"
-                    style={{ fontSize: '10px', padding: '4px 8px', height: '28px' }}
-                  >
-                    清除
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div style={{ alignSelf: 'flex-end', marginLeft: 'auto' }}>
-              <button
-                onClick={() => {
-                  if (maps.length <= 1) {
-                    alert('必须要保留至少一张推演地图！');
-                    return;
-                  }
-                  if (window.confirm(`确定要永久删除地图 [${activeMap.name}] 吗？\n该操作会清空这张地图下的所有画网格与危险区数据，且不可撤销！`)) {
-                    deleteMap(activeMap.id);
-                    setShowMapConfig(false);
-                  }
-                }}
-                className="btn btn-danger"
-                style={{ fontSize: '11px', padding: '6px 12px', height: '28px' }}
-              >
-                🗑️ 删除当前地图
-              </button>
-            </div>
-          </div>
+          <TextInput
+            size="sm"
+            label= "重命名当前地图"
+            value={activeMap.name}
+            onChange={(e) => updateMap(activeMap.id, { name: e.target.value })}
+            placeholder= "地图名称"
+            fullWidth={false}
+            style={{ width: 170 }}
+          />
+          <TextInput
+            size="sm"
+            mono
+            type="number"
+            label= "宽度 (ft)"
+            value={activeMap.width}
+            onChange={(e) => updateMap(activeMap.id, { width: Math.max(10, parseInt(e.target.value, 10) || 40) })}
+            fullWidth={false}
+            style={{ width: 78 }}
+          />
+          <TextInput
+            size="sm"
+            mono
+            type="number"
+            label= "高度 (ft)"
+            value={activeMap.height}
+            onChange={(e) => updateMap(activeMap.id, { height: Math.max(10, parseInt(e.target.value, 10) || 30) })}
+            fullWidth={false}
+            style={{ width: 78 }}
+          />
+          <TextInput
+            size="sm"
+            label= "背景图片大图 URL (可选)"
+            value={activeMap.bgUrl || ''}
+            onChange={(e) => updateMap(activeMap.id, { bgUrl: e.target.value })}
+            placeholder= "可粘贴外部网络或本地图片 URL 地址"
+            style={{ flex: 1, minWidth: 240 }}
+          />
+          {activeMap.bgUrl && (
+            <Button size="sm" variant="secondary" icon="x" onClick={() => updateMap(activeMap.id, { bgUrl: '' })} title= "清除背景图片">
+              清除
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="danger"
+            icon="trash"
+            title= "永久删除当前地图及其全部阻挡格与地形数据"
+            onClick={() => {
+              if (maps.length <= 1) {
+                alert('必须要保留至少一张推演地图！');
+                return;
+              }
+              if (window.confirm(`确定要永久删除地图 [${activeMap.name}] 吗？\n该操作会清空这张地图下的所有画网格与危险区数据，且不可撤销！`)) {
+                deleteMap(activeMap.id);
+                setShowMapConfig(false);
+              }
+            }}
+          >
+            删除当前地图
+          </Button>
         </div>
       )}
 
-      {/* Terrain Editor Sub-Header Panel */}
+      {/* Terrain editor */}
       {isTerrainEditMode && !isPlayerViewMode && (
-        <div 
-          style={{ 
-            background: 'var(--surface-raised)', 
-            padding: '10px 16px', 
-            borderBottom: '1px solid var(--line-hairline)',
+        <div
+          style={{
+            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px',
-            boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.4)',
-            zIndex: 4
+            gap: 'var(--space-3)',
+            padding: 'var(--space-3) var(--space-5)',
+            background: 'var(--surface-sunken)',
+            borderBottom: 'var(--border-hairline)'
           }}
         >
-          {/* Action buttons */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>网格刷子:</span>
-              <button
-                onClick={() => setTerrainEditTool('paint_block')}
-                className={`btn ${terrainEditTool === 'paint_block' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-              >
-                <Paintbrush size={11} />
-                <span>🧱 绘制阻挡格</span>
-              </button>
-              <button
-                onClick={() => setTerrainEditTool('paint_erase')}
-                className={`btn ${terrainEditTool === 'paint_erase' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-              >
-                <Eraser size={11} />
-                <span>🧽 阻挡橡皮</span>
-              </button>
-              <button
-                onClick={() => setTerrainEditTool('select')}
-                className={`btn ${terrainEditTool === 'select' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                title="选择/漫游模式（在地图上直接拖动区域更改位置，或拖拽边缘边角缩放大小）"
-              >
-                <Compass size={11} />
-                <span>🖐️ 漫游与拖拽地形</span>
-              </button>
-              <button
-                onClick={() => {
-                  setTerrainEditTool('box_select');
-                  setSelectionBox(null);
-                }}
-                className={`btn ${terrainEditTool === 'box_select' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                title="框选区域模式（在地图上拖拽出选区，框内阻挡格可进行平移或消除）"
-              >
-                <Scissors size={11} />
-                <span>✂️ 区域选择/框选阻挡</span>
-              </button>
-            </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-4)' }}>
+            <ToolbarLabel>Brush</ToolbarLabel>
+            <IconButton icon="wall" active={terrainEditTool === 'paint_block'} onClick={() => setTerrainEditTool('paint_block')} title= "绘制实体阻挡格" />
+            <IconButton icon="eraser" active={terrainEditTool === 'paint_erase'} onClick={() => setTerrainEditTool('paint_erase')} title= "擦除实体阻挡格" />
+            <IconButton icon="hand" active={terrainEditTool === 'select'} onClick={() => setTerrainEditTool('select')} title= "选择/漫游模式（在地图上直接拖动区域更改位置，或拖拽边缘边角缩放大小）" />
+            <IconButton
+              icon="selection"
+              active={terrainEditTool === 'box_select'}
+              onClick={() => { setTerrainEditTool('box_select'); setSelectionBox(null); }}
+              title= "框选区域模式（在地图上拖拽出选区，框内阻挡格可进行平移或消除）"
+            />
 
             {terrainEditTool === 'box_select' && selectionBox && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(168, 85, 247, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(168, 85, 247, 0.25)' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold' }}>已框选区域:</span>
-                <button
-                  type="button"
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  padding: 'var(--space-2) var(--space-3)',
+                  background: 'var(--accent-soft)',
+                  boxShadow: 'inset 0 0 0 1px var(--accent-line)'
+                }}
+              >
+                <span style={{ fontSize: 'var(--type-meta)', color: 'var(--accent)' }}>已框选区域</span>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="trash"
+                  title= "删除框选区域内的所有实体阻挡格"
                   onClick={() => {
-                    // Push to history for undo
                     pushToHistory();
-                    
-                    // Delete all blocked cells in the selection box
                     setBlockedCells(prev => {
                       const next = { ...prev };
                       const minX = Math.min(selectionBox.startX, selectionBox.endX);
                       const maxX = Math.max(selectionBox.startX, selectionBox.endX);
                       const minY = Math.min(selectionBox.startY, selectionBox.endY);
                       const maxY = Math.max(selectionBox.startY, selectionBox.endY);
-                      
                       Object.keys(next).forEach(key => {
                         const [xs, ys] = key.split('_');
                         const x = parseInt(xs, 10);
                         const y = parseInt(ys, 10);
-                        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-                          delete next[key];
-                        }
+                        if (x >= minX && x <= maxX && y >= minY && y <= maxY) delete next[key];
                       });
                       return next;
                     });
                     setSelectionBox(null);
                   }}
-                  className="btn"
-                  style={{ 
-                    padding: '2px 8px', 
-                    fontSize: '11px', 
-                    height: '22px', 
-                    borderRadius: '4px', 
-                    background: 'rgba(239, 68, 68, 0.15)', 
-                    border: '1px solid rgba(239, 68, 68, 0.3)', 
-                    color: 'var(--pigment-madder)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer'
-                  }}
-                  title="删除框选区域内的所有实体阻挡格"
                 >
-                  <Trash2 size={11} />
-                  <span>🗑️ 消除框内阻挡</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectionBox(null)}
-                  className="btn btn-secondary"
-                  style={{ padding: '2px 8px', fontSize: '11px', height: '22px', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  取消框选
-                </button>
+                  消除框内阻挡
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setSelectionBox(null)} title= "取消当前框选">取消框选</Button>
               </div>
             )}
 
-            <div style={{ width: '1px', height: '16px', background: 'var(--line-hairline)' }} />
+            <ToolbarDivider />
+            <ToolbarLabel>Areas</ToolbarLabel>
+            <Button size="sm" variant="secondary" icon="square" onClick={handleAddRectArea} title= "在地图中心新建一块矩形地形区域">矩形地形</Button>
+            <Button size="sm" variant="secondary" icon="circle" onClick={handleAddCircleArea} title= "在地图中心新建一块圆形地形区域">圆形地形</Button>
+            <Checkbox
+              checked={defaultImpassable}
+              onChange={() => setDefaultImpassable(!defaultImpassable)}
+              label= "默认阻挡"
+              hint= "勾选后，新建的图形地形默认具备实体阻挡属性，防止棋子穿过"
+            />
 
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>绘制区域:</span>
-              <button
-                onClick={handleAddRectArea}
-                className="btn btn-secondary"
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', height: '26px' }}
-              >
-                <Plus size={11} />
-                <span>🟩 矩形地形</span>
-              </button>
-              <button
-                onClick={handleAddCircleArea}
-                className="btn btn-secondary"
-                style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', height: '26px' }}
-              >
-                <Plus size={11} />
-                <span>🟡 圆形地形</span>
-              </button>
-              
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px', 
-                  fontSize: '11px', 
-                  color: 'var(--text-muted)', 
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px dashed var(--line-hairline)',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  marginLeft: '4px'
-                }}
-                onClick={() => setDefaultImpassable(!defaultImpassable)}
-              >
-                <input
-                  id="defaultImpassableCheck"
-                  type="checkbox"
-                  checked={defaultImpassable}
-                  onChange={() => {}}
-                  style={{ cursor: 'pointer', accentColor: 'var(--pigment-madder)' }}
-                />
-                <label htmlFor="defaultImpassableCheck" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }} title="勾选后，新建的图形地形默认具备实体阻挡障碍物属性，防止棋子穿过">
-                  <span>🚫 默认阻挡</span>
-                </label>
-              </div>
-            </div>
-
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                onClick={handleUndo}
-                disabled={!canUndo}
-                className="btn btn-secondary"
-                style={{ 
-                  fontSize: '11px', 
-                  padding: '4px 10px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px',
-                  opacity: canUndo ? 1 : 0.45,
-                  cursor: canUndo ? 'pointer' : 'not-allowed',
-                  border: canUndo ? '1px solid var(--accent)' : '1px solid transparent',
-                  boxShadow: canUndo ? '0 0 6px var(--accent-line)' : 'none'
-                }}
-                title={canUndo ? '撤销上一步地形或阻挡绘制' : '暂无可以撤销的操作'}
-              >
-                <span>↩️ 撤销绘制</span>
-              </button>
-              <button
-                onClick={handleClearAllTerrains}
-                className="btn btn-danger"
-                style={{ fontSize: '11px', padding: '4px 10px' }}
-              >
-                🧹 清空所有地形
-              </button>
-            </div>
+            <span style={{ flex: 1 }} />
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="arrow-u-up-left"
+              disabled={!canUndo}
+              onClick={handleUndo}
+              title={canUndo ? '撤销上一步地形或阻挡绘制' : '暂无可以撤销的操作'}
+            >
+              撤销绘制
+            </Button>
+            <Button size="sm" variant="danger" icon="broom" onClick={handleClearAllTerrains} title= "清空这张地图上的所有地形区域与阻挡格（不可撤销）">
+              清空所有地形
+            </Button>
           </div>
 
-          {/* Edit placed vector terrains */}
           {terrainAreas.length > 0 && (
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '6px', 
-              background: 'rgba(0,0,0,0.2)', 
-              padding: '8px', 
-              borderRadius: '6px',
-              border: '1px solid var(--line-hairline)' 
-            }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
-                📋 区域地形列表 ({terrainAreas.length}) - 在地图上点击图形或修改下方参数以调节大小与状态
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+                区域地形列表（{terrainAreas.length}）· 在地图上点击图形或修改下方参数以调节大小与状态
               </span>
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '2px' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', overflowX: 'auto', paddingBottom: 2 }}>
                 {terrainAreas.map(area => {
                   const color = colorConfig[area.color] || colorConfig.purple;
                   const isEditing = editingAreaId === area.id;
@@ -1797,171 +1630,76 @@ export default function MapSystem({
                   return (
                     <div
                       key={area.id}
+                      onClick={() => setEditingAreaId(area.id)}
                       style={{
-                        minWidth: '220px',
-                        background: isEditing ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.01)',
-                        border: isEditing ? `1px solid ${color.value}` : '1px solid var(--line-hairline)',
-                        borderRadius: '6px',
-                        padding: '6px 8px',
+                        minWidth: 240,
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '4px',
-                        transition: 'all 0.2s',
-                        boxShadow: isEditing ? `0 0 6px ${color.glow}` : 'none',
-                        cursor: 'pointer'
+                        gap: 'var(--space-2)',
+                        padding: 'var(--space-3)',
+                        cursor: 'pointer',
+                        background: 'var(--surface-raised)',
+                        boxShadow: `inset 2px 0 0 ${color.value}, inset 0 0 0 1px ${isEditing ? 'var(--line-strong)' : 'var(--line-hairline)'}`,
+                        transition: 'var(--motion-control)'
                       }}
-                      onClick={() => setEditingAreaId(area.id)}
                     >
-                      {/* Title input & Delete */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <input
-                          type="text"
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <TextInput
+                          size="sm"
                           value={area.name}
                           onChange={(e) => handleUpdateArea(area.id, { name: e.target.value })}
-                          className="input-text"
-                          style={{ fontSize: '11px', padding: '2px 4px', width: '120px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--line-hairline)', color: 'var(--text-body)' }}
-                          placeholder="地形名称"
+                          placeholder= "地形名称"
                         />
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isImpassable: !area.isImpassable }); }}
-                            style={{ background: 'transparent', border: 'none', color: area.isImpassable ? 'var(--pigment-madder)' : 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'transform 0.2s' }}
-                            title={area.isImpassable ? '实体阻挡已开启 (阻断角色通行)' : '自由通行区域 (角色可自由穿过)'}
-                          >
-                            <span style={{ fontSize: '11px', transform: area.isImpassable ? 'scale(1.2)' : 'none', display: 'inline-block' }}>{area.isImpassable ? '🚫' : '🟢'}</span>
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isSecret: !area.isSecret }); }}
-                            style={{ background: 'transparent', border: 'none', color: area.isSecret ? 'var(--accent)' : 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title={area.isSecret ? '玩家不可见 (隐秘陷阱)' : '玩家可见'}
-                          >
-                            {area.isSecret ? <EyeOff size={11} /> : <Eye size={11} />}
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDuplicateArea(area); }}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title="快速复制此地形区域"
-                          >
-                            <Copy size={11} />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteArea(area.id); }}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                            title="删除地形"
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
+                        <IconButton
+                          icon={area.isSecret ? 'eye-closed' : 'eye'}
+                          size="sm"
+                          active={area.isSecret}
+                          onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isSecret: !area.isSecret }); }}
+                          title={area.isSecret ? '玩家不可见 (隐秘陷阱)' : '玩家可见'}
+                        />
+                        <IconButton icon="copy" size="sm" onClick={(e) => { e.stopPropagation(); handleDuplicateArea(area); }} title= "快速复制此地形区域" />
+                        <IconButton icon="trash" size="sm" tone="danger" onClick={(e) => { e.stopPropagation(); handleDeleteArea(area.id); }} title= "删除地形" />
                       </div>
 
-                      {/* Dimensions controls */}
-                      <div style={{ display: 'flex', gap: '6px', fontSize: '9px', color: 'var(--text-muted)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                          <span>X(ft):</span>
-                          <input
-                            type="number"
-                            value={area.gridX}
-                            onChange={(e) => handleUpdateArea(area.id, { gridX: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                          <span>Y(ft):</span>
-                          <input
-                            type="number"
-                            value={area.gridY}
-                            onChange={(e) => handleUpdateArea(area.id, { gridY: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
-                          />
-                        </div>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                        <TextInput size="sm" mono type="number" label= "X(ft)" value={area.gridX} onChange={(e) => handleUpdateArea(area.id, { gridX: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
+                        <TextInput size="sm" mono type="number" label= "Y(ft)" value={area.gridY} onChange={(e) => handleUpdateArea(area.id, { gridY: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
                         {area.type === 'rect' ? (
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <span>宽:</span>
-                              <input
-                                type="number"
-                                value={area.width}
-                                onChange={(e) => handleUpdateArea(area.id, { width: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
-                              />
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                              <span>高:</span>
-                              <input
-                                type="number"
-                                value={area.height}
-                                onChange={(e) => handleUpdateArea(area.id, { height: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
-                              />
-                            </div>
+                            <TextInput size="sm" mono type="number" label= "宽" value={area.width} onChange={(e) => handleUpdateArea(area.id, { width: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
+                            <TextInput size="sm" mono type="number" label= "高" value={area.height} onChange={(e) => handleUpdateArea(area.id, { height: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
                           </>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            <span>半径:</span>
-                            <input
-                              type="number"
-                              value={area.radius}
-                              onChange={(e) => handleUpdateArea(area.id, { radius: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                              style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
-                            />
-                          </div>
+                          <TextInput size="sm" mono type="number" label= "半径" value={area.radius} onChange={(e) => handleUpdateArea(area.id, { radius: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
                         )}
                       </div>
 
-                      {/* Impassable Toggle */}
-                      <div 
-                        onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isImpassable: !area.isImpassable }); }}
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '6px', 
-                          fontSize: '10px', 
-                          color: area.isImpassable ? 'var(--pigment-madder)' : 'var(--text-muted)',
-                          background: area.isImpassable ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                          border: `1px solid ${area.isImpassable ? 'rgba(239, 68, 68, 0.3)' : 'var(--line-hairline)'}`,
-                          padding: '4px 6px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          userSelect: 'none',
-                          marginTop: '2px',
-                          marginBottom: '2px'
-                        }}
-                        title={area.isImpassable ? '关闭实体阻挡，变为自由通行区域' : '开启实体阻挡，使其成为计算绕行的无法穿过障碍物'}
-                      >
-                        <input
-                          type="checkbox"
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
                           checked={!!area.isImpassable}
-                          onChange={() => {}}
-                          style={{ cursor: 'pointer', accentColor: 'var(--pigment-madder)' }}
+                          onChange={() => handleUpdateArea(area.id, { isImpassable: !area.isImpassable })}
+                          label= "实体阻挡障碍 (角色不可穿越)"
                         />
-                        <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                          <span>🚫</span> 实体阻挡障碍 (角色不可穿越)
-                        </span>
                       </div>
 
-                      {/* Color presets selection */}
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '9px' }}>
-                        <span style={{ color: 'var(--text-faint)' }}>灾害级:</span>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          {Object.keys(colorConfig).map(c => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { color: c }); }}
-                              style={{
-                                width: '7px',
-                                height: '7px',
-                                borderRadius: '50%',
-                                background: colorConfig[c].value,
-                                border: area.color === c ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)',
-                                cursor: 'pointer',
-                                padding: 0
-                              }}
-                              title={colorConfig[c].label}
-                            />
-                          ))}
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>灾害级</span>
+                        {Object.keys(colorConfig).map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { color: c }); }}
+                            title={colorConfig[c].label}
+                            style={{
+                              width: 11,
+                              height: 11,
+                              padding: 0,
+                              background: colorConfig[c].value,
+                              border: area.color === c ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)',
+                              cursor: 'pointer'
+                            }}
+                          />
+                        ))}
                       </div>
                     </div>
                   );
@@ -1972,328 +1710,193 @@ export default function MapSystem({
         </div>
       )}
 
-      {/* Turn Order先攻条 (Combat Timeline Bar) */}
+      {/* Initiative rail */}
       {isInCombat && (
-        <div 
-          style={{ 
-            background: 'var(--surface-overlay)', 
-            backdropFilter: 'blur(16px)', 
-            borderBottom: '1px solid var(--line-hairline)',
+        <div
+          style={{
+            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            flexShrink: 0,
-            padding: 0,
             overflow: 'hidden',
-            zIndex: 100,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            position: 'relative'
+            background: 'var(--surface-panel)',
+            borderBottom: 'var(--border-hairline)',
+            zIndex: 100
           }}
         >
-          {/* Row 1: initiative only. Explicit height prevents cyclic percentage sizing. */}
-          <div style={{ width: '100%', height: '76px', minHeight: '76px', display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', boxSizing: 'border-box' }}>
-          {/* Round Indicator */}
-          <div 
-            style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              borderRight: '1px solid var(--line-hairline)',
-              paddingRight: '16px',
-              height: '52px',
-              minWidth: '70px'
-            }}
-          >
-            <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Round</span>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'var(--font-display)', color: 'var(--text-body)', lineHeight: 1 }}>{combatRound}</span>
-          </div>
+          <div style={{ height: 76, minHeight: 76, display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-3) var(--space-5)', boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 70, height: 52, paddingRight: 'var(--space-4)', borderRight: 'var(--border-hairline)' }}>
+              <span style={{ fontFamily: 'var(--font-label)', fontSize: 'var(--type-micro)', letterSpacing: 'var(--tracking-label)', textTransform: 'uppercase', color: 'var(--accent)' }}>Round</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-numeral-xl)', fontWeight: 'var(--weight-semibold)', color: 'var(--text-body)', lineHeight: 1 }}>
+                {String(combatRound).padStart(2, '0')}
+              </span>
+            </div>
 
-          {/* Timeline Order List */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflowX: 'auto', padding: '4px 0' }}>
-            {combatTurnOrder.map((participant, index) => {
-              const char = characters.find(c => c.id === participant.id);
-              if (!char) return null;
+            <div className="no-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: 1, minWidth: 0, overflowX: 'auto' }}>
+              {combatTurnOrder.map((participant, index) => {
+                const char = characters.find(c => c.id === participant.id);
+                if (!char) return null;
+                const isActive = index === currentTurnIndex;
 
-              const isActive = index === currentTurnIndex;
-              const isPC = char.type === 'PC';
-
-              return (
-                <div 
-                  key={char.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '4px 10px',
-                    borderRadius: '12px',
-                    background: isActive ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.02)',
-                    border: isActive 
-                      ? '1px solid var(--accent)' 
-                      : '1px solid var(--line-hairline)',
-                    boxShadow: isActive ? '0 0 12px var(--accent-line)' : 'none',
-                    height: '52px',
-                    minWidth: '140px',
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    position: 'relative',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => {
-                    setSelectedTokenId(char.id);
-                  }}
-                >
-                  {/* Small Avatar/Token Circle */}
-                  <div 
+                return (
+                  <button
+                    key={char.id}
+                    type="button"
+                    onClick={() => setSelectedTokenId(char.id)}
+                    title={`选中 ${char.name}`}
                     style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: isPC ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
+                      position: 'relative',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color: 'var(--text-body)',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                      border: isActive ? '2px solid var(--pigment-ochre)' : '1.5px solid rgba(255,255,255,0.4)',
+                      gap: 'var(--space-3)',
+                      height: 52,
+                      minWidth: 150,
+                      flexShrink: 0,
+                      padding: 'var(--space-2) var(--space-3)',
+                      cursor: 'pointer',
+                      border: 'none',
+                      textAlign: 'left',
+                      background: isActive ? 'var(--accent-soft)' : 'var(--surface-raised)',
+                      boxShadow: `inset 0 0 0 1px ${isActive ? 'var(--accent-line)' : 'var(--line-hairline)'}`,
+                      transition: 'var(--motion-control)'
                     }}
                   >
-                    {char.name ? char.name.substring(0, 2) : 'TK'}
-                  </div>
-
-                  {/* Name and Initiative Roll */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-                      <span 
-                        style={{ 
-                          fontSize: '12px', 
-                          fontWeight: 'bold', 
-                          color: isActive ? 'var(--text-body)' : 'var(--text-body)',
-                          overflow: 'hidden', 
-                          textOverflow: 'ellipsis', 
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
+                    <MapToken kind={char.type === 'PC' ? 'PC' : 'MONSTER'} name={char.name} size={32} active={isActive} />
+                    <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {char.name}
                       </span>
-                      {isActive && (
-                        <span 
-                          style={{ 
-                            fontSize: '8px', 
-                            background: 'var(--pigment-ochre)', 
-                            color: 'var(--text-on-accent)', 
-                            padding: '1px 3px', 
-                            borderRadius: '3px', 
-                            fontWeight: '800' 
-                          }}
-                        >
-                          ACTIVE
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', color: 'var(--text-muted)' }}>
-                      <span>先攻: <strong>{participant.total}</strong></span>
-                      <span>顺位 {index + 1}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+                        先攻 {participant.total} · 顺位 {index + 1}
+                      </span>
+                    </span>
+                    {isActive && (
+                      <span style={{ position: 'absolute', top: -8, right: 6, padding: '1px 5px', background: 'var(--accent)', color: 'var(--text-on-accent)', fontFamily: 'var(--font-label)', fontSize: 'var(--type-micro)', letterSpacing: 'var(--tracking-label)' }}>
+                        行动中
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Active Unit Fast Dashboard (Highlighting Resources, Conditions, and turn controls) */}
-          {combatTurnOrder[currentTurnIndex] && (
-            (() => {
-              const activeParticipant = combatTurnOrder[currentTurnIndex];
-              const activeChar = characters.find(c => c.id === activeParticipant.id);
-              if (!activeChar) return null;
+          {/* Active-unit dashboard */}
+          {combatTurnOrder[currentTurnIndex] && (() => {
+            const activeParticipant = combatTurnOrder[currentTurnIndex];
+            const activeChar = characters.find(c => c.id === activeParticipant.id);
+            if (!activeChar) return null;
+            const speedMax = activeChar.speed || 30;
+            const speedLeft = Math.round(activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30);
 
-              return (
-                <div 
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '100%',
-                    borderTop: '1px solid var(--line-hairline)',
-                    padding: '10px 16px',
-                    height: '118px',
-                    minHeight: '118px',
-                    maxHeight: '118px',
-                    boxSizing: 'border-box',
-                    overflowX: 'auto'
-                  }}
-                >
-                  {/* Active character summary, deliberately separated from initiative order */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '190px', paddingRight: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <strong style={{ fontSize: '13px', color: 'var(--text-body)', maxWidth: '125px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeChar.name}</strong>
-                      <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '999px', background: 'rgba(245,158,11,.18)', color: 'var(--pigment-ochre)', border: '1px solid rgba(245,158,11,.35)' }}>当前行动</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
-                      <div title="当前生命值" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'var(--pigment-madder-soft)', color: 'var(--pigment-madder)' }}>❤️ {activeChar.hp}/{activeChar.maxHp}</div>
-                      <div title="护甲等级" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'var(--pigment-woad-soft)', color: 'var(--pigment-woad)' }}>🛡️ AC {activeChar.ac ?? 10}</div>
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '3px' }}>
-                        <span>🏃 移动力</span>
-                        <strong>{Math.round(activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30)}/{activeChar.speed || 30}ft</strong>
-                      </div>
-                      <div style={{ height: '5px', borderRadius: '999px', background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, ((activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30) / (activeChar.speed || 30)) * 100))}%`, background: 'linear-gradient(90deg,var(--pigment-verdigris),var(--pigment-verdigris))', transition: 'width .25s ease' }} />
-                      </div>
-                    </div>
+            return (
+              <div
+                className="no-scrollbar"
+                style={{
+                  display: 'flex',
+                  alignItems: 'stretch',
+                  gap: 'var(--space-4)',
+                  width: '100%',
+                  height: 118,
+                  minHeight: 118,
+                  boxSizing: 'border-box',
+                  padding: 'var(--space-3) var(--space-5)',
+                  borderTop: 'var(--border-hairline)',
+                  overflowX: 'auto'
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 200, paddingRight: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <strong style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {activeChar.name}
+                    </strong>
+                    <Badge tone="accent" size="sm">当前行动</Badge>
                   </div>
-
-                  {/* Current conditions listing & Add Condition popover */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', position: 'relative', minWidth: '150px', maxWidth: '240px', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontWeight: 'bold' }}>🏷️ 状态效果</span>
-                    
-                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', overflowY: 'auto', maxHeight: '42px' }}>
-                      {activeChar.conditions && activeChar.conditions.map(cond => (
-                        <span 
-                          key={cond.id} 
-                          style={{ 
-                            fontSize: '10px', 
-                            padding: '3px 7px', 
-                            background: 'linear-gradient(135deg,rgba(239,68,68,.2),rgba(127,29,29,.14))', 
-                            color: 'var(--pigment-madder)', 
-                            borderRadius: '4px',
-                            border: '1px solid rgba(239,68,68,0.3)',
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '2px',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          {cond.name}({cond.duration === 'permanent' ? '∞' : `${cond.duration}r`})
-                          <button 
-                            onClick={() => handleRemoveCondition(activeChar.id, cond.id)}
-                            style={{ background: 'none', border: 'none', color: 'var(--pigment-madder)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
-                          >
-                            ✕
-                          </button>
-                        </span>
-                      ))}
-
-                      {(!activeChar.conditions || activeChar.conditions.length === 0) && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>正常</span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        const name = prompt('输入要添加的状态名称（如：眩晕、祝福、中毒）：', '眩晕');
-                        if (!name?.trim()) return;
-                        const rounds = prompt(`请输入 [${name.trim()}] 持续回合数（数字，或 permanent 为永久）：`, '3');
-                        if (rounds !== null) handleAddCondition(activeChar.id, name.trim(), rounds);
-                      }}
-                      style={{ fontSize: '9px', height: '22px', padding: '2px 7px', alignSelf: 'flex-start' }}
-                    >
-                      ＋ 添加状态
-                    </button>
-                  </div>
-
-                  {/* Active Unit Resources trackers (Spell slots, actions, etc) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px', flex: 1, minWidth: '280px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontWeight: 'bold' }}>🔋 动作、法术与角色资源</span>
-                    <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '2px' }}>
-                      {activeChar.resources && activeChar.resources.map((res, resIdx) => (
-                        <div 
-                          key={resIdx}
-                          style={{
-                            background: res.value <= 0 ? 'rgba(239,68,68,.08)' : 'rgba(139,92,246,.1)',
-                            border: `1px solid ${res.value <= 0 ? 'rgba(239,68,68,.3)' : 'rgba(192,132,252,.32)'}`,
-                            borderRadius: '8px',
-                            padding: '5px 7px',
-                            display: 'grid',
-                            gridTemplateColumns: 'auto auto',
-                            alignItems: 'center',
-                            gap: '4px 7px',
-                            minHeight: '46px',
-                            minWidth: '105px',
-                            whiteSpace: 'nowrap',
-                            boxShadow: res.value > 0 ? '0 0 8px rgba(192,132,252,.08)' : 'none'
-                          }}
-                        >
-                          <span style={{ fontSize: '10px', color: res.value <= 0 ? 'var(--pigment-madder)' : 'var(--text-body)', fontWeight: 'bold' }}>{res.name === '动作' ? '⚔️ ' : res.name === '附赠动作' ? '⚡ ' : /法术|魔法/.test(res.name) ? '🔮 ' : '◆ '}{res.name}</span>
-                          <span style={{ fontSize: '9px', color: res.value <= 0 ? 'var(--pigment-madder)' : 'var(--accent)', justifySelf: 'end' }}>{res.value <= 0 ? '已耗尽' : `${res.value}/${res.max}`}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            <button 
-                              onClick={() => {
-                                setCharacters(prev => prev.map(c => {
-                                  if (c.id === activeChar.id) {
-                                    const updatedRes = [...c.resources];
-                                    updatedRes[resIdx] = { ...res, value: Math.max(0, res.value - 1) };
-                                    return { ...c, resources: updatedRes };
-                                  }
-                                  return c;
-                                }));
-                              }}
-                              disabled={res.value <= 0}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'var(--text-body)', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value <= 0 ? 'not-allowed' : 'pointer', opacity: res.value <= 0 ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
-                            >
-                              -
-                            </button>
-                            <div style={{ display: 'flex', gap: '2px', minWidth: '35px', justifyContent: 'center' }} title={`${res.value}/${res.max}`}>
-                              {Array.from({ length: Math.min(res.max || 0, 8) }, (_, slot) => <span key={slot} style={{ width: '4px', height: '12px', borderRadius: '2px', background: slot < res.value ? 'var(--accent)' : 'rgba(255,255,255,.1)' }} />)}
-                              {(res.max || 0) > 8 && <span style={{ fontSize: '9px', color: 'var(--text-faint)' }}>×{res.max}</span>}
-                            </div>
-                            <button 
-                              onClick={() => {
-                                setCharacters(prev => prev.map(c => {
-                                  if (c.id === activeChar.id) {
-                                    const updatedRes = [...c.resources];
-                                    updatedRes[resIdx] = { ...res, value: Math.min(res.max, res.value + 1) };
-                                    return { ...c, resources: updatedRes };
-                                  }
-                                  return c;
-                                }));
-                              }}
-                              disabled={res.value >= res.max}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'var(--text-body)', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value >= res.max ? 'not-allowed' : 'pointer', opacity: res.value >= res.max ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-
-                      {(!activeChar.resources || activeChar.resources.length === 0) && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>无资源槽</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Turn Controls */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px', minWidth: '112px' }}>
-                    <button 
-                      onClick={() => handleResetTurnMovement(activeChar.id)}
-                      className="btn btn-secondary"
-                      style={{ fontSize: '11px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px' }}
-                      title="撤销当前回合的棋子移动，返回本回合行动起点，并完全复原移动力"
-                    >
-                      <span>🔄 重置该回合</span>
-                    </button>
-                    
-                    <button 
-                      onClick={handleNextTurn}
-                      className="btn btn-primary"
-                      style={{ fontSize: '11px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px', background: 'var(--pigment-verdigris)' }}
-                      title="结束该角色当前回合，移交行动权给下一位角色"
-                    >
-                      <span>⏭️ 结束回合</span>
-                    </button>
-                  </div>
-
+                  <StatPill label= "生命值" value={`${activeChar.hp}/${activeChar.maxHp}`} size="sm" tone="madder" />
+                  <StatPill label= "护甲等级" code="AC" value={activeChar.ac ?? 10} size="sm" tone="woad" />
+                  <Meter label= "移动力" value={speedLeft} max={speedMax} tone="verdigris" segments={10} height={6} showNumbers={false} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', alignSelf: 'flex-end' }}>
+                    {speedLeft}/{speedMax}ft
+                  </span>
                 </div>
-              );
-            })()
-          )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 160, maxWidth: 260, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                  <ToolbarLabel>状态效果</ToolbarLabel>
+                  <div className="no-scrollbar" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', overflowY: 'auto', maxHeight: 44 }}>
+                    {activeChar.conditions && activeChar.conditions.length > 0 ? (
+                      activeChar.conditions.map(cond => (
+                        <Badge key={cond.id} tone="ochre" variant="soft" size="sm" onRemove={() => handleRemoveCondition(activeChar.id, cond.id)}>
+                          {cond.name}（{cond.duration ==='permanent'?'':`${cond.duration}r`}）
+                        </Badge>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: 'var(--type-micro)', color: 'var(--pigment-verdigris)', fontStyle: 'italic' }}>状态正常</span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="plus"
+                    title= "为当前行动角色附加一个状态，并指定持续回合数"
+                    onClick={() => {
+                      const name = prompt('输入要添加的状态名称（如：眩晕、祝福、中毒）：', '眩晕');
+                      if (!name?.trim()) return;
+                      const rounds = prompt(`请输入 [${name.trim()}] 持续回合数（数字，或 permanent 为永久）：`, '3');
+                      if (rounds !== null) handleAddCondition(activeChar.id, name.trim(), rounds);
+                    }}
+                  >
+                    添加状态
+                  </Button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: 1, minWidth: 300, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                  <ToolbarLabel>动作、法术与角色资源</ToolbarLabel>
+                  <div className="no-scrollbar" style={{ display: 'flex', gap: 'var(--space-2)', overflowX: 'auto' }}>
+                    {activeChar.resources && activeChar.resources.length > 0 ? (
+                      activeChar.resources.map((res, resIdx) => (
+                        <span key={resIdx} style={{ minWidth: 190, flexShrink: 0 }}>
+                          <ResourceSlot
+                            name={res.name}
+                            value={res.value}
+                            max={res.max}
+                            resetType={res.resetType === 'short_rest' ? 'short' : res.resetType === 'long_rest' ? 'long' : 'turn'}
+                            onSpend={() => setCharacters(prev => prev.map(c => {
+                              if (c.id !== activeChar.id) return c;
+                              const updated = [...c.resources];
+                              updated[resIdx] = { ...res, value: Math.max(0, res.value - 1) };
+                              return { ...c, resources: updated };
+                            }))}
+                            onRestore={() => setCharacters(prev => prev.map(c => {
+                              if (c.id !== activeChar.id) return c;
+                              const updated = [...c.resources];
+                              updated[resIdx] = { ...res, value: Math.min(res.max, res.value + 1) };
+                              return { ...c, resources: updated };
+                            }))}
+                          />
+                        </span>
+                      ))
+                    ) : (
+                      <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)', fontStyle: 'italic' }}>无资源槽</span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 'var(--space-2)', minWidth: 130, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="arrow-u-up-left"
+                    onClick={() => handleResetTurnMovement(activeChar.id)}
+                    title= "撤销当前回合的棋子移动，返回本回合行动起点，并完全复原移动力"
+                  >
+                    重置该回合
+                  </Button>
+                  <Button size="sm" icon="skip-forward" onClick={handleNextTurn} title= "结束该角色当前回合，移交行动权给下一位角色">
+                    结束回合
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2345,9 +1948,9 @@ export default function MapSystem({
                 flexDirection: 'column',
                 gap: '6px'
               }}>
-                <button onClick={() => zoomIn()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><ZoomIn size={16} /></button>
-                <button onClick={() => zoomOut()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><ZoomOut size={16} /></button>
-                <button onClick={() => resetTransform()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><RefreshCw size={14} /></button>
+                <IconButton icon="magnifying-glass-plus" onClick={() => zoomIn()} title= "放大地图" style={{ background: 'var(--surface-overlay)', boxShadow: 'inset 0 0 0 1px var(--bracket-line)' }} />
+                <IconButton icon="magnifying-glass-minus" onClick={() => zoomOut()} title= "缩小地图" style={{ background: 'var(--surface-overlay)', boxShadow: 'inset 0 0 0 1px var(--bracket-line)' }} />
+                <IconButton icon="arrow-counter-clockwise" onClick={() => resetTransform()} title= "复位缩放与镜头位置" style={{ background: 'var(--surface-overlay)', boxShadow: 'inset 0 0 0 1px var(--bracket-line)' }} />
               </div>
 
               <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
@@ -2365,8 +1968,8 @@ export default function MapSystem({
                     backgroundColor: mapBgUrl ? 'var(--surface-scrim)' : 'var(--surface-sunken)',
                     backdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
                     WebkitBackdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
-                    border: mapBgUrl ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-                    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 0, 0, 0.4)',
+                    border: mapBgUrl ? '1px solid var(--line-hairline)' : 'none',
+                    boxShadow: 'inset 0 0 0 1px var(--line-hairline)',
                     cursor: isTerrainEditMode && terrainEditTool === 'paint_block' ? 'cell' :
                             isTerrainEditMode && terrainEditTool === 'paint_erase' ? 'no-drop' : 'default'
                   }}
@@ -2379,11 +1982,51 @@ export default function MapSystem({
                       pointerEvents: 'none',
                       backgroundSize: `${gridSize}px ${gridSize}px`,
                       backgroundImage: `
-                        linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-                        linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)
+                        linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+                        linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px)
                       `
                     }}
                   />
+
+                  {/* Coordinate rulers — the map reads as a survey plate, so the
+                      gutters carry XNN / YNN keys every four feet. */}
+                  {Array.from({ length: Math.floor(mapHeight / 4) + 1 }, (_, i) => i * 4).map(n => (
+                    <span
+                      key={`ruler-y-${n}`}
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute', left: 4, top: n * gridSize + 3, zIndex: 2, pointerEvents: 'none',
+                        fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.1em', color: 'var(--text-faint)'
+                      }}
+                    >
+                      {`Y${String(n).padStart(2, '0')}`}
+                    </span>
+                  ))}
+                  {Array.from({ length: Math.floor(mapWidth / 4) + 1 }, (_, i) => i * 4).map(n => (
+                    <span
+                      key={`ruler-x-${n}`}
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute', left: n * gridSize + 4, bottom: 3, zIndex: 2, pointerEvents: 'none',
+                        fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.1em', color: 'var(--text-faint)'
+                      }}
+                    >
+                      {`X${String(n).padStart(2, '0')}`}
+                    </span>
+                  ))}
+
+                  {/* 1px crosshair through the acting token. */}
+                  {(() => {
+                    const crossId = isInCombat ? combatTurnOrder[currentTurnIndex]?.id : selectedTokenId;
+                    const crossChar = crossId ? activeTokens.find(c => c.id === crossId) : null;
+                    if (!crossChar) return null;
+                    return (
+                      <>
+                        <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, top: (crossChar.gridY || 0) * gridSize + gridSize * 0.75, height: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
+                        <span aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, left: (crossChar.gridX || 0) * gridSize + gridSize * 0.75, width: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
+                      </>
+                    );
+                  })()}
 
                   {/* Render Impassable Blocked Cells on Canvas for 60fps performance */}
                   <canvas
@@ -2444,7 +2087,7 @@ export default function MapSystem({
                             gap: '4px',
                             boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
                           }}>
-                            <span>✥ 按住框选区可拖动平移</span>
+                            <span> 按住框选区可拖动平移</span>
                           </div>
                         </div>
                       );
@@ -2540,7 +2183,7 @@ export default function MapSystem({
                             userSelect: 'none',
                             boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
                           }}>
-                            {area.name} {area.isImpassable && '🚫'} {area.isSecret && '👁️‍🗨️'}
+                            {area.name} {area.isImpassable &&''} {area.isSecret &&''}
                           </span>
 
                           {/* Direct Resize Handle at bottom-right */}
@@ -2560,7 +2203,7 @@ export default function MapSystem({
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
                               }}
                               onMouseDown={(e) => handleRectResizeStart(e, area)}
-                              title="拖拽改变宽度和高度"
+                              title= "拖拽改变宽度和高度"
                             />
                           )}
                         </div>
@@ -2611,7 +2254,7 @@ export default function MapSystem({
                             userSelect: 'none',
                             boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
                           }}>
-                            {area.name} {area.isImpassable && '🚫'} {area.isSecret && '👁️‍🗨️'}
+                            {area.name} {area.isImpassable &&''} {area.isSecret &&''}
                           </span>
 
                           {/* Direct Radius Resize Handle at rightmost edge */}
@@ -2631,7 +2274,7 @@ export default function MapSystem({
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
                               }}
                               onMouseDown={(e) => handleCircleResizeStart(e, area)}
-                              title="拖拽改变圆半径"
+                              title= "拖拽改变圆半径"
                             />
                           )}
                         </div>
@@ -2806,27 +2449,27 @@ export default function MapSystem({
                           >
                             {isForced ? (
                               <>
-                                <span style={{ fontSize: '11px' }}>💥</span>
+                                <span style={{ fontSize:'11px'}}></span>
                                 <span style={{ color: 'var(--pigment-woad)' }}>强制位移: {dragPathDistance.toFixed(1)} ft</span>
                               </>
                             ) : dragPathExists ? (
                               <>
-                                <span style={{ fontSize: '11px' }}>👣</span>
+                                <span style={{ fontSize:'11px'}}></span>
                                 <span>已移动: {dragPathDistance.toFixed(1)} ft</span>
                               </>
                             ) : dragIsNonActiveCombatMove ? (
                               <>
-                                <span style={{ fontSize: '11px' }}>⚠️</span>
+                                <span style={{ fontSize:'11px'}}></span>
                                 <span style={{ color: 'var(--pigment-madder)' }}>非当前行动回合 (当前为: {dragActiveCharName})</span>
                               </>
                             ) : dragIsSpeedExceeded ? (
                               <>
-                                <span style={{ fontSize: '11px' }}>❌</span>
+                                <span style={{ fontSize:'11px'}}></span>
                                 <span style={{ color: 'var(--pigment-madder)' }}>移动力不足 (剩余: {dragSpeedRemaining.toFixed(1)} ft, 需: {dragPathDistance.toFixed(1)} ft)</span>
                               </>
                             ) : (
                               <>
-                                <span style={{ fontSize: '11px' }}>⚠️</span>
+                                <span style={{ fontSize:'11px'}}></span>
                                 <span style={{ color: 'var(--pigment-madder)' }}>路线受阻 (直线: {dragPathDistance.toFixed(1)} ft)</span>
                               </>
                             )}
@@ -2854,14 +2497,24 @@ export default function MapSystem({
                           e.stopPropagation();
                           setSelectedTokenId(char.id === selectedTokenId ? null : char.id);
                         }}
-                        className={`token-node ${char.type === 'PC' ? 'token-pc' : 'token-npc'} ${isActiveTurn ? 'token-active-combat' : ''}`}
                         style={{
+                          position: 'absolute',
                           left: `${tokenX}px`,
                           top: `${tokenY}px`,
-                          width: `${gridSize * 1.5}px`, // Slight padding for token nodes
+                          width: `${gridSize * 1.5}px`,
                           height: `${gridSize * 1.5}px`,
-                          transform: selectedTokenId === char.id ? 'scale(1.2)' : 'none',
-                          border: selectedTokenId === char.id ? '1px solid var(--accent)' : '1px solid var(--bracket-line)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          userSelect: 'none',
+                          background: char.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
+                          color: 'var(--surface-panel)',
+                          fontFamily: 'var(--font-display)',
+                          fontWeight: 700,
+                          fontSize: Math.round(gridSize * 0.55),
+                          boxShadow: '0 0 0 1px var(--bracket-line)',
+                          outline: isActiveTurn ? '1px solid var(--accent)' : selectedTokenId === char.id ? '1px solid var(--text-body)' : 'none',
+                          outlineOffset: 2,
                           zIndex: selectedTokenId === char.id ? 10 : 3,
                           cursor: isTerrainEditMode && terrainEditTool !== 'select' ? 'not-allowed' : 'grab'
                         }}
@@ -2877,557 +2530,321 @@ export default function MapSystem({
         </TransformWrapper>
 
         {/* Selected Token Floating Interaction Panel */}
-        {selectedTokenObj && appRole !== 'PLAYER' && (
-          <div 
-            style={{
-              position: 'absolute',
-              bottom: '16px',
-              right: '16px',
-              width: '300px',
-              maxHeight: '85%',
-              background: 'var(--surface-overlay)',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(192, 132, 252, 0.3)',
-              borderRadius: '12px',
-              boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 15px rgba(192, 132, 252, 0.1)',
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              zIndex: 101, // Over selected tokens and tools, but below modals
-              overflowY: 'auto'
-            }}
-            onClick={(e) => e.stopPropagation()} // Prevent deselecting when clicking inside
-          >
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--line-hairline)', paddingBottom: '8px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ 
-                  fontWeight: 'bold', 
-                  fontSize: '14px', 
-                  color: selectedTokenObj.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
-                  fontFamily: 'var(--font-display)'
-                }}>
-                  👤 {selectedTokenObj.name}
-                </span>
-                <span style={{ fontSize: '9px', color: 'var(--text-faint)' }}>
-                  ({selectedTokenObj.type} | {selectedTokenObj.class || '无职业'} | {selectedTokenObj.gridX || 0}ft, {selectedTokenObj.gridY || 0}ft)
-                </span>
-              </div>
-              <button 
-                onClick={() => setSelectedTokenId(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-faint)',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                  padding: '2px 6px'
-                }}
-                title="关闭面板"
-              >
-                ✕
-              </button>
-            </div>
+        {selectedTokenObj && appRole !== 'PLAYER' && (() => {
+          const actionRes = (selectedTokenObj.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
+          const bonusRes = (selectedTokenObj.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
 
-            {/* HP Tracking Section */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>❤️ 生命值 (HP):</span>
-                <span style={{ fontSize: '12px', fontWeight: 'bold' }}>
-                  {selectedTokenObj.hp} / {selectedTokenObj.maxHp}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '2px' }}>
-                <button 
-                  onClick={() => adjustHp(selectedTokenObj.id, -1)} 
-                  className="btn btn-secondary" 
-                  style={{ flex: 1, padding: '2px 0', fontSize: '10px', height: '22px' }}
-                >
-                  -1
-                </button>
-                <button 
-                  onClick={() => adjustHp(selectedTokenObj.id, -5)} 
-                  className="btn btn-secondary" 
-                  style={{ flex: 1, padding: '2px 0', fontSize: '10px', height: '22px' }}
-                >
-                  -5
-                </button>
-                <button 
-                  onClick={() => adjustHp(selectedTokenObj.id, 1)} 
-                  className="btn btn-secondary" 
-                  style={{ flex: 1, padding: '2px 0', fontSize: '10px', height: '22px' }}
-                >
-                  +1
-                </button>
-                <button 
-                  onClick={() => adjustHp(selectedTokenObj.id, 5)} 
-                  className="btn btn-secondary" 
-                  style={{ flex: 1, padding: '2px 0', fontSize: '10px', height: '22px' }}
-                >
-                  +5
-                </button>
-              </div>
-            </div>
+          const toggleQuickRes = (resName) => {
+            setCharacters(prev => prev.map(c => {
+              if (c.id !== selectedTokenObj.id) return c;
+              const updated = (c.resources || []).map(r => {
+                if (r.name !== resName) return r;
+                const newVal = r.value > 0 ? 0 : 1;
+                addLog?.({
+                  type: 'COMBAT',
+                  content: `角色 [${c.name}] 在地图互动栏 ${newVal > 0 ? '充能' : '消耗'}了资源 **[${resName}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
+                  timestamp: new Date().toLocaleTimeString()
+                });
+                return { ...r, value: newVal };
+              });
+              return { ...c, resources: updated };
+            }));
+          };
 
-            {/* Combat Actions & Resources */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🔋 战斗动作与资源:</span>
-              
-              {/* Quick Actions (Action & Bonus Action) */}
-              {(() => {
-                const actionRes = (selectedTokenObj.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
-                const bonusRes = (selectedTokenObj.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
-                
-                const handleToggleCardRes = (resName) => {
-                  setCharacters(prev => prev.map(c => {
-                    if (c.id === selectedTokenObj.id) {
-                      const updated = (c.resources || []).map(r => {
-                        if (r.name === resName) {
-                          const newVal = r.value > 0 ? 0 : 1;
-                          if (addLog) {
-                            addLog({
-                              type: 'COMBAT',
-                              content: `🔋 角色 [${c.name}] 在地图建议互动栏 ${newVal > 0 ? '充能' : '消耗'}了资源 **[${resName}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
-                              timestamp: new Date().toLocaleTimeString()
-                            });
-                          }
-                          return { ...r, value: newVal };
-                        }
-                        return r;
-                      });
-                      return { ...c, resources: updated };
-                    }
-                    return c;
-                  }));
-                };
+          const adjustRes = (realIndex, amount) => {
+            setCharacters(prev => prev.map(c => {
+              if (c.id !== selectedTokenObj.id) return c;
+              const updated = (c.resources || []).map((r, rIdx) => {
+                if (rIdx !== realIndex) return r;
+                const newVal = Math.max(0, Math.min(r.max, r.value + amount));
+                if (newVal !== r.value) {
+                  addLog?.({
+                    type: 'COMBAT',
+                    content: `角色 [${c.name}] 在地图互动栏 ${amount > 0 ? '恢复' : '消耗'}了资源 **[${r.name}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
+                    timestamp: new Date().toLocaleTimeString()
+                  });
+                }
+                return { ...r, value: newVal };
+              });
+              return { ...c, resources: updated };
+            }));
+          };
 
-                return (
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <div 
-                      onClick={() => handleToggleCardRes('动作')}
-                      style={{
-                        flex: 1,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        padding: '4px 0',
-                        height: '24px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        background: actionRes.value > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        color: actionRes.value > 0 ? 'var(--pigment-verdigris)' : 'var(--text-faint)',
-                        border: `1px solid ${actionRes.value > 0 ? 'rgba(16, 185, 129, 0.3)' : 'var(--line-hairline)'}`,
-                        transition: 'all 0.2s',
-                        userSelect: 'none'
-                      }}
-                      title={actionRes.value > 0 ? '点击消耗 [动作]' : '点击恢复 [动作]'}
-                    >
-                      ⚔️ {actionRes.value > 0 ? '可用动作' : '已用动作'}
-                    </div>
-                    <div 
-                      onClick={() => handleToggleCardRes('附赠动作')}
-                      style={{
-                        flex: 1,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        padding: '4px 0',
-                        height: '24px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        background: bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        color: bonusRes.value > 0 ? 'var(--accent)' : 'var(--text-faint)',
-                        border: `1px solid ${bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.3)' : 'var(--line-hairline)'}`,
-                        transition: 'all 0.2s',
-                        userSelect: 'none'
-                      }}
-                      title={bonusRes.value > 0 ? '点击消耗 [附赠动作]' : '点击恢复 [附赠动作]'}
-                    >
-                      ⚡ {bonusRes.value > 0 ? '可用附赠' : '已用附赠'}
-                    </div>
+          const quickChip = (res, label, name, tone) => (
+            <button
+              type="button"
+              onClick={() => toggleQuickRes(name)}
+              title={res.value > 0 ? `点击消耗 [${name}]` : `点击恢复 [${name}]`}
+              style={{
+                flex: 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 'var(--space-2)',
+                height: 'var(--control-h-sm)',
+                border: 'none',
+                cursor: 'pointer',
+                background: res.value > 0 ? `var(--pigment-${tone}-soft)` : 'transparent',
+                boxShadow: `inset 0 0 0 1px ${res.value > 0 ? `var(--pigment-${tone}-line)` : 'var(--line-hairline)'}`,
+                color: res.value > 0 ? `var(--pigment-${tone})` : 'var(--text-faint)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 'var(--type-meta)',
+                transition: 'var(--motion-control)'
+              }}
+            >
+              {label}
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{res.value > 0 ? '可用' : '已用'}</span>
+            </button>
+          );
+
+          const addCondition = (name) => {
+            const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
+            if (rounds !== null) handleAddCondition(selectedTokenObj.id, name, rounds);
+          };
+
+          return (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                right: 'var(--space-4)',
+                bottom: 'var(--space-4)',
+                width: 320,
+                maxHeight: '85%',
+                zIndex: 101,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-4)',
+                padding: 'var(--space-4)',
+                overflowY: 'auto',
+                background: 'var(--surface-overlay)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                boxShadow: 'inset 0 0 0 1px var(--bracket-line), var(--shadow-float)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                <MapToken kind={selectedTokenObj.type === 'PC' ? 'PC' : 'MONSTER'} name={selectedTokenObj.name} size={34} selected />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-display-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedTokenObj.name}
                   </div>
-                );
-              })()}
-
-              {/* Other custom resources list */}
-              {selectedTokenObj.resources && selectedTokenObj.resources.filter(r => r.name !== '动作' && r.name !== '附赠动作').length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                  {selectedTokenObj.resources.filter(r => r.name !== '动作' && r.name !== '附赠动作').map((res, idx) => {
-                    const realIndex = selectedTokenObj.resources.findIndex(r => r.name === res.name);
-                    const handleAdjustCardResource = (amount) => {
-                      setCharacters(prev => prev.map(c => {
-                        if (c.id === selectedTokenObj.id) {
-                          const updatedResources = (c.resources || []).map((r, rIdx) => {
-                            if (rIdx === realIndex) {
-                              const newVal = Math.max(0, Math.min(r.max, r.value + amount));
-                              if (addLog && newVal !== r.value) {
-                                addLog({
-                                  type: 'COMBAT',
-                                  content: `🔋 角色 [${c.name}] 在地图建议互动栏 ${amount > 0 ? '恢复' : '消耗'}了资源 **[${r.name}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
-                                  timestamp: new Date().toLocaleTimeString()
-                                });
-                              }
-                              return { ...r, value: newVal };
-                            }
-                            return r;
-                          });
-                          return { ...c, resources: updatedResources };
-                        }
-                        return c;
-                      }));
-                    };
-
-                    return (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--line-hairline)' }}>
-                        <span style={{ fontSize: '10px' }}>{res.name} ({res.value}/{res.max})</span>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button onClick={() => handleAdjustCardResource(-1)} className="btn btn-secondary" style={{ padding: '0 4px', fontSize: '9px', height: '16px', width: '16px' }}>-</button>
-                          <button onClick={() => handleAdjustCardResource(1)} className="btn btn-secondary" style={{ padding: '0 4px', fontSize: '9px', height: '16px', width: '16px' }}>+</button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+                    {selectedTokenObj.type} · {selectedTokenObj.class || '无职业'} · X{String(selectedTokenObj.gridX || 0).padStart(2, '0')} Y{String(selectedTokenObj.gridY || 0).padStart(2, '0')}
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Conditions Section */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🛡️ 状态管理:</span>
-              
-              {/* Render current conditions */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '2px' }}>
-                {selectedTokenObj.conditions && selectedTokenObj.conditions.map(cond => (
-                  <span 
-                    key={cond.id} 
-                    style={{ 
-                      fontSize: '9px', 
-                      padding: '2px 5px', 
-                      background: 'rgba(239, 68, 68, 0.15)', 
-                      color: 'var(--pigment-madder)', 
-                      borderRadius: '4px',
-                      border: '1px solid rgba(239,68,68,0.3)',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '2px'
-                    }}
-                  >
-                    {cond.name}({cond.duration === 'permanent' ? '∞' : `${cond.duration}r`})
-                    <button 
-                      onClick={() => handleRemoveCondition(selectedTokenObj.id, cond.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--pigment-madder)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
-                      title="清除状态"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-
-                {(!selectedTokenObj.conditions || selectedTokenObj.conditions.length === 0) && (
-                  <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>正常 (无特殊状态)</span>
-                )}
+                <IconButton icon="x" size="sm" onClick={() => setSelectedTokenId(null)} title= "关闭面板" />
               </div>
 
-              {/* Add condition controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.15)', padding: '6px', borderRadius: '6px', border: '1px solid var(--line-hairline)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '3px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <Meter label= "生命值" value={selectedTokenObj.hp} max={selectedTokenObj.maxHp} temp={selectedTokenObj.tempHp || 0} />
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <Button size="sm" variant="danger" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, -5)} title= "扣除 5 点生命值">-5</Button>
+                  <Button size="sm" variant="danger" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, -1)} title= "扣除 1 点生命值">-1</Button>
+                  <Button size="sm" variant="secondary" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, 1)} title= "恢复 1 点生命值">+1</Button>
+                  <Button size="sm" variant="secondary" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, 5)} title= "恢复 5 点生命值">+5</Button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }}>
+                <ToolbarLabel>战斗动作与资源</ToolbarLabel>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  {quickChip(actionRes, '动作', '动作', 'verdigris')}
+                  {quickChip(bonusRes, '附赠', '附赠动作', 'woad')}
+                </div>
+                {(selectedTokenObj.resources || []).filter(r => r.name !== '动作' && r.name !== '附赠动作').map((res, idx) => {
+                  const realIndex = selectedTokenObj.resources.findIndex(r => r.name === res.name);
+                  return (
+                    <ResourceSlot
+                      key={idx}
+                      name={res.name}
+                      value={res.value}
+                      max={res.max}
+                      resetType={res.resetType === 'short_rest' ? 'short' : res.resetType === 'long_rest' ? 'long' : 'turn'}
+                      onSpend={() => adjustRes(realIndex, -1)}
+                      onRestore={() => adjustRes(realIndex, 1)}
+                    />
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }}>
+                <ToolbarLabel>状态管理</ToolbarLabel>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {selectedTokenObj.conditions && selectedTokenObj.conditions.length > 0 ? (
+                    selectedTokenObj.conditions.map(cond => (
+                      <Badge key={cond.id} tone="ochre" variant="soft" size="sm" onRemove={() => handleRemoveCondition(selectedTokenObj.id, cond.id)}>
+                        {cond.name}（{cond.duration ==='permanent'?'':`${cond.duration}r`}）
+                      </Badge>
+                    ))
+                  ) : (
+                    <span style={{ fontSize: 'var(--type-micro)', color: 'var(--pigment-verdigris)', fontStyle: 'italic' }}>正常 (无特殊状态)</span>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
                   {['眩晕', '倒地', '定身', '中毒', '致盲', '虚弱', '狂暴', '祝福'].map(condName => (
-                    <button
-                      key={condName}
-                      type="button"
-                      onClick={() => {
-                        const rounds = prompt(`请输入 [${condName}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                        if (rounds !== null) {
-                          handleAddCondition(selectedTokenObj.id, condName, rounds);
-                        }
-                      }}
-                      className="btn btn-secondary"
-                      style={{ fontSize: '9px', padding: '2px 0', height: '18px', margin: 0, minWidth: 0, textAlign: 'center' }}
-                    >
+                    <Button key={condName} size="sm" variant="secondary" onClick={() => addCondition(condName)} title={`为此棋子附加 [${condName}] 状态`}>
                       {condName}
-                    </button>
+                    </Button>
                   ))}
                 </div>
-
-                {/* Hand-fill condition */}
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  <input 
-                    type="text" 
-                    placeholder="手填自定义状态..."
-                    id={`customCondMapInput_${selectedTokenObj.id}`}
-                    className="input-text"
-                    style={{ fontSize: '9px', padding: '2px 6px', height: '20px', flex: 1, background: 'rgba(255,255,255,0.01)' }}
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <TextInput
+                    size="sm"
+                    placeholder= "手填自定义状态..."
+                    value={mapCondDraft}
+                    onChange={(e) => setMapCondDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && e.target.value.trim()) {
-                        const name = e.target.value.trim();
-                        const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                        if (rounds !== null) {
-                          handleAddCondition(selectedTokenObj.id, name, rounds);
-                        }
-                        e.target.value = '';
+                        addCondition(e.target.value.trim());
+                        setMapCondDraft('');
                       }
                     }}
                   />
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="plus"
+                    title= "添加手填的自定义状态"
                     onClick={() => {
-                      const input = document.getElementById(`customCondMapInput_${selectedTokenObj.id}`);
-                      if (input && input.value.trim()) {
-                        const name = input.value.trim();
-                        const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                        if (rounds !== null) {
-                          handleAddCondition(selectedTokenObj.id, name, rounds);
-                        }
-                        input.value = '';
-                      }
+                      const name = mapCondDraft.trim();
+                      if (!name) return;
+                      addCondition(name);
+                      setMapCondDraft('');
                     }}
-                    className="btn btn-secondary"
-                    style={{ fontSize: '9px', padding: '0 6px', height: '20px', margin: 0, cursor: 'pointer' }}
-                  >
-                    加
-                  </button>
+                  />
                 </div>
               </div>
-            </div>
 
-            {/* Remove from Map section */}
-            <div style={{ borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '10px', marginTop: '6px' }}>
-              <button
+              <Button
+                variant="danger"
+                size="sm"
+                icon="map-pin-simple-area"
+                fullWidth
+                title= "把此棋子从当前地图上移除（角色卡保留）"
                 onClick={() => {
-                  setCharacters(prev => prev.map(c => {
-                    if (c.id === selectedTokenObj.id) {
-                      return { ...c, mapId: null };
-                    }
-                    return c;
-                  }));
-                  if (addLog) {
-                    addLog({
-                      type: 'COMBAT',
-                      content: `📍 角色 [${selectedTokenObj.name}] 已手动从地图移出。`,
-                      timestamp: new Date().toLocaleTimeString()
-                    });
-                  }
+                  setCharacters(prev => prev.map(c => (c.id === selectedTokenObj.id ? { ...c, mapId: null } : c)));
+                  addLog?.({
+                    type: 'COMBAT',
+                    content: `角色 [${selectedTokenObj.name}] 已手动从地图移出。`,
+                    timestamp: new Date().toLocaleTimeString()
+                  });
                   setSelectedTokenId(null);
                 }}
-                className="btn"
-                style={{
-                  width: '100%',
-                  padding: '6px 12px',
-                  fontSize: '11px',
-                  color: 'var(--pigment-madder)',
-                  background: 'rgba(248, 113, 113, 0.05)',
-                  border: '1px solid rgba(248, 113, 113, 0.25)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(248, 113, 113, 0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.5)';
-                  e.currentTarget.style.boxShadow = '0 0 8px rgba(248, 113, 113, 0.2)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(248, 113, 113, 0.05)';
-                  e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.25)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
               >
-                📍 手动从地图移出
-              </button>
+                手动从地图移出
+              </Button>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
-      {/* Map Bottom Information Panel */}
-      <div 
-        style={{ 
-          background: 'var(--surface-panel)', 
-          padding: '10px 16px', 
-          borderTop: '1px solid var(--line-hairline)',
+      {/* Bottom readout */}
+      <div
+        style={{
+          flexShrink: 0,
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: '12px',
-          flexWrap: 'wrap',
-          gap: '10px'
+          gap: 'var(--space-4)',
+          padding: 'var(--space-3) var(--space-5)',
+          background: 'var(--surface-panel)',
+          borderTop: 'var(--border-hairline)',
+          fontSize: 'var(--type-meta)'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {isTerrainEditMode ? (
-            <span style={{ color: 'var(--accent)' }}>
-              🚧 正在进行地图地形编辑：
-              {terrainEditTool === 'paint_block' ? '🧱 阻挡刷子激活（按住鼠标左键并在地图上拖动绘制）' :
-               terrainEditTool === 'paint_erase' ? '🧽 橡皮擦激活（按住鼠标左键并在阻挡格上拖动擦除）' :
-               '🖐️ 漫游模式：可在地图上直接按住拖拽移动区域地形，或拖动其边缘/边角调节大小'}
+        {isTerrainEditMode ? (
+          <span style={{ color: 'var(--accent)' }}>
+            正在编辑地形：
+            {terrainEditTool === 'paint_block' ? '阻挡刷子激活（按住鼠标左键并在地图上拖动绘制）'
+              : terrainEditTool === 'paint_erase' ? '橡皮擦激活（按住鼠标左键并在阻挡格上拖动擦除）'
+                : '漫游模式：可在地图上直接按住拖拽移动区域地形，或拖动其边缘/边角调节大小'}
+          </span>
+        ) : selectedTokenObj ? (
+          <span style={{ color: 'var(--text-muted)' }}>
+            已选中 <strong style={{ color: 'var(--accent)' }}>{selectedTokenObj.name}</strong>
+            <span style={{ fontFamily: 'var(--font-mono)', marginLeft: 'var(--space-2)' }}>
+              X{String(selectedTokenObj.gridX || 0).padStart(2, '0')} Y{String(selectedTokenObj.gridY || 0).padStart(2, '0')}
             </span>
-          ) : selectedTokenObj ? (
-            <span>
-              已选中: <strong style={{ color: 'var(--accent)' }}>{selectedTokenObj.name}</strong> 
-              (位置: {selectedTokenObj.gridX || 0}ft, {selectedTokenObj.gridY || 0}ft)
-            </span>
-          ) : (
-            <span style={{ color: 'var(--text-faint)' }}>点击地图上的棋子进行选中或拖动以改变位置</span>
-          )}
+          </span>
+        ) : (
+          <span style={{ color: 'var(--text-faint)' }}>点击地图上的棋子进行选中或拖动以改变位置</span>
+        )}
 
-          {/* Summon PC character tokens button */}
-          {!isTerrainEditMode && unplacedPCs.length > 0 && (
-            <button
-              onClick={handleSummonCharacters}
-              className="btn btn-primary"
-              style={{
-                fontSize: '11px',
-                padding: '4px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                boxShadow: '0 0 8px rgba(168, 85, 247, 0.4)',
-                border: '1px solid var(--accent)',
-                animation: 'pulse 2s infinite',
-                height: '24px'
-              }}
-              title={`一键将未在当前地图的 ${unplacedPCs.length} 个玩家角色召集到当前地图中央`}
-            >
-              <span>🧙 召回玩家角色 ({unplacedPCs.length})</span>
-            </button>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-muted)' }}>比例尺: 1格 = 1ft</span>
-        </div>
+        {!isTerrainEditMode && unplacedPCs.length > 0 && (
+          <Button
+            size="sm"
+            icon="users-three"
+            onClick={handleSummonCharacters}
+            title={`一键将未在当前地图的 ${unplacedPCs.length} 个玩家角色召集到当前地图中央`}
+          >
+            召回玩家角色 ({unplacedPCs.length})
+          </Button>
+        )}
+
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+          比例尺 1格 = 1ft
+        </span>
       </div>
 
-      {/* 先攻准备与参战选择模态窗 */}
-      {showInitiativePrep && (
-        <div 
-          style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(10, 11, 16, 0.75)',
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000
-          }}
-          onClick={() => setShowInitiativePrep(false)}
-        >
-          <div 
-            style={{
-              width: '480px',
-              maxHeight: '80vh',
-              background: 'var(--surface-panel)',
-              border: '1px solid rgba(168, 85, 247, 0.25)',
-              borderRadius: '16px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 25px rgba(168, 85, 247, 0.1)',
-              padding: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-              overflowY: 'auto'
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line-hairline)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>⚔️ 发起遭遇战：勾选参战单位</span>
-              </h3>
-              <button 
-                onClick={() => setShowInitiativePrep(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '16px' }}
+      {/* Encounter setup */}
+      <Modal
+        open={showInitiativePrep}
+        onClose={() => setShowInitiativePrep(false)}
+        icon="sword"
+        title= "发起遭遇战：勾选参战单位"
+        width={520}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowInitiativePrep(false)}>取消</Button>
+            <Button
+              icon="dice-six"
+              onClick={handleRollAndStartCombat}
+              disabled={characters.filter(c => c.mapId === activeMapId).length === 0}
+              title= "为所有勾选的单位掷先攻，按结果排序并进入战斗"
+            >
+              一键掷先攻并开战
+            </Button>
+          </>
+        }
+      >
+        <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)' }}>
+          选择参战成员，先攻将自动加上各自的先攻修正。
+        </span>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '42vh', overflowY: 'auto' }}>
+          {characters.filter(c => c.mapId === activeMapId).map(c => {
+            const isChecked = !!tempParticipants[c.id];
+            return (
+              <div
+                key={c.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-3) var(--space-4)',
+                  background: isChecked ? 'var(--accent-soft)' : 'var(--surface-raised)',
+                  boxShadow: `inset 0 0 0 1px ${isChecked ? 'var(--accent-line)' : 'var(--line-hairline)'}`,
+                  transition: 'var(--motion-control)'
+                }}
               >
-                ✕
-              </button>
-            </div>
-
-            {/* Characters List (Only those on current map) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold' }}>选择参战成员 (自动加上先攻 Initiative 修正):</span>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '40vh', overflowY: 'auto', paddingRight: '4px' }}>
-                {characters.filter(c => c.mapId === activeMapId).map(c => {
-                  const isChecked = !!tempParticipants[c.id];
-                  return (
-                    <div 
-                      key={c.id} 
-                      onClick={() => setTempParticipants(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '10px 12px',
-                        background: isChecked ? 'rgba(168, 85, 247, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                        border: `1px solid ${isChecked ? 'rgba(168, 85, 247, 0.4)' : 'var(--line-hairline)'}`,
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}} // Click is handled by parent div
-                          style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: isChecked ? 'var(--text-body)' : 'var(--text-body)' }}>
-                          {c.name}
-                        </span>
-                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: c.type === 'PC' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: c.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)', fontWeight: 'bold' }}>
-                          {c.type}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
-                          先攻修正: <strong style={{ color: 'var(--pigment-ochre)' }}>+{c.initiative || 0}</strong>
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {characters.filter(c => c.mapId === activeMapId).length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-faint)', fontSize: '12px', fontStyle: 'italic' }}>
-                    当前地图上没有放置任何角色 Token。请先从左侧列表拖动角色上图！
-                  </div>
-                )}
+                <Checkbox
+                  checked={isChecked}
+                  onChange={() => setTempParticipants(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
+                  label={c.name}
+                />
+                <Badge size="sm" tone={c.type === 'PC' ? 'woad' : 'madder'}>{c.type}</Badge>
+                <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />
+                <StatPill label= "先攻修正" value={`+${c.initiative || 0}`} size="sm" tone="accent" style={{ flex: '0 0 auto' }} />
               </div>
-            </div>
+            );
+          })}
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--line-hairline)', paddingTop: '16px' }}>
-              <button 
-                type="button" 
-                onClick={() => setShowInitiativePrep(false)}
-                className="btn btn-secondary"
-              >
-                取消
-              </button>
-              <button 
-                type="button" 
-                onClick={handleRollAndStartCombat}
-                className="btn btn-primary"
-                style={{ background: 'var(--accent)' }}
-                disabled={characters.filter(c => c.mapId === activeMapId).length === 0}
-              >
-                🎲 一键掷先攻并开战！
-              </button>
-            </div>
-          </div>
+          {characters.filter(c => c.mapId === activeMapId).length === 0 && (
+            <EmptyState icon="users-three" text= "当前地图上没有放置任何角色棋子" hint= "请先从左侧名册拖动角色上图。" />
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

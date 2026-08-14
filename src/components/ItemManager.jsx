@@ -180,7 +180,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     if (addLog) {
       addLog({
         type: 'ITEMS',
-        content: `📦 新增未获得物品到池 [${newItemCategory}]: **${trimmedName}** x${newItemQty}`,
+        content: `新增未获得物品到池 [${newItemCategory}]: **${trimmedName}** x${newItemQty}`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -230,7 +230,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     if (addLog) {
       addLog({
         type: 'ITEMS',
-        content: `🎁 获得物品: 玩家 [${character.name}] 获得了 **${item.name}** x${qtyToMove} (自 [${item.category}])`,
+        content: `获得物品: 玩家 [${character.name}] 获得了 **${item.name}** x${qtyToMove} (自 [${item.category}])`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -277,7 +277,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     if (addLog) {
       addLog({
         type: 'ITEMS',
-        content: `🔄 物品转移: [${sourceChar.name}] 将 **${item.name}** x${qtyToMove} 转移给了 [${targetChar.name}]`,
+        content: `物品转移: [${sourceChar.name}] 将 **${item.name}** x${qtyToMove} 转移给了 [${targetChar.name}]`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -300,7 +300,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     if (addLog) {
       addLog({
         type: 'ITEMS',
-        content: `🧪 物品消耗: 玩家 [${character.name}] 消耗了 **${item.name}** x1`,
+        content: `物品消耗: 玩家 [${character.name}] 消耗了 **${item.name}** x1`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -316,7 +316,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
       if (addLog) {
         addLog({
           type: 'ITEMS',
-          content: `🗑️ 物品删除: 彻底删除了 **${item.name}**`,
+          content: `物品删除: 彻底删除了 **${item.name}**`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -332,7 +332,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
       if (addLog) {
         addLog({
           type: 'ITEMS',
-          content: `🗑️ 模板删除: 从模板库物理清除了模板 [${templateName}]`,
+          content: `模板删除: 从模板库物理清除了模板 [${templateName}]`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -386,7 +386,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     >
       <Panel
         code="POOL"
-        title="世界未获得物品池"
+        title= "世界未获得物品池"
         meta={`${worldItems.length} 件`}
         scroll
         bodyStyle={{ padding: 'var(--panel-pad)', gap: 'var(--space-5)', flex: 1, minHeight: 0, overflowY: 'auto' }}
@@ -395,8 +395,8 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-3)' }}>
             <TextInput
               size="sm"
-              label="物品名称"
-              placeholder="物品名称 (自动匹配已存模板)"
+              label= "物品名称"
+              placeholder= "物品名称 (自动匹配已存模板)"
               value={newItemName}
               onChange={(e) => handleNameChange(e.target.value)}
               hint={matchedDatalistTemplates.length ? `${matchedDatalistTemplates.length} 个模板匹配，点击下方套用` : undefined}
@@ -405,8 +405,8 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
               size="sm"
               mono
               type="number"
-              label="数量"
-              placeholder="数量"
+              label= "数量"
+              placeholder= "数量"
               value={newItemQty}
               onChange={(e) => setNewItemQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
             />
@@ -428,10 +428,10 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <Select size="sm" label="分类" value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} options={CATEGORIES} />
-            <TextInput size="sm" label="描述效果" placeholder="描述效果" value={newItemDesc} onChange={(e) => setNewItemDesc(e.target.value)} />
+            <Select size="sm" label= "分类" value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} options={CATEGORIES} />
+            <TextInput size="sm" label= "描述效果" placeholder= "描述效果" value={newItemDesc} onChange={(e) => setNewItemDesc(e.target.value)} />
           </div>
-          <Button type="submit" icon="plus" title="把这件物品加入世界物品池（未分配给任何角色）">添加至物品池</Button>
+          <Button type="submit" icon="plus" title= "把这件物品加入世界物品池（未分配给任何角色）">添加至物品池</Button>
         </form>
 
         <details open={showTemplateManager} onToggle={e => setShowTemplateManager(e.currentTarget.open)}>
@@ -440,7 +440,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
           </summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 180, overflowY: 'auto', marginTop: 'var(--space-3)' }}>
             {itemTemplates.length === 0 ? (
-              <EmptyState compact icon="stack" text="模板库暂无数据，添加新物品时会自动录入。" />
+              <EmptyState compact icon="stack" text= "模板库暂无数据，添加新物品时会自动录入。" />
             ) : (
               itemTemplates.map((t, idx) => (
                 <div
@@ -466,7 +466,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                       </div>
                     )}
                   </div>
-                  <IconButton icon="trash" size="sm" tone="danger" onClick={(e) => { e.stopPropagation(); deleteTemplate(t.name); }} title="删除此物品模板" />
+                  <IconButton icon="trash" size="sm" tone="danger" onClick={(e) => { e.stopPropagation(); deleteTemplate(t.name); }} title= "删除此物品模板" />
                 </div>
               ))
             )}
@@ -495,7 +495,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {displayedWorldItems.length === 0 ? (
-            <EmptyState icon="backpack" text="物品池暂无此分类未分配物品" hint="换个分类，或用上方表单入库。" />
+            <EmptyState icon="backpack" text= "物品池暂无此分类未分配物品" hint= "换个分类，或用上方表单入库。" />
           ) : (
             displayedWorldItems.map(item => {
               const draft = distributeDraft[item.id] || {};
@@ -506,7 +506,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                     category={item.category}
                     quantity={item.quantity}
                     description={item.description}
-                    actions={<IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title="彻底删除物品" />}
+                    actions={<IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title= "彻底删除物品" />}
                   />
                   <div
                     style={{
@@ -538,7 +538,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                       icon="paper-plane-tilt"
                       disabled={!draft.charId}
                       onClick={() => distributeItem(item.id, draft.charId, draft.qty ?? 1)}
-                      title="把指定数量分发给所选角色"
+                      title= "把指定数量分发给所选角色"
                     >
                       分发
                     </Button>
@@ -552,7 +552,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
 
       <Panel
         code="BAGS"
-        title="玩家角色背包与流转"
+        title= "玩家角色背包与流转"
         scroll
         bodyStyle={{ padding: 'var(--panel-pad)', gap: 'var(--space-5)', flex: 1, minHeight: 0, overflowY: 'auto' }}
       >
@@ -616,7 +616,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                     </div>
 
                     {charItems.length === 0 ? (
-                      <EmptyState compact icon="backpack" text="背包空空如也" />
+                      <EmptyState compact icon="backpack" text= "背包空空如也" />
                     ) : (
                       charItems.map(item => {
                         const draft = transferDraft[item.id] || {};
@@ -662,12 +662,12 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                                 variant="secondary"
                                 disabled={!draft.targetId}
                                 onClick={() => transferItem(item.id, char.id, draft.targetId, draft.qty ?? 1)}
-                                title="把指定数量转移给另一名角色"
+                                title= "把指定数量转移给另一名角色"
                               >
                                 转移
                               </Button>
-                              <Button size="sm" variant="secondary" onClick={() => consumeItem(item.id, char.id)} title="消耗1个物品">消耗</Button>
-                              <IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title="彻底删除物品" />
+                              <Button size="sm" variant="secondary" onClick={() => consumeItem(item.id, char.id)} title= "消耗1个物品">消耗</Button>
+                              <IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title= "彻底删除物品" />
                             </div>
                           </div>
                         );

@@ -49,7 +49,7 @@ function CharacterList({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `📁 分组 [${editingGroupName.trim()}] 的名称与颜色已被更新。`,
+        content: `分组 [${editingGroupName.trim()}] 的名称与颜色已被更新。`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -65,7 +65,7 @@ function CharacterList({
     
     // Check if group name already exists
     if (groups.some(g => g.name.toLowerCase() === newGroupName.trim().toLowerCase())) {
-      alert(`⚠️ 分组 [${newGroupName.trim()}] 已经存在！`);
+      alert(`分组 [${newGroupName.trim()}] 已经存在！`);
       return;
     }
 
@@ -80,14 +80,14 @@ function CharacterList({
     if (addLog) {
       addLog({
         type: 'SYSTEM',
-        content: `📂 **创建了新角色分组**: [${newGroup.name}]`,
+        content: `**创建了新角色分组**: [${newGroup.name}]`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
   };
 
   const handleDeleteGroup = (groupId, groupName) => {
-    if (window.confirm(`🚨 删除分组确认 🚨\n确定要永久删除自定义分组 [${groupName}] 吗？\n该分组内的所有角色/怪物不会被删除，而是会自动安全退回到它们的默认分组（PC 归入“玩家成员”，NPC 归入“怪物与NPC”）。`)) {
+    if (window.confirm(`删除分组确认\n确定要永久删除自定义分组 [${groupName}] 吗？\n该分组内的所有角色/怪物不会被删除，而是会自动安全退回到它们的默认分组（PC 归入“玩家成员”，NPC 归入“怪物与NPC”）。`)) {
       setGroups(prev => prev.filter(g => g.id !== groupId));
       
       // Safety update characters back to default groups
@@ -103,7 +103,7 @@ function CharacterList({
       if (addLog) {
         addLog({
           type: 'SYSTEM',
-          content: `🗑️ **删除了分组**: [${groupName}]，该组内的角色已自动退回默认分类。`,
+          content: `**删除了分组**: [${groupName}]，该组内的角色已自动退回默认分类。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -125,7 +125,7 @@ function CharacterList({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `📂 **调整角色分组**: 角色 [${c.name}] 已移动至分组 **[${groupName}]**`,
+            content: `**调整角色分组**: 角色 [${c.name}] 已移动至分组 **[${groupName}]**`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -163,7 +163,7 @@ function CharacterList({
             if (addLog) {
               addLog({
                 type: 'COMBAT',
-                content: `🔋 角色 [${c.name}] ${newVal > 0 ? '充能' : '消耗'}了资源 **[${resName}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
+                content: `角色 [${c.name}] ${newVal > 0 ?'充能':'消耗'}了资源 **[${resName}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
                 timestamp: new Date().toLocaleTimeString()
               });
             }
@@ -230,7 +230,7 @@ function CharacterList({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `👤 **角色升级**: **[${char.type}] ${char.name}** 提升至 **等级 ${nextLevel}**！生命骰 (${char.hitDice || 'd8'}) 掷出了 **${rolledHp}**，最大生命值从 ${char.maxHp} 提升至 ${char.maxHp + rolledHp}。`,
+          content: `**角色升级**: **[${char.type}] ${char.name}** 提升至 **等级 ${nextLevel}**！生命骰 (${char.hitDice ||'d8'}) 掷出了 **${rolledHp}**，最大生命值从 ${char.maxHp} 提升至 ${char.maxHp + rolledHp}。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -238,7 +238,7 @@ function CharacterList({
       // Level Down
       const currentLevel = char.level || 1;
       if (currentLevel <= 1) {
-        alert('⚠️ 角色等级不能低于 1 级！');
+        alert('角色等级不能低于 1 级！');
         return;
       }
       
@@ -268,7 +268,7 @@ function CharacterList({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `👤 **等级回滚**: **[${char.type}] ${char.name}** 回滚至 **等级 ${nextLevel}**。撤销了上次升级，最大生命值减少了 ${rolledHp}，恢复为 ${Math.max(1, char.maxHp - rolledHp)}。`,
+          content: `**等级回滚**: **[${char.type}] ${char.name}** 回滚至 **等级 ${nextLevel}**。撤销了上次升级，最大生命值减少了 ${rolledHp}，恢复为 ${Math.max(1, char.maxHp - rolledHp)}。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -285,7 +285,7 @@ function CharacterList({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `⚡ 角色 [${c.name}] 新增了特质/技能: **${newFeatName.trim()}** - *${desc}*`,
+            content: `角色 [${c.name}] 新增了特质/技能: **${newFeatName.trim()}** - *${desc}*`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -307,7 +307,7 @@ function CharacterList({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `🗑️ 角色 [${c.name}] 移除了特质/技能: **${featName}**`,
+            content: `角色 [${c.name}] 移除了特质/技能: **${featName}**`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -328,7 +328,7 @@ function CharacterList({
             if (addLog && newVal !== r.value) {
               addLog({
                 type: 'COMBAT',
-                content: `🔋 角色 [${c.name}] ${amount > 0 ? '恢复' : '消耗'}了资源槽 **[${r.name}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
+                content: `角色 [${c.name}] ${amount > 0 ?'恢复':'消耗'}了资源槽 **[${r.name}]**: ${r.value} -> **${newVal}** (上限: ${r.max})`,
                 timestamp: new Date().toLocaleTimeString()
               });
             }
@@ -358,7 +358,7 @@ function CharacterList({
         if (addLog) {
           addLog({
             type: 'COMBAT',
-            content: `🔋 角色 [${c.name}] 新增了资源槽追踪 **[${cardResName.trim()}]** (上限: ${maxVal}, 重置: ${cardResResetType === 'turn' ? '每回合' : cardResResetType === 'short_rest' ? '短休' : '长休'})`,
+            content: `角色 [${c.name}] 新增了资源槽追踪 **[${cardResName.trim()}]** (上限: ${maxVal}, 重置: ${cardResResetType ==='turn'?'每回合': cardResResetType ==='short_rest'?'短休':'长休'})`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -380,7 +380,7 @@ function CharacterList({
           if (addLog) {
             addLog({
               type: 'COMBAT',
-              content: `🗑️ 角色 [${c.name}] 移除了资源槽追踪 **[${resName}]**`,
+              content: `角色 [${c.name}] 移除了资源槽追踪 **[${resName}]**`,
               timestamp: new Date().toLocaleTimeString()
             });
           }
@@ -414,7 +414,7 @@ function CharacterList({
       const char = characters.find(ch => ch.id === charId);
       addLog({
         type: 'COMBAT',
-        content: `🩸 **状态变更**: 为 [${char ? char.name : '未知'}] 附加了特殊状态 **[${name}]** (${duration === 'permanent' ? '永久' : `持续 ${duration} 回合`})。`,
+        content: `**状态变更**: 为 [${char ? char.name :'未知'}] 附加了特殊状态 **[${name}]** (${duration ==='permanent'?'永久':`持续 ${duration} 回合`})。`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -428,7 +428,7 @@ function CharacterList({
         if (removed && addLog) {
           addLog({
             type: 'COMBAT',
-            content: `🟢 **状态消除**: 手动清除了 [${c.name}] 身上的特殊状态 **[${removed.name}]**。`,
+            content: `**状态消除**: 手动清除了 [${c.name}] 身上的特殊状态 **[${removed.name}]**。`,
             timestamp: new Date().toLocaleTimeString()
           });
         }
@@ -444,7 +444,7 @@ function CharacterList({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `🗑️ 彻底移除了角色: **${charName}**`,
+          content: `彻底移除了角色: **${charName}**`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -461,7 +461,7 @@ function CharacterList({
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `📍 角色 [${charName}] 已手动从地图移出。`,
+        content: `角色 [${charName}] 已手动从地图移出。`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -491,7 +491,7 @@ function CharacterList({
           }
           
           if (addLog && (newHp !== c.hp || newTempHp !== temp)) {
-            let logMsg = `❤️ 角色 [${c.name}] HP 变更: `;
+            let logMsg = `角色 [${c.name}] HP 变更:`;
             if (temp > 0 || newTempHp > 0) {
               logMsg += `生命值 **${c.hp}** (+${temp} 临时) -> **${newHp}** (+${newTempHp} 临时) (最大生命: ${c.maxHp})`;
             } else {
@@ -559,10 +559,10 @@ function CharacterList({
   /** ±1 / ±5 HP, sitting in the card's action slot. */
   const renderHpSteppers = (char) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }} onClick={e => e.stopPropagation()}>
-      <IconButton icon="caret-double-down" size="sm" tone="danger" onClick={() => adjustHp(char.id, -5)} title="扣除 5 点生命值" />
-      <IconButton icon="minus" size="sm" tone="danger" onClick={() => adjustHp(char.id, -1)} title="扣除 1 点生命值" />
-      <IconButton icon="plus" size="sm" onClick={() => adjustHp(char.id, 1)} title="恢复 1 点生命值" />
-      <IconButton icon="caret-double-up" size="sm" onClick={() => adjustHp(char.id, 5)} title="恢复 5 点生命值" />
+      <IconButton icon="caret-double-down" size="sm" tone="danger" onClick={() => adjustHp(char.id, -5)} title= "扣除 5 点生命值" />
+      <IconButton icon="minus" size="sm" tone="danger" onClick={() => adjustHp(char.id, -1)} title= "扣除 1 点生命值" />
+      <IconButton icon="plus" size="sm" onClick={() => adjustHp(char.id, 1)} title= "恢复 1 点生命值" />
+      <IconButton icon="caret-double-up" size="sm" onClick={() => adjustHp(char.id, 5)} title= "恢复 5 点生命值" />
     </div>
   );
 
@@ -599,13 +599,13 @@ function CharacterList({
       onClick={e => e.stopPropagation()}
     >
       <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-        <TextInput size="sm" label="角色/怪物名称" value={char.name} onChange={e => handleUpdateBasicInfo(char.id, 'name', e.target.value)} />
-        <TextInput size="sm" label="职业 (Class)" value={char.class || ''} placeholder="无职业" onChange={e => handleUpdateBasicInfo(char.id, 'class', e.target.value)} />
-        <TextInput size="sm" mono type="number" label="最大生命 (Max HP)" value={char.maxHp} onChange={e => handleUpdateBasicInfo(char.id, 'maxHp', e.target.value)} />
-        <TextInput size="sm" mono type="number" label="护甲值 (AC)" value={char.ac !== undefined ? char.ac : 10} onChange={e => handleUpdateBasicInfo(char.id, 'ac', parseInt(e.target.value, 10) || 0)} />
-        <TextInput size="sm" mono type="number" label="先攻加成 (Initiative)" value={char.initiative !== undefined ? char.initiative : 0} onChange={e => handleUpdateBasicInfo(char.id, 'initiative', parseInt(e.target.value, 10) || 0)} />
-        <TextInput size="sm" mono type="number" label="移动速度 (Speed ft)" value={char.speed !== undefined ? char.speed : 30} onChange={e => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)} />
-        <TextInput size="sm" mono type="number" label="临时生命 (Temp HP)" value={char.tempHp !== undefined ? char.tempHp : 0} onChange={e => handleUpdateBasicInfo(char.id, 'tempHp', Math.max(0, parseInt(e.target.value, 10) || 0))} />
+        <TextInput size="sm" label= "角色/怪物名称" value={char.name} onChange={e => handleUpdateBasicInfo(char.id, 'name', e.target.value)} />
+        <TextInput size="sm" label= "职业 (Class)" value={char.class || ''} placeholder= "无职业" onChange={e => handleUpdateBasicInfo(char.id, 'class', e.target.value)} />
+        <TextInput size="sm" mono type="number" label= "最大生命 (Max HP)" value={char.maxHp} onChange={e => handleUpdateBasicInfo(char.id, 'maxHp', e.target.value)} />
+        <TextInput size="sm" mono type="number" label= "护甲值 (AC)" value={char.ac !== undefined ? char.ac : 10} onChange={e => handleUpdateBasicInfo(char.id, 'ac', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label= "先攻加成 (Initiative)" value={char.initiative !== undefined ? char.initiative : 0} onChange={e => handleUpdateBasicInfo(char.id, 'initiative', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label= "移动速度 (Speed ft)" value={char.speed !== undefined ? char.speed : 30} onChange={e => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label= "临时生命 (Temp HP)" value={char.tempHp !== undefined ? char.tempHp : 0} onChange={e => handleUpdateBasicInfo(char.id, 'tempHp', Math.max(0, parseInt(e.target.value, 10) || 0))} />
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -628,8 +628,8 @@ function CharacterList({
               {char.level || 1}
             </span>
             <span style={{ display: 'flex', gap: '2px' }}>
-              <IconButton icon="minus" size="sm" tone="danger" onClick={() => handleLevelChange(char, -1)} title="降低等级并撤销生命提升 (防止误操作)" />
-              <IconButton icon="plus" size="sm" onClick={() => handleLevelChange(char, 1)} title="升级并掷生命骰增加最大生命值" />
+              <IconButton icon="minus" size="sm" tone="danger" onClick={() => handleLevelChange(char, -1)} title= "降低等级并撤销生命提升 (防止误操作)" />
+              <IconButton icon="plus" size="sm" onClick={() => handleLevelChange(char, 1)} title= "升级并掷生命骰增加最大生命值" />
             </span>
           </div>
           <Select
@@ -669,11 +669,11 @@ function CharacterList({
             />
           ))
         ) : (
-          <EmptyState compact icon="flask" text="暂无任何资源追踪槽。可通过下方添加。" />
+          <EmptyState compact icon="flask" text= "暂无任何资源追踪槽。可通过下方添加。" />
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.4fr auto', gap: 'var(--space-2)' }}>
-          <TextInput size="sm" placeholder="新增槽名 (如: 法术位)" value={cardResName} onChange={e => setCardResName(e.target.value)} />
-          <TextInput size="sm" mono type="number" placeholder="上限" value={cardResMax} onChange={e => setCardResMax(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+          <TextInput size="sm" placeholder= "新增槽名 (如: 法术位)" value={cardResName} onChange={e => setCardResName(e.target.value)} />
+          <TextInput size="sm" mono type="number" placeholder= "上限" value={cardResMax} onChange={e => setCardResMax(Math.max(1, parseInt(e.target.value, 10) || 1))} />
           <Select
             size="sm"
             value={cardResResetType}
@@ -684,7 +684,7 @@ function CharacterList({
               { value: 'long_rest', label: '长休' }
             ]}
           />
-          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddResourceToCard(char.id)} title="为此角色增设一个资源槽" />
+          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddResourceToCard(char.id)} title= "为此角色增设一个资源槽" />
         </div>
       </section>
 
@@ -699,7 +699,7 @@ function CharacterList({
                 variant="soft"
                 onRemove={() => handleRemoveConditionCard(char.id, cond.id)}
               >
-                {cond.name}（{cond.duration === 'permanent' ? '∞' : `${cond.duration} 回合`}）
+                {cond.name}（{cond.duration ==='permanent'?'':`${cond.duration} 回合`}）
               </Badge>
             ))
           ) : (
@@ -734,7 +734,7 @@ function CharacterList({
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <TextInput
               size="sm"
-              placeholder="手填其他自定义效果..."
+              placeholder= "手填其他自定义效果..."
               value={customCondDraft[char.id] || ''}
               onChange={e => setCustomCondDraft(prev => ({ ...prev, [char.id]: e.target.value }))}
               onKeyDown={e => {
@@ -748,7 +748,7 @@ function CharacterList({
               size="sm"
               variant="secondary"
               icon="plus"
-              title="添加手填的自定义状态"
+              title= "添加手填的自定义状态"
               onClick={() => {
                 const name = (customCondDraft[char.id] || '').trim();
                 if (!name) return;
@@ -794,16 +794,16 @@ function CharacterList({
                 <div style={{ fontSize: 'var(--type-body-sm)', fontWeight: 'var(--weight-medium)', color: 'var(--text-body)' }}>{k}</div>
                 <div style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)' }}>{v}</div>
               </div>
-              <IconButton icon="trash" size="sm" tone="danger" onClick={() => handleDeleteFeat(char.id, k)} title="删除此特质/技能" />
+              <IconButton icon="trash" size="sm" tone="danger" onClick={() => handleDeleteFeat(char.id, k)} title= "删除此特质/技能" />
             </div>
           ))
         ) : (
-          <EmptyState compact icon="scroll" text="当前没有任何专长或技能描述。" />
+          <EmptyState compact icon="scroll" text= "当前没有任何专长或技能描述。" />
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 'var(--space-2)' }}>
-          <TextInput size="sm" placeholder="技能名称" value={newFeatName} onChange={e => setNewFeatName(e.target.value)} />
-          <TextInput size="sm" placeholder="效果描述" value={newFeatDesc} onChange={e => setNewFeatDesc(e.target.value)} />
-          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddFeat(char.id)} title="为此角色添加技能 / 专长特质">添加</Button>
+          <TextInput size="sm" placeholder= "技能名称" value={newFeatName} onChange={e => setNewFeatName(e.target.value)} />
+          <TextInput size="sm" placeholder= "效果描述" value={newFeatDesc} onChange={e => setNewFeatDesc(e.target.value)} />
+          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddFeat(char.id)} title= "为此角色添加技能 / 专长特质">添加</Button>
         </div>
       </section>
 
@@ -814,16 +814,16 @@ function CharacterList({
           icon="map-pin-simple-area"
           fullWidth
           onClick={() => handleRemoveFromMap(char.id, char.name)}
-          title="把此棋子从当前地图上移除（角色卡保留）"
+          title= "把此棋子从当前地图上移除（角色卡保留）"
         >
           手动从地图移出
         </Button>
       )}
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }}>
-        <Button size="sm" variant="secondary" icon="gear-six" style={{ flex: 1 }} onClick={() => onOpenEditCharModal(char)} title="打开完整角色编辑面板">详细编辑</Button>
-        <Button size="sm" variant="secondary" icon="copy" style={{ flex: 1 }} onClick={() => onDuplicateChar(char)} title="快速复制此角色及所有当前属性和技能资源槽">快速复制</Button>
-        <Button size="sm" variant="danger" icon="trash" style={{ flex: 1 }} onClick={() => handleDeleteCharacter(char.id, char.name)} title="彻底从本战役中移除此角色卡">彻底删除</Button>
+        <Button size="sm" variant="secondary" icon="gear-six" style={{ flex: 1 }} onClick={() => onOpenEditCharModal(char)} title= "打开完整角色编辑面板">详细编辑</Button>
+        <Button size="sm" variant="secondary" icon="copy" style={{ flex: 1 }} onClick={() => onDuplicateChar(char)} title= "快速复制此角色及所有当前属性和技能资源槽">快速复制</Button>
+        <Button size="sm" variant="danger" icon="trash" style={{ flex: 1 }} onClick={() => handleDeleteCharacter(char.id, char.name)} title= "彻底从本战役中移除此角色卡">彻底删除</Button>
       </div>
     </div>
   );
@@ -859,7 +859,7 @@ function CharacterList({
           </span>
         </div>
 
-        <Button icon="user-plus" fullWidth onClick={onOpenAddCharModal} title="新建一张角色卡（玩家角色、NPC 或怪物）">
+        <Button icon="user-plus" fullWidth onClick={onOpenAddCharModal} title= "新建一张角色卡（玩家角色、NPC 或怪物）">
           新建战役角色 / 怪物
         </Button>
 
@@ -870,7 +870,7 @@ function CharacterList({
             icon="campfire"
             style={{ flex: 1 }}
             onClick={() => onOpenRestModal && onOpenRestModal('short')}
-            title="对选中的角色进行短休（恢复50%生命值，充能重置短休/回合资源）"
+            title= "对选中的角色进行短休（恢复50%生命值，充能重置短休/回合资源）"
           >
             队伍短休
           </Button>
@@ -880,7 +880,7 @@ function CharacterList({
             icon="moon-stars"
             style={{ flex: 1 }}
             onClick={() => onOpenRestModal && onOpenRestModal('long')}
-            title="对选中的角色进行长休（恢复全部生命值/资源槽，重置移动力，且彻底清除负面状态）"
+            title= "对选中的角色进行长休（恢复全部生命值/资源槽，重置移动力，且彻底清除负面状态）"
           >
             队伍长休
           </Button>
@@ -890,12 +890,12 @@ function CharacterList({
           <TextInput
             size="sm"
             icon="folder-plus"
-            placeholder="新建分组名称 (如: 地牢伏兵)..."
+            placeholder= "新建分组名称 (如: 地牢伏兵)..."
             value={newGroupName}
             onChange={e => setNewGroupName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleCreateGroup(); }}
           />
-          <Button size="sm" variant="secondary" icon="check" onClick={handleCreateGroup} title="创建新角色分组" />
+          <Button size="sm" variant="secondary" icon="check" onClick={handleCreateGroup} title= "创建新角色分组" />
         </div>
       </div>
 
@@ -936,16 +936,16 @@ function CharacterList({
               >
                 {isEditing ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', width: '100%' }} onClick={e => e.stopPropagation()}>
-                    <TextInput size="sm" value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)} placeholder="分组名称" />
+                    <TextInput size="sm" value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)} placeholder= "分组名称" />
                     <input
                       type="color"
                       value={editingGroupColor}
                       onChange={e => setEditingGroupColor(e.target.value)}
-                      title="修改分组颜色"
+                      title= "修改分组颜色"
                       style={{ width: 26, height: 26, padding: 0, background: 'none', border: '1px solid var(--line-hairline)', cursor: 'pointer', flexShrink: 0 }}
                     />
-                    <IconButton icon="check" size="sm" tone="accent" onClick={() => handleSaveGroupEdit(group.id)} title="保存修改" />
-                    <IconButton icon="x" size="sm" onClick={() => setEditingGroupId(null)} title="取消" />
+                    <IconButton icon="check" size="sm" tone="accent" onClick={() => handleSaveGroupEdit(group.id)} title= "保存修改" />
+                    <IconButton icon="x" size="sm" onClick={() => setEditingGroupId(null)} title= "取消" />
                   </div>
                 ) : (
                   <>
@@ -954,14 +954,14 @@ function CharacterList({
                     <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-body)', fontWeight: 'var(--weight-medium)' }}>{group.name}</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>{groupChars.length}</span>
                     <span style={{ flex: 1 }} />
-                    <IconButton icon="pencil-simple" size="sm" onClick={(e) => handleStartEditGroup(e, group)} title="更名与改色" />
+                    <IconButton icon="pencil-simple" size="sm" onClick={(e) => handleStartEditGroup(e, group)} title= "更名与改色" />
                     {group.id !== 'group_pcs' && group.id !== 'group_npcs' && (
                       <IconButton
                         icon="trash"
                         size="sm"
                         tone="danger"
                         onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id, group.name); }}
-                        title="删除分组"
+                        title= "删除分组"
                       />
                     )}
                   </>
@@ -971,7 +971,7 @@ function CharacterList({
               {!isCollapsed && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)' }}>
                   {groupChars.length === 0 ? (
-                    <EmptyState compact icon="users-three" text="拖动角色到此处以移动分组" />
+                    <EmptyState compact icon="users-three" text= "拖动角色到此处以移动分组" />
                   ) : (
                     groupChars.map(char => {
                       const isExpanded = expandedCharId === char.id;
@@ -1010,9 +1010,9 @@ function CharacterList({
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                               {renderQuickActions(char)}
                               <span style={{ flex: 1 }} />
-                              <StatPill label="AC" value={char.ac !== undefined ? char.ac : 10} size="sm" style={{ flex: '0 0 auto' }} />
+                              <StatPill label= "AC" value={char.ac !== undefined ? char.ac : 10} size="sm" style={{ flex: '0 0 auto' }} />
                               <StatPill
-                                label="先攻"
+                                label= "先攻"
                                 value={char.initiative !== undefined ? (char.initiative >= 0 ? `+${char.initiative}` : char.initiative) : '+0'}
                                 size="sm"
                                 style={{ flex: '0 0 auto' }}
