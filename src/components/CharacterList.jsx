@@ -519,7 +519,7 @@ function CharacterList({
     group.color || (group.id === 'group_pcs' ? 'var(--pigment-woad)' : group.id === 'group_npcs' ? 'var(--pigment-madder)' : 'var(--text-faint)');
 
   /** The two toggles the DM hits most during a round. */
-  const QuickActions = ({ char }) => {
+  const renderQuickActions = (char) => {
     const action = (char.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
     const bonus = (char.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
     const chip = (res, label, name, tone) => (
@@ -557,7 +557,7 @@ function CharacterList({
   };
 
   /** ±1 / ±5 HP, sitting in the card's action slot. */
-  const HpSteppers = ({ char }) => (
+  const renderHpSteppers = (char) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }} onClick={e => e.stopPropagation()}>
       <IconButton icon="caret-double-down" size="sm" tone="danger" onClick={() => adjustHp(char.id, -5)} title="扣除 5 点生命值" />
       <IconButton icon="minus" size="sm" tone="danger" onClick={() => adjustHp(char.id, -1)} title="扣除 1 点生命值" />
@@ -566,7 +566,7 @@ function CharacterList({
     </div>
   );
 
-  const SheetKey = ({ children }) => (
+  const renderSheetKey = (children) => (
     <span
       style={{
         fontFamily: 'var(--font-label)',
@@ -586,7 +586,7 @@ function CharacterList({
   };
 
   /** Everything behind the card's expand toggle. */
-  const ExpandedSheet = ({ char }) => (
+  const renderExpandedSheet = (char) => (
     <div
       style={{
         display: 'flex',
@@ -609,7 +609,7 @@ function CharacterList({
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        <SheetKey>等级与生命骰</SheetKey>
+        {renderSheetKey('等级与生命骰')}
         <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 'var(--space-3)', alignItems: 'end' }}>
           <div
             style={{
@@ -654,7 +654,7 @@ function CharacterList({
       )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        <SheetKey>技能资源槽追踪</SheetKey>
+        {renderSheetKey('技能资源槽追踪')}
         {char.resources && char.resources.length > 0 ? (
           char.resources.map((res, resIndex) => (
             <ResourceSlot
@@ -689,7 +689,7 @@ function CharacterList({
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        <SheetKey>特殊状态管理</SheetKey>
+        {renderSheetKey('特殊状态管理')}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
           {char.conditions && char.conditions.length > 0 ? (
             char.conditions.map(cond => (
@@ -763,7 +763,7 @@ function CharacterList({
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <SheetKey>核心属性</SheetKey>
+        {renderSheetKey('核心属性')}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-4)' }}>
           {Object.entries(char.stats || {}).map(([key, val]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
@@ -776,7 +776,7 @@ function CharacterList({
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        <SheetKey>专长与特质描述</SheetKey>
+        {renderSheetKey('专长与特质描述')}
         {char.feats && Object.keys(char.feats).length > 0 ? (
           Object.entries(char.feats).map(([k, v]) => (
             <div
@@ -1005,10 +1005,10 @@ function CharacterList({
                             activeTurn={isActiveChar}
                             selected={isExpanded}
                             onSelect={() => toggleExpand(char.id)}
-                            actions={<HpSteppers char={char} />}
+                            actions={renderHpSteppers(char)}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-                              <QuickActions char={char} />
+                              {renderQuickActions(char)}
                               <span style={{ flex: 1 }} />
                               <StatPill label="AC" value={char.ac !== undefined ? char.ac : 10} size="sm" style={{ flex: '0 0 auto' }} />
                               <StatPill
@@ -1023,7 +1023,7 @@ function CharacterList({
                                 aria-hidden="true"
                               />
                             </div>
-                            {isExpanded && <ExpandedSheet char={char} />}
+                            {isExpanded && renderExpandedSheet(char)}
                           </CharacterCard>
                         </div>
                       );

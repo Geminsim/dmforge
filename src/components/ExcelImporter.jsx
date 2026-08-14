@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Upload, FileSpreadsheet, Trash2, Search, FileUp, X, Eye, EyeOff } from 'lucide-react';
+import {
+  Button, IconButton, TextInput, Tabs, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState
+} from '../ds';
 
 const MAX_EXCEL_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_WORKBOOK_SHEETS = 50;
@@ -292,6 +294,19 @@ function getCellStyle(cell) {
   return styles;
 }
 
+const sheetHeadCell = {
+  position: 'sticky',
+  top: 0,
+  height: 24,
+  background: 'var(--surface-sunken)',
+  border: '1px solid var(--line-hairline)',
+  color: 'var(--text-muted)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--type-micro)',
+  fontWeight: 'var(--weight-medium)',
+  textAlign: 'center'
+};
+
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -303,17 +318,14 @@ const getHighlightedText = (text, highlight) => {
     <span>
       {parts.map((part, i) => 
         part.toLowerCase() === highlight.toLowerCase() ? (
-          <mark 
-            key={i} 
-            style={{ 
-              background: 'rgba(52, 211, 153, 0.25)', 
-              color: 'var(--accent-emerald)', 
-              border: '1px solid rgba(52, 211, 153, 0.5)',
-              borderRadius: '3px',
-              boxShadow: '0 0 10px rgba(52, 211, 153, 0.4)',
+          <mark
+            key={i}
+            style={{
+              background: 'var(--accent-soft)',
+              color: 'var(--accent)',
+              boxShadow: 'inset 0 0 0 1px var(--accent-line)',
               padding: '1px 3px',
-              fontWeight: 'bold',
-              textShadow: '0 0 4px var(--accent-emerald)'
+              fontWeight: 'var(--weight-semibold)'
             }}
           >
             {part}
@@ -325,6 +337,93 @@ const getHighlightedText = (text, highlight) => {
     </span>
   );
 };
+
+function SideKey({ code, title, count, tone = 'accent' }) {
+  return (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 'var(--space-2)',
+      padding: 'var(--space-2) var(--space-4)',
+      background: 'var(--surface-sunken)',
+      borderTop: 'var(--border-hairline)',
+      borderBottom: 'var(--border-hairline)'
+    }}
+  >
+    <span
+      style={{
+        fontFamily: 'var(--font-label)',
+        fontSize: 'var(--type-micro)',
+        letterSpacing: 'var(--tracking-label)',
+        textTransform: 'uppercase',
+        color: tone === 'accent' ? 'var(--accent)' : `var(--pigment-${tone})`
+      }}
+    >
+      {code}
+    </span>
+    <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-body)' }}>{title}</span>
+    <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>{count}</span>
+  </div>
+  );
+}
+
+/** File-picker styled as a secondary button; <input type=file> needs a label. */
+function UploadLabel({ accept, onChange, icon, children, title }) {
+  return (
+  <label
+    title={title}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 'var(--space-2)',
+      height: 'var(--control-h-sm)',
+      cursor: 'pointer',
+      color: 'var(--text-body)',
+      fontSize: 'var(--type-meta)',
+      fontWeight: 'var(--weight-medium)',
+      letterSpacing: '.03em',
+      boxShadow: 'inset 0 0 0 1px var(--line-hairline)',
+      transition: 'var(--motion-control)'
+    }}
+  >
+    <i className={`ph-fill ph-${icon}`} style={{ fontSize: 13 }} aria-hidden="true" />
+    {children}
+    <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
+  </label>
+  );
+}
+
+function Dropzone({ id, accept, onChange, icon, title, body, note }) {
+  return (
+  <label
+    htmlFor={id}
+    className="dmf-dropzone"
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 'var(--space-4)',
+      padding: 'var(--space-9) var(--space-6)',
+      textAlign: 'center',
+      cursor: 'pointer',
+      background: 'var(--surface-panel)',
+      boxShadow: 'inset 0 0 0 1px var(--line-hairline)',
+      transition: 'var(--motion-control)'
+    }}
+  >
+    <input type="file" accept={accept} onChange={onChange} id={id} style={{ display: 'none' }} />
+    <i className={`ph-fill ph-${icon}`} style={{ fontSize: 26, color: 'var(--accent)' }} aria-hidden="true" />
+    <div>
+      <h3 style={{ fontSize: 'var(--type-display-sm)', marginBottom: 'var(--space-2)' }}>{title}</h3>
+      <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)', maxWidth: '34ch' }}>{body}</p>
+    </div>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>{note}</span>
+  </label>
+  );
+}
 
 export default function ExcelImporter({
   excelCards = [],
@@ -667,761 +766,260 @@ export default function ExcelImporter({
     }
   };
 
+  const rulebooks = floatingNotes.filter(n => n.isRulebook);
+
   return (
-    <div style={{
-      display: 'flex',
-      height: '100%',
-      width: '100%',
-      background: 'rgba(10, 11, 16, 0.4)',
-      borderRadius: '12px',
-      border: '1px solid var(--border-light)',
-      overflow: 'hidden'
-    }}>
-      {/* 1. Left Sidebar: Dual Files Manager (Excel + Rulebooks) */}
-      <div style={{
-        width: '260px',
-        minWidth: '260px',
-        borderRight: '1px solid var(--border-light)',
-        background: 'rgba(18, 20, 28, 0.6)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%'
-      }}>
-        {/* Sidebar Title */}
-        <div style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid var(--border-light)',
-          background: 'rgba(0, 0, 0, 0.2)'
-        }}>
-          <span style={{ fontWeight: '700', fontSize: '12px', color: 'var(--text-muted)', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            🗃️ 导入数据库管理
-          </span>
-        </div>
-
-        {/* Section 1: Excel cards */}
-        <div style={{
-          padding: '10px 16px 6px 16px',
-          borderBottom: '1px solid var(--border-light)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <FileSpreadsheet size={14} style={{ color: 'var(--accent-purple)' }} />
-            <span style={{ fontWeight: '600', fontSize: '13px', fontFamily: 'var(--font-heading)' }}>
-              已导入角色卡
-            </span>
-          </div>
-          <span style={{
-            fontSize: '10px',
-            background: 'rgba(192, 132, 252, 0.15)',
-            color: 'var(--accent-purple)',
-            padding: '1px 5px',
-            borderRadius: '10px',
-            fontWeight: 'bold'
-          }}>
-            {excelCards.length}
-          </span>
-        </div>
-
-        {/* Excel Card Uploader */}
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)' }}>
-          <label className="btn btn-secondary" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            width: '100%',
-            height: '28px',
-            margin: 0
-          }}>
-            <FileUp size={12} />
-            <span>导入 Excel 角色卡</span>
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
-          </label>
-        </div>
-
-        {/* Excel Files List */}
-        <div style={{
-          maxHeight: '220px',
-          overflowY: 'auto',
-          padding: '6px',
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', background: 'var(--surface-app)' }}>
+      <aside
+        style={{
+          width: 280,
+          minWidth: 280,
           display: 'flex',
           flexDirection: 'column',
-          gap: '6px',
-          borderBottom: '1px solid var(--border-light)'
-        }} className="no-scrollbar">
+          minHeight: 0,
+          background: 'var(--surface-panel)',
+          borderRight: 'var(--border-hairline)'
+        }}
+      >
+        <SideKey code="Sheets" title="已导入角色卡" count={excelCards.length} />
+        <div style={{ padding: 'var(--space-3)' }}>
+          <UploadLabel
+            accept=".xlsx, .xls"
+            onChange={handleFileChange}
+            icon="file-xls"
+            title="导入 .xlsx / .xls 玩家角色卡（单文件最大 2MB，最多 50 个工作表）"
+          >
+            导入 Excel 角色卡
+          </UploadLabel>
+        </div>
+
+        <div className="no-scrollbar" style={{ maxHeight: 220, overflowY: 'auto', padding: '0 var(--space-3) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {excelCards.length === 0 ? (
-            <div style={{
-              padding: '20px 12px',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '11px',
-              lineHeight: '1.5'
-            }}>
-              暂无导入的角色卡
-            </div>
+            <EmptyState compact icon="file-plus" text="暂无导入的角色卡" />
           ) : (
             excelCards.map(card => {
               const isActive = card.id === activeExcelCardId;
               return (
-                <div 
+                <div
                   key={card.id}
-                  onClick={() => {
-                    setActiveExcelCardId(card.id);
-                    setIsEditMode(false);
-                  }}
+                  className="dmf-file-row"
+                  onClick={() => { setActiveExcelCardId(card.id); setIsEditMode(false); }}
                   style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: isActive ? 'rgba(192, 132, 252, 0.08)' : 'rgba(255,255,255,0.01)',
-                    border: `1px solid ${isActive ? 'var(--accent-purple)' : 'var(--border-light)'}`,
-                    boxShadow: isActive ? '0 0 10px rgba(192, 132, 252, 0.12)' : 'none',
+                    position: 'relative',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px',
-                    position: 'relative',
-                    transition: 'all 0.2s ease'
+                    gap: 2,
+                    padding: 'var(--space-2) var(--space-3)',
+                    minWidth: 0,
+                    cursor: 'pointer',
+                    background: isActive ? 'var(--accent-soft)' : 'var(--surface-raised)',
+                    boxShadow: `inset 0 0 0 1px ${isActive ? 'var(--accent-line)' : 'var(--line-hairline)'}`,
+                    transition: 'var(--motion-control)'
                   }}
-                  className="excel-card-item"
                 >
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: isActive ? '600' : '500',
-                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    paddingRight: '22px'
-                  }} title={card.filename}>
+                  <span title={card.filename} style={{ paddingRight: 22, fontSize: 'var(--type-meta)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {card.filename}
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '10px',
-                    color: 'var(--text-muted)'
-                  }}>
+                  </span>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
                     <span>{card.sizeBytes ? formatBytes(card.sizeBytes) : '未知大小'}</span>
                     <span>{card.uploadTime ? card.uploadTime.split(' ')[0].split('/').slice(1).join('/') : ''}</span>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteCard(e, card.id, card.filename)}
-                    style={{
-                      position: 'absolute',
-                      right: '6px',
-                      top: '6px',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      borderRadius: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    className="delete-card-btn"
-                    title="彻底从本战役中移除此角色卡"
-                  >
-                    <Trash2 size={11} />
-                  </button>
+                  </span>
+                  <span className="dmf-row-actions" style={{ position: 'absolute', right: 4, top: 4 }}>
+                    <IconButton
+                      icon="trash"
+                      size="sm"
+                      tone="danger"
+                      onClick={(e) => handleDeleteCard(e, card.id, card.filename)}
+                      title="彻底从本战役中移除此角色卡"
+                    />
+                  </span>
                 </div>
               );
             })
           )}
         </div>
 
-        {/* Section 2: Rulebooks */}
-        <div style={{
-          padding: '10px 16px 6px 16px',
-          borderBottom: '1px solid var(--border-light)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'rgba(0, 0, 0, 0.05)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '13px' }}>📖</span>
-            <span style={{ fontWeight: '600', fontSize: '13px', fontFamily: 'var(--font-heading)', color: 'var(--accent-emerald)' }}>
-              已导入规则书
-            </span>
-          </div>
-          <span style={{
-            fontSize: '10px',
-            background: 'rgba(52, 211, 153, 0.15)',
-            color: 'var(--accent-emerald)',
-            padding: '1px 5px',
-            borderRadius: '10px',
-            fontWeight: 'bold'
-          }}>
-            {floatingNotes.filter(n => n.isRulebook).length}
-          </span>
+        <SideKey code="Rulebooks" title="已导入规则书" count={rulebooks.length} tone="verdigris" />
+        <div style={{ padding: 'var(--space-3)' }}>
+          <UploadLabel
+            accept=".txt, .md, .json, .xlsx, .xls"
+            onChange={handleRulebookFileChange}
+            icon="book-open-text"
+            title="导入 TXT / MD / JSON 纯文本，或把 Excel 规则表自动解析为文本规则书"
+          >
+            导入规则书
+          </UploadLabel>
         </div>
 
-        {/* Rulebook Uploader */}
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)' }}>
-          <label className="btn btn-secondary" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            width: '100%',
-            height: '28px',
-            margin: 0,
-            borderColor: 'rgba(52, 211, 153, 0.3)',
-            background: 'rgba(52, 211, 153, 0.03)'
-          }} className="rulebook-uploader-btn">
-            <FileUp size={12} style={{ color: 'var(--accent-emerald)' }} />
-            <span style={{ color: 'var(--accent-emerald)' }}>导入 TXT/MD/JSON/Excel 规则书</span>
-            <input 
-              type="file" 
-              accept=".txt, .md, .json, .xlsx, .xls" 
-              onChange={handleRulebookFileChange}
-              style={{ display: 'none' }}
-            />
-          </label>
-        </div>
-
-        {/* Rulebooks List */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '6px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px'
-        }} className="no-scrollbar">
-          {floatingNotes.filter(n => n.isRulebook).length === 0 ? (
-            <div style={{
-              padding: '28px 12px',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '11px',
-              lineHeight: '1.5'
-            }}>
-              暂无已上传的规则书<br />
-              可点击上方导入规则书
-            </div>
+        <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 var(--space-3) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {rulebooks.length === 0 ? (
+            <EmptyState compact icon="book-open-text" text="暂无已上传的规则书" hint="可点击上方导入规则书。" />
           ) : (
-            floatingNotes.filter(n => n.isRulebook).map(note => {
+            rulebooks.map(note => {
               const isActive = note.id === activeExcelCardId;
               const isNoteOpen = note.isOpen !== false;
               return (
-                <div 
+                <div
                   key={note.id}
-                  onClick={() => {
-                    setActiveExcelCardId(note.id);
-                    setIsEditMode(false);
-                  }}
+                  className="dmf-file-row"
+                  onClick={() => { setActiveExcelCardId(note.id); setIsEditMode(false); }}
                   style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: isActive ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255,255,255,0.01)',
-                    border: `1px solid ${isActive ? 'var(--accent-emerald)' : 'var(--border-light)'}`,
-                    boxShadow: isActive ? '0 0 10px rgba(52, 211, 153, 0.12)' : 'none',
+                    position: 'relative',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px',
-                    position: 'relative',
-                    transition: 'all 0.2s ease'
+                    gap: 2,
+                    padding: 'var(--space-2) var(--space-3)',
+                    minWidth: 0,
+                    cursor: 'pointer',
+                    background: isActive ? 'var(--pigment-verdigris-soft)' : 'var(--surface-raised)',
+                    boxShadow: `inset 0 0 0 1px ${isActive ? 'var(--pigment-verdigris-line)' : 'var(--line-hairline)'}`,
+                    transition: 'var(--motion-control)'
                   }}
-                  className="rulebook-item-card"
                 >
-                  <div style={{
-                    fontSize: '12px',
-                    fontWeight: isActive ? '600' : '500',
-                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    paddingRight: '36px'
-                  }} title={note.title}>
-                    📖 {note.title}
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '10px',
-                    color: 'var(--text-muted)'
-                  }}>
+                  <span title={note.title} style={{ paddingRight: 44, fontSize: 'var(--type-meta)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {note.title}
+                  </span>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
                     <span>{note.content ? `${note.content.length} 字` : '0 字'}</span>
                     <span>{note.sizeText || '文本'}</span>
-                  </div>
-
-                  {/* Sidebar small control buttons */}
-                  <div style={{
-                    position: 'absolute',
-                    right: '6px',
-                    top: '6px',
-                    display: 'flex',
-                    gap: '2px'
-                  }} className="rulebook-item-btns">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateFloatingNote && updateFloatingNote(note.id, { isOpen: !isNoteOpen });
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: isNoteOpen ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        borderRadius: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'color 0.2s'
-                      }}
+                  </span>
+                  <span className="dmf-row-actions" style={{ position: 'absolute', right: 4, top: 4, display: 'flex', gap: 1 }}>
+                    <IconButton
+                      icon={isNoteOpen ? 'eye' : 'eye-closed'}
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); updateFloatingNote && updateFloatingNote(note.id, { isOpen: !isNoteOpen }); }}
                       title={isNoteOpen ? '收起悬浮窗' : '在地图上以悬浮窗打开'}
-                    >
-                      {isNoteOpen ? <Eye size={11} /> : <EyeOff size={11} />}
-                    </button>
-                    <button
+                    />
+                    <IconButton
+                      icon="trash"
+                      size="sm"
+                      tone="danger"
+                      title="永久删除规则书"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (window.confirm(`确定要永久从战役中删除此规则书 [${note.title}] 吗？`)) {
                           deleteFloatingNote && deleteFloatingNote(note.id);
-                          if (activeExcelCardId === note.id) {
-                            setActiveExcelCardId('');
-                          }
-                          if (addLog) {
-                            addLog({
-                              type: 'SYSTEM',
-                              content: `🗑️ **已移除规则书**: [${note.title}]。`,
-                              timestamp: new Date().toLocaleTimeString()
-                            });
-                          }
+                          if (activeExcelCardId === note.id) setActiveExcelCardId('');
+                          addLog?.({
+                            type: 'SYSTEM',
+                            content: `**已移除规则书**: [${note.title}]。`,
+                            timestamp: new Date().toLocaleTimeString()
+                          });
                         }
                       }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        borderRadius: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'color 0.2s'
-                      }}
-                      className="delete-rulebook-btn"
-                      title="永久删除规则书"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
+                    />
+                  </span>
                 </div>
               );
             })
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* 2. Right Display Panel: Spreadsheet grid OR Rulebook reader */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'rgba(18, 20, 28, 0.3)',
-        overflow: 'hidden'
-      }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {!selectedCard && !selectedRuleNote ? (
-          /* Empty state: Double uploaders grid layout */
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '40px',
-            position: 'relative',
-            gap: '24px'
-          }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary)', fontFamily: 'var(--font-heading)', textShadow: '0 0 10px rgba(192, 132, 252, 0.2)', marginBottom: '8px' }}>
-              📊 战役规则书与玩家角色卡中心
-            </h2>
-            
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '20px',
-              width: '100%',
-              maxWidth: '840px'
-            }}>
-              {/* Left Dropzone: Excel Cards */}
-              <label 
-                htmlFor="main-excel-uploader"
-                style={{
-                  border: '2px dashed var(--border-light)',
-                  borderRadius: '16px',
-                  padding: '36px 20px',
-                  textAlign: 'center',
-                  background: 'rgba(192, 132, 252, 0.01)',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                className="dropzone-label"
-              >
-                <input 
-                  type="file" 
-                  accept=".xlsx, .xls" 
-                  onChange={handleFileChange}
-                  id="main-excel-uploader"
-                  style={{ display: 'none' }}
-                />
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '28px',
-                  background: 'rgba(192, 132, 252, 0.08)',
-                  border: '1px solid rgba(192, 132, 252, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 15px rgba(192, 132, 252, 0.1)'
-                }}>
-                  <Upload size={24} style={{ color: 'var(--accent-purple)' }} />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    导入 Excel 玩家角色卡
-                  </h3>
-                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                    一键还原并复刻玩家的 `.xlsx` 电子表格，支持合并单元格与多工作表 Sheets 快速检索。
-                  </p>
-                </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--border-light)', marginTop: '8px' }}>
-                  支持标准 Excel 格式 (≤2MB)
-                </div>
-              </label>
-
-              {/* Right Dropzone: Rulebooks */}
-              <label 
-                htmlFor="main-rulebook-uploader"
-                style={{
-                  border: '2px dashed var(--border-light)',
-                  borderRadius: '16px',
-                  padding: '36px 20px',
-                  textAlign: 'center',
-                  background: 'rgba(52, 211, 153, 0.01)',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-                className="dropzone-label-emerald"
-              >
-                <input 
-                  type="file" 
-                  accept=".txt, .md, .json, .xlsx, .xls" 
-                  onChange={handleRulebookFileChange}
-                  id="main-rulebook-uploader"
-                  style={{ display: 'none' }}
-                />
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '28px',
-                  background: 'rgba(52, 211, 153, 0.08)',
-                  border: '1px solid rgba(52, 211, 153, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 15px rgba(52, 211, 153, 0.1)'
-                }}>
-                  <Upload size={24} style={{ color: 'var(--accent-emerald)' }} />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-primary)' }}>
-                    导入游戏规则书 / 设定集
-                  </h3>
-                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                    支持 TXT、MD、JSON 纯文本或把 Excel 规则表自动解析成文本，以便随时悬浮查阅。
-                  </p>
-                </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--border-light)', marginTop: '8px' }}>
-                  支持 TXT / MD / JSON / XLSX
-                </div>
-              </label>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-7)', padding: 'var(--space-9)' }}>
+            <h2 style={{ fontSize: 'var(--type-display-md)' }}>战役规则书与玩家角色卡中心</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)', width: '100%', maxWidth: 840 }}>
+              <Dropzone
+                id="main-excel-uploader"
+                accept=".xlsx, .xls"
+                onChange={handleFileChange}
+                icon="file-xls"
+                title="导入 Excel 玩家角色卡"
+                body="一键还原并复刻玩家的 .xlsx 电子表格，支持合并单元格与多工作表 Sheets 快速检索。"
+                note="支持标准 Excel 格式，单文件最大 2MB"
+              />
+              <Dropzone
+                id="main-rulebook-uploader"
+                accept=".txt, .md, .json, .xlsx, .xls"
+                onChange={handleRulebookFileChange}
+                icon="book-open-text"
+                title="导入游戏规则书 / 设定集"
+                body="支持 TXT、MD、JSON 纯文本或把 Excel 规则表自动解析成文本，以便随时悬浮查阅。"
+                note="支持 TXT / MD / JSON / XLSX"
+              />
             </div>
-
-            <div style={{
-              display: 'flex',
-              gap: '24px',
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              marginTop: '12px',
-              background: 'rgba(0,0,0,0.15)',
-              padding: '10px 20px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-light)'
-            }}>
-              <span>🛡️ 规则悬浮窗自适应加宽与增高，完美呈现长篇段落</span>
-              <span>⚡ 电子表格规则表自动转换为高可读性管道文本表格</span>
-            </div>
+            <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-faint)', textAlign: 'center', lineHeight: 'var(--type-body-lh)', maxWidth: '60ch' }}>
+              规则悬浮窗自适应加宽与增高，完美呈现长篇段落；电子表格规则表自动转换为高可读性管道文本表格。
+            </p>
           </div>
         ) : selectedRuleNote ? (
-          /* 2.1 Reading Mode Panel: rulebook details and text viewer */
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            height: '100%'
-          }}>
-            {/* Top Toolbar */}
-            <div style={{
-              padding: '12px 20px',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: 'rgba(10, 11, 16, 0.3)',
-              gap: '16px'
-            }}>
-              {/* Title & Edit Toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  background: 'rgba(52, 211, 153, 0.1)',
-                  border: '1px solid rgba(52, 211, 153, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  <span style={{ fontSize: '14px' }}>📖</span>
-                </div>
-                
-                {/* Rename input */}
-                <input
-                  type="text"
-                  value={selectedRuleNote.title}
-                  onChange={(e) => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { title: e.target.value })}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: 'var(--text-primary)',
-                    outline: 'none',
-                    padding: '2px 4px',
-                    borderBottom: '1px dashed rgba(255,255,255,0.1)',
-                    width: '200px'
-                  }}
-                  title="点击可直接重命名规则书"
-                  placeholder="规则书标题..."
-                />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <Toolbar style={{ borderBottom: 'var(--border-hairline)', background: 'var(--surface-panel)' }} dense wrap={false}>
+              <i className="ph-fill ph-book-open-text" style={{ fontSize: 15, color: 'var(--pigment-verdigris)' }} aria-hidden="true" />
+              <input
+                type="text"
+                value={selectedRuleNote.title}
+                onChange={(e) => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { title: e.target.value })}
+                title="点击可直接重命名规则书"
+                placeholder="规则书标题..."
+                style={{
+                  width: 220,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  padding: '2px 0',
+                  borderBottom: 'var(--rule-dot)',
+                  color: 'var(--text-body)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 'var(--display-weight)',
+                  fontSize: 'var(--type-body-sm)'
+                }}
+              />
+              <Button
+                size="sm"
+                variant={isEditMode ? 'secondary' : 'primary'}
+                icon={isEditMode ? 'eye' : 'pencil-simple'}
+                onClick={() => setIsEditMode(!isEditMode)}
+                title={isEditMode ? '切回只读阅读模式' : '切到编辑模式，可直接改写规则书正文'}
+              >
+                {isEditMode ? '切换阅读模式' : '切换编辑模式'}
+              </Button>
+              <ToolbarDivider />
+              <ToolbarLabel>Size</ToolbarLabel>
+              <IconButton icon="minus" size="sm" onClick={() => setFontSize(prev => Math.max(10, prev - 1))} title="减小字号" />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', minWidth: 30, textAlign: 'center' }}>{fontSize}px</span>
+              <IconButton icon="plus" size="sm" onClick={() => setFontSize(prev => Math.min(24, prev + 1))} title="增大字号" />
+              <IconButton icon="arrow-counter-clockwise" size="sm" onClick={() => setFontSize(14)} title="默认字号 (14px)" />
+              <span style={{ flex: 1 }} />
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={copySuccess ? 'check' : 'copy'}
+                title="复制规则书全文到剪贴板"
+                onClick={() => {
+                  navigator.clipboard.writeText(selectedRuleNote.content || '');
+                  setCopySuccess(true);
+                  setTimeout(() => setCopySuccess(false), 2000);
+                }}
+              >
+                {copySuccess ? '已复制全部' : '复制全文'}
+              </Button>
+              <Button
+                size="sm"
+                variant={selectedRuleNote.isOpen !== false ? 'danger' : 'secondary'}
+                icon="note"
+                onClick={() => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { isOpen: !(selectedRuleNote.isOpen !== false) })}
+                title={selectedRuleNote.isOpen !== false ? '从地图上隐藏参考窗口' : '在地图上投射为悬浮窗'}
+              >
+                {selectedRuleNote.isOpen !== false ? '收起地图悬浮窗' : '召唤至地图悬浮'}
+              </Button>
+            </Toolbar>
 
-                {/* Edit/View Toggle Button */}
-                <button
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className={`btn ${isEditMode ? 'btn-secondary' : 'btn-primary'}`}
-                  style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    height: '26px',
-                    background: isEditMode ? 'rgba(255,255,255,0.08)' : 'rgba(52, 211, 153, 0.2)',
-                    borderColor: isEditMode ? 'var(--border-light)' : 'rgba(52, 211, 153, 0.4)',
-                    color: isEditMode ? 'var(--text-primary)' : 'var(--accent-emerald)',
-                    boxShadow: !isEditMode ? '0 0 8px rgba(52, 211, 153, 0.15)' : 'none'
-                  }}
-                >
-                  {isEditMode ? '👁️ 切换阅读模式' : '📝 切换编辑模式'}
-                </button>
-              </div>
-
-              {/* Sizing & Clipboard & Summon Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                {/* Font Size Adjuster */}
-                <div style={{
-                  display: 'flex',
-                  background: 'rgba(0,0,0,0.2)',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-light)',
-                  padding: '2px'
-                }}>
-                  <button
-                    onClick={() => setFontSize(prev => Math.max(10, prev - 1))}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                      fontSize: '10px',
-                      fontWeight: 'bold'
-                    }}
-                    title="减小字号"
-                  >
-                    A-
-                  </button>
-                  <button
-                    onClick={() => setFontSize(14)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
-                      padding: '2px 6px',
-                      cursor: 'pointer',
-                      fontSize: '10px',
-                      borderLeft: '1px solid rgba(255,255,255,0.05)',
-                      borderRight: '1px solid rgba(255,255,255,0.05)'
-                    }}
-                    title="默认字号 (14px)"
-                  >
-                    A
-                  </button>
-                  <button
-                    onClick={() => setFontSize(prev => Math.min(24, prev + 1))}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                      fontSize: '10px',
-                      fontWeight: 'bold'
-                    }}
-                    title="增大字号"
-                  >
-                    A+
-                  </button>
-                </div>
-
-                {/* Copy Text Button */}
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(selectedRuleNote.content || '');
-                    setCopySuccess(true);
-                    setTimeout(() => setCopySuccess(false), 2000);
-                  }}
-                  className="btn btn-secondary"
-                  style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    height: '26px',
-                    color: copySuccess ? 'var(--accent-emerald)' : 'var(--text-secondary)'
-                  }}
-                >
-                  {copySuccess ? '✓ 已复制全部' : '📋 复制全文'}
-                </button>
-
-                {/* Summon Floating Window Toggle */}
-                {(() => {
-                  const isNoteOpen = selectedRuleNote.isOpen !== false;
-                  return (
-                    <button
-                      onClick={() => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { isOpen: !isNoteOpen })}
-                      className="btn"
-                      style={{
-                        fontSize: '11px',
-                        padding: '4px 10px',
-                        height: '26px',
-                        background: isNoteOpen ? 'rgba(239, 68, 68, 0.15)' : 'rgba(52, 211, 153, 0.2)',
-                        border: `1px solid ${isNoteOpen ? 'rgba(239, 68, 68, 0.3)' : 'rgba(52, 211, 153, 0.4)'}`,
-                        color: isNoteOpen ? 'var(--accent-red)' : 'var(--accent-emerald)',
-                        boxShadow: isNoteOpen ? 'none' : '0 0 10px rgba(52, 211, 153, 0.25)',
-                        fontWeight: 'bold',
-                        transition: 'all 0.2s'
-                      }}
-                      title={isNoteOpen ? '从地图上隐藏参考窗口' : '在地图上投射为悬浮窗'}
-                    >
-                      {isNoteOpen ? '🔮 收起地图悬浮窗' : '🔮 召唤至地图悬浮'}
-                    </button>
-                  );
-                })()}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-5)', borderBottom: 'var(--border-hairline)' }}>
+              <TextInput
+                size="sm"
+                icon="magnifying-glass"
+                placeholder="输入关键字进行高亮检索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && <Button size="sm" variant="secondary" icon="x" onClick={() => setSearchQuery('')} title="清空搜索" />}
             </div>
 
-            {/* Keyword Search box for Rulebook */}
-            <div style={{
-              padding: '8px 20px',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              background: 'rgba(10, 11, 16, 0.15)',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                <span>搜索筛选:</span>
-                {searchQuery && (
-                  <span style={{
-                    background: 'rgba(52, 211, 153, 0.1)',
-                    color: 'var(--accent-emerald)',
-                    border: '1px solid rgba(52, 211, 153, 0.2)',
-                    padding: '1px 6px',
-                    borderRadius: '4px'
-                  }}>
-                    高亮所有 "{searchQuery}"
-                  </span>
-                )}
-              </div>
-              <div style={{ position: 'relative', width: '240px' }}>
-                <Search size={12} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  type="text"
-                  placeholder="输入关键字进行高亮检索..."
-                  className="input-text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    paddingLeft: '26px',
-                    paddingRight: searchQuery ? '24px' : '8px',
-                    width: '100%',
-                    height: '28px',
-                    fontSize: '11px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderColor: searchQuery ? 'var(--accent-emerald)' : 'var(--border-light)'
-                  }}
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
-                  >
-                    <X size={10} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Reading Pane / Edit Pane */}
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '24px',
-              background: 'rgba(10, 11, 16, 0.1)'
-            }} className="no-scrollbar">
+            <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--space-7)' }}>
               {isEditMode ? (
-                /* Editable Textarea */
                 <textarea
                   value={selectedRuleNote.content}
                   onChange={(e) => updateFloatingNote && updateFloatingNote(selectedRuleNote.id, { content: e.target.value })}
@@ -1429,394 +1027,166 @@ export default function ExcelImporter({
                   style={{
                     width: '100%',
                     height: '100%',
-                    background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '8px',
-                    color: 'var(--text-primary)',
+                    padding: 'var(--space-5)',
+                    background: 'var(--surface-sunken)',
+                    border: 'none',
+                    outline: 'none',
+                    resize: 'none',
+                    boxShadow: 'inset 0 0 0 1px var(--line-hairline)',
+                    color: 'var(--text-body)',
                     fontFamily: 'var(--font-sans)',
                     fontSize: `${fontSize}px`,
-                    lineHeight: '160%',
-                    padding: '16px',
-                    resize: 'none',
-                    outline: 'none'
+                    lineHeight: 1.6
                   }}
                 />
               ) : (
-                /* Glowing Highlighted Reading View */
-                <div style={{
-                  fontSize: `${fontSize}px`,
-                  lineHeight: '180%',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-sans)',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  padding: '8px 4px'
-                }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: `${fontSize}px`,
+                    lineHeight: 1.8,
+                    color: 'var(--text-body)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}
+                >
                   {getHighlightedText(selectedRuleNote.content || '', searchQuery)}
                 </div>
               )}
             </div>
           </div>
         ) : (
-          /* 2.2 Spreadsheet display state */
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            height: '100%'
-          }}>
-            {/* Top Toolbar: File details & Global Search */}
-            <div style={{
-              padding: '12px 20px',
-              borderBottom: '1px solid var(--border-light)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: 'rgba(10, 11, 16, 0.3)',
-              gap: '16px'
-            }}>
-              {/* File Title */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  background: 'rgba(52, 211, 153, 0.1)',
-                  border: '1px solid rgba(52, 211, 153, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <FileSpreadsheet size={16} style={{ color: 'var(--accent-emerald)' }} />
-                </div>
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: 'var(--text-primary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {selectedCard.filename}
-                </span>
-              </div>
-
-              {/* Global Search box */}
-              <div style={{
-                position: 'relative',
-                width: '260px'
-              }}>
-                <Search size={14} style={{
-                  position: 'absolute',
-                  left: '10px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-muted)'
-                }} />
-                <input
-                  type="text"
-                  placeholder="🔍 快速属性全局发光检索..."
-                  className="input-text"
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <Toolbar style={{ borderBottom: 'var(--border-hairline)', background: 'var(--surface-panel)' }} dense wrap={false}>
+              <i className="ph-fill ph-file-xls" style={{ fontSize: 15, color: 'var(--accent)' }} aria-hidden="true" />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-body-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedCard.filename}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span style={{ width: 260 }}>
+                <TextInput
+                  size="sm"
+                  icon="magnifying-glass"
+                  placeholder="输入关键字进行高亮检索..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    paddingLeft: '32px',
-                    paddingRight: searchQuery ? '28px' : '10px',
-                    width: '100%',
-                    height: '32px',
-                    fontSize: '12px',
-                    background: 'rgba(0,0,0,0.3)',
-                    borderColor: searchQuery ? 'var(--accent-purple)' : 'var(--border-light)',
-                    boxShadow: searchQuery ? '0 0 8px rgba(192, 132, 252, 0.15)' : 'none'
-                  }}
                 />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    style={{
-                      position: 'absolute',
-                      right: '8px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '2px'
-                    }}
-                    title="清空搜索"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
+              </span>
+              {searchQuery && <IconButton icon="x" size="sm" onClick={() => setSearchQuery('')} title="清空搜索" />}
+            </Toolbar>
+
+            <div className="no-scrollbar" style={{ flexShrink: 0, overflowX: 'auto' }}>
+              <Tabs
+                value={activeSheetName}
+                onChange={setActiveSheetName}
+                items={sheetNames.map(name => ({ id: name, label: name }))}
+              />
             </div>
 
-            {/* Sheet Tabs Bar */}
-            <div style={{
-              display: 'flex',
-              background: 'rgba(10, 11, 16, 0.2)',
-              borderBottom: '1px solid var(--border-light)',
-              overflowX: 'auto',
-              padding: '0 12px'
-            }} className="no-scrollbar">
-              {sheetNames.map(sheetName => {
-                const isTabActive = sheetName === activeSheetName;
-                return (
-                  <button
-                    key={sheetName}
-                    onClick={() => setActiveSheetName(sheetName)}
-                    style={{
-                      padding: '10px 16px',
-                      background: isTabActive ? 'rgba(25, 28, 39, 0.4)' : 'transparent',
-                      border: 'none',
-                      borderBottom: `2px solid ${isTabActive ? 'var(--accent-purple)' : 'transparent'}`,
-                      color: isTabActive ? 'var(--accent-purple)' : 'var(--text-secondary)',
-                      fontSize: '12px',
-                      fontWeight: isTabActive ? '600' : '500',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      whiteSpace: 'nowrap',
-                      transition: 'all 0.2s ease'
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 'var(--space-5)', background: 'var(--surface-app)' }}>
+              {parseError ? (
+                <div
+                  style={{
+                    maxWidth: 520,
+                    margin: 'var(--space-9) auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 'var(--space-4)',
+                    padding: 'var(--space-8)',
+                    textAlign: 'center',
+                    background: 'var(--pigment-madder-soft)',
+                    boxShadow: 'inset 0 0 0 1px var(--pigment-madder-line)'
+                  }}
+                >
+                  <i className="ph-fill ph-warning-octagon" style={{ fontSize: 28, color: 'var(--pigment-madder)' }} aria-hidden="true" />
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-display-sm)', color: 'var(--pigment-madder)' }}>
+                    角色卡电子表格解析失败
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                    原因: {parseError}
+                  </span>
+                  <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)' }}>
+                    该问题可能由于该 Excel 文件采用了不受支持的宏、第三方公式计算链或文件损坏导致。建议在 Excel/WPS 中另存为标准 .xlsx 格式文件后再重新导入。
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="arrow-counter-clockwise"
+                    title="重新解析这份表格"
+                    onClick={() => {
+                      const temp = activeExcelCardId;
+                      setActiveExcelCardId('');
+                      setTimeout(() => setActiveExcelCardId(temp), 50);
                     }}
                   >
-                    <span style={{
-                      display: 'inline-block',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: isTabActive ? 'var(--accent-purple)' : 'rgba(255,255,255,0.2)'
-                    }} />
-                    {sheetName}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Grid Container */}
-            <div style={{
-              flex: 1,
-              overflow: 'auto',
-              padding: '16px',
-              background: 'rgba(10, 11, 16, 0.15)'
-            }}>
-              {(() => {
-                if (parseError) {
-                  return (
-                    <div style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: 'var(--accent-red)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '16px',
-                      maxWidth: '500px',
-                      margin: '40px auto',
-                      background: 'rgba(239, 68, 68, 0.05)',
-                      border: '1px solid rgba(239, 68, 68, 0.15)',
-                      borderRadius: '12px'
-                    }}>
-                      <X size={32} style={{ color: 'var(--accent-red)' }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <span style={{ fontWeight: 'bold', fontSize: '14px' }}>❌ 角色卡电子表格解析失败</span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
-                          原因: {parseError}
-                        </span>
-                      </div>
-                      <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                        该问题可能由于该 Excel 文件采用了不受支持的宏、第三方公式计算链或文件损坏导致。建议在 Excel/WPS 中另存为标准 .xlsx 格式文件后再重新导入。
-                      </p>
-                      <button 
-                        onClick={() => {
-                          const temp = activeExcelCardId;
-                          setActiveExcelCardId('');
-                          setTimeout(() => setActiveExcelCardId(temp), 50);
-                        }}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '11px', padding: '4px 12px' }}
-                      >
-                        🔄 重新尝试解析
-                      </button>
-                    </div>
-                  );
-                }
-
-                if (!parsedSheets) {
-                  return (
-                    <div style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: 'var(--text-secondary)',
-                      fontSize: '12px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '12px'
-                    }}>
-                      <div className="spinner" style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        border: '2px solid rgba(192, 132, 252, 0.2)',
-                        borderTopColor: 'var(--accent-purple)',
-                        animation: 'spin 1s linear infinite'
-                      }} />
-                      <span>⚡ 正在解析表格结构并复现合并单元格，请稍候...</span>
-                    </div>
-                  );
-                }
-
+                    重新尝试解析
+                  </Button>
+                </div>
+              ) : !parsedSheets ? (
+                <EmptyState icon="hourglass-medium" text="正在解析表格结构并复现合并单元格，请稍候…" />
+              ) : (() => {
                 const sheetData = parsedSheets[activeSheetName];
                 if (!sheetData || !sheetData.cells || sheetData.cells.length === 0) {
-                  return (
-                    <div style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: 'var(--text-muted)',
-                      fontSize: '12px'
-                    }}>
-                      此工作表为空或解析失败
-                    </div>
-                  );
+                  return <EmptyState icon="table" text="此工作表为空或解析失败" />;
                 }
-
                 return (
-                  <div style={{
-                    maxHeight: '100%',
-                    maxWidth: '100%',
-                    overflow: 'visible'
-                  }}>
-                    <table style={{
+                  <table
+                    className="dmf-sheet"
+                    style={{
                       borderCollapse: 'collapse',
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '12px',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border-light)',
-                      width: 'max-content',
                       tableLayout: 'fixed',
-                      background: 'rgba(18, 20, 28, 0.4)'
-                    }} className="excel-render-table">
-                      {/* Excel Column Headers: A, B, C... */}
-                      <thead>
-                        <tr>
-                          {/* Top-Left row index label */}
-                          <th style={{
-                            width: '45px',
-                            minWidth: '45px',
-                            height: '24px',
-                            background: 'rgba(25, 28, 39, 0.95)',
-                            border: '1px solid var(--border-light)',
-                            color: 'var(--text-muted)',
-                            fontSize: '10px',
-                            fontWeight: '600',
-                            textAlign: 'center',
-                            position: 'sticky',
-                            top: 0,
-                            left: 0,
-                            zIndex: 3
-                          }}>
-                            R/C
+                      width: 'max-content',
+                      background: 'var(--surface-panel)',
+                      color: 'var(--text-body)',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: 'var(--type-meta)'
+                    }}
+                  >
+                    <thead>
+                      <tr>
+                        <th style={{ ...sheetHeadCell, width: 45, minWidth: 45, left: 0, zIndex: 3 }}>R/C</th>
+                        {sheetData.cols.map((col, colIndex) => (
+                          <th key={colIndex} style={{ ...sheetHeadCell, width: col.width, minWidth: col.width, zIndex: 2 }}>
+                            {getColLetter(colIndex)}
                           </th>
-                          {sheetData.cols.map((col, colIndex) => (
-                            <th 
-                              key={colIndex}
-                              style={{
-                                width: col.width,
-                                minWidth: col.width,
-                                height: '24px',
-                                background: 'rgba(25, 28, 39, 0.85)',
-                                border: '1px solid var(--border-light)',
-                                color: 'var(--text-secondary)',
-                                fontSize: '10px',
-                                fontWeight: '600',
-                                textAlign: 'center',
-                                position: 'sticky',
-                                top: 0,
-                                zIndex: 2
-                              }}
-                            >
-                              {getColLetter(colIndex)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      
-                      {/* Rows data */}
-                      <tbody>
-                        {sheetData.cells.map((row, rowIndex) => (
-                          <tr key={rowIndex} className="excel-row-tr" style={{
-                            height: sheetData.rows[rowIndex]?.height || '26px'
-                          }}>
-                            {/* Row number label */}
-                            <td style={{
-                              background: 'rgba(25, 28, 39, 0.9)',
-                              border: '1px solid var(--border-light)',
-                              color: 'var(--text-secondary)',
-                              fontSize: '10px',
-                              fontWeight: '600',
-                              textAlign: 'center',
-                              position: 'sticky',
-                              left: 0,
-                              zIndex: 1,
-                              height: '100%'
-                            }}>
-                              {rowIndex + 1}
-                            </td>
-
-                            {/* Cells of this row */}
-                            {row.map((cell, colIndex) => {
-                              if (!cell.visible) return null; // Skip if merged and covered
-                              
-                              const cellValue = cell.w || '';
-                              
-                              // Check if query is set and cell matches query
-                              const isMatch = searchQuery && cellValue && cellValue.toLowerCase().includes(searchQuery.toLowerCase());
-                              
-                              // Combine alignment & style formatting
-                              const cellStyles = getCellStyle(cell);
-                              
-                              return (
-                                <td 
-                                  key={colIndex}
-                                  rowSpan={cell.rowSpan > 1 ? cell.rowSpan : undefined}
-                                  colSpan={cell.colSpan > 1 ? cell.colSpan : undefined}
-                                  style={{
-                                    padding: '6px 8px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    verticalAlign: 'middle',
-                                    color: cellValue ? 'var(--text-primary)' : 'rgba(255, 255, 255, 0.1)',
-                                    // Highlight if matches search query
-                                    background: isMatch 
-                                      ? 'rgba(168, 85, 247, 0.25)' 
-                                      : cellStyles.backgroundColor || (cellValue ? 'transparent' : 'rgba(255, 255, 255, 0.01)'),
-                                    border: isMatch ? '1px solid var(--accent-purple)' : '1px solid var(--border-light)',
-                                    boxShadow: isMatch ? '0 0 10px rgba(192, 132, 252, 0.5)' : 'none',
-                                    transition: 'all 0.15s ease',
-                                    cursor: 'cell',
-                                    ...cellStyles
-                                  }}
-                                  title={cellValue || undefined}
-                                  className="excel-cell-td"
-                                >
-                                  {cellValue || ''}
-                                </td>
-                              );
-                            })}
-                          </tr>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sheetData.cells.map((row, rowIndex) => (
+                        <tr key={rowIndex} style={{ height: sheetData.rows[rowIndex]?.height || '26px' }}>
+                          <td style={{ ...sheetHeadCell, position: 'sticky', left: 0, zIndex: 1, top: 'auto' }}>{rowIndex + 1}</td>
+                          {row.map((cell, colIndex) => {
+                            if (!cell.visible) return null; // merged and covered by another cell
+                            const cellValue = cell.w || '';
+                            const isMatch = searchQuery && cellValue && cellValue.toLowerCase().includes(searchQuery.toLowerCase());
+                            const cellStyles = getCellStyle(cell);
+                            return (
+                              <td
+                                key={colIndex}
+                                rowSpan={cell.rowSpan > 1 ? cell.rowSpan : undefined}
+                                colSpan={cell.colSpan > 1 ? cell.colSpan : undefined}
+                                title={cellValue || undefined}
+                                style={{
+                                  padding: '6px 8px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  verticalAlign: 'middle',
+                                  color: cellValue ? 'var(--text-body)' : 'var(--text-faint)',
+                                  background: isMatch ? 'var(--accent-soft)' : cellStyles.backgroundColor || 'transparent',
+                                  border: `1px solid ${isMatch ? 'var(--accent-line)' : 'var(--line-hairline)'}`,
+                                  ...cellStyles
+                                }}
+                              >
+                                {cellValue}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 );
               })()}
             </div>
@@ -1824,77 +1194,13 @@ export default function ExcelImporter({
         )}
       </div>
 
-      {/* Embedded CSS for custom transitions and hover highlights */}
       <style>{`
-        .excel-card-item:hover {
-          background: rgba(255,255,255,0.06) !important;
-          border-color: rgba(192, 132, 252, 0.4) !important;
-        }
-        .excel-card-item .delete-card-btn {
-          opacity: 0;
-          transition: opacity 0.2s ease, background 0.2s ease;
-        }
-        .excel-card-item:hover .delete-card-btn {
-          opacity: 1;
-        }
-        .excel-card-item .delete-card-btn:hover {
-          background: rgba(239, 68, 68, 0.15) !important;
-          color: var(--accent-red) !important;
-        }
-
-        .rulebook-item-card:hover {
-          background: rgba(255,255,255,0.05) !important;
-          border-color: rgba(52, 211, 153, 0.4) !important;
-        }
-        .rulebook-item-card .rulebook-item-btns {
-          opacity: 0;
-          transition: opacity 0.2s ease;
-        }
-        .rulebook-item-card:hover .rulebook-item-btns {
-          opacity: 1;
-        }
-        .rulebook-item-card .delete-rulebook-btn:hover {
-          background: rgba(239, 68, 68, 0.15) !important;
-          color: var(--accent-red) !important;
-        }
-
-        .dropzone-label:hover {
-          border-color: var(--accent-purple) !important;
-          background: rgba(192, 132, 252, 0.02) !important;
-          box-shadow: 0 0 15px rgba(192, 132, 252, 0.05);
-        }
-        .dropzone-label-emerald {
-          transition: all 0.3s ease;
-        }
-        .dropzone-label-emerald:hover {
-          border-color: var(--accent-emerald) !important;
-          background: rgba(52, 211, 153, 0.02) !important;
-          box-shadow: 0 0 15px rgba(52, 211, 153, 0.05);
-        }
-
-        .rulebook-uploader-btn:hover {
-          background: rgba(52, 211, 153, 0.08) !important;
-          border-color: var(--accent-emerald) !important;
-        }
-
-        .excel-row-tr:hover {
-          background: rgba(255, 255, 255, 0.03) !important;
-        }
-        .excel-cell-td:hover {
-          background: rgba(192, 132, 252, 0.1) !important;
-          color: var(--text-primary) !important;
-          box-shadow: inset 0 0 4px rgba(192, 132, 252, 0.2) !important;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .excel-render-table td, .excel-render-table th {
-          transition: background-color 0.1s ease;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
+        .dmf-file-row:hover { background: var(--surface-hover) !important; }
+        .dmf-file-row .dmf-row-actions { opacity: 0; transition: var(--motion-fade); }
+        .dmf-file-row:hover .dmf-row-actions { opacity: 1; }
+        .dmf-dropzone:hover { box-shadow: inset 0 0 0 1px var(--accent-line) !important; background: var(--accent-soft) !important; }
+        .dmf-sheet tr:hover td { background: var(--surface-hover); }
+        .dmf-sheet td:hover { box-shadow: inset 0 0 0 1px var(--accent-line); }
       `}</style>
     </div>
   );
