@@ -85,20 +85,42 @@ export default function AppHeader({
         D<span style={{ color: 'var(--accent)' }}>M</span>Forge
       </span>
 
+      {/* Latin section key in the label face; the campaign name is Chinese, and
+          IBM Plex Mono has no Han glyphs — setting it in mono would fall back to
+          whatever the OS supplies and break the line. */}
       <span
         style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 'var(--type-micro)',
-          letterSpacing: '.06em',
-          color: 'var(--text-faint)',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 'var(--space-2)',
           minWidth: 0,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
+          overflow: 'hidden'
         }}
       >
-        CAMPAIGN / {campaignName}
-        {chapter ? ` · ${chapter}` : ''}
+        <span
+          style={{
+            fontFamily: 'var(--font-label)',
+            fontSize: 'var(--type-micro)',
+            letterSpacing: 'var(--tracking-label)',
+            textTransform: 'uppercase',
+            color: 'var(--text-faint)',
+            flexShrink: 0
+          }}
+        >
+          Campaign
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--type-meta)',
+            color: 'var(--text-muted)',
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {campaignName}{chapter ? ` · ${chapter}` : ''}
+        </span>
       </span>
 
       {isPlayerViewMode ? <Badge tone="woad" icon="eye">玩家展示端 (Read-Only)</Badge> : null}
@@ -120,7 +142,7 @@ export default function AppHeader({
           flexShrink: 0
         }}
       >
-        <StatusDot state={sync.state} label={sync.label} />
+        <StatusDot state={sync.state} label={sync.label} mono={false} />
       </button>
 
       <ThemeSwitcher value={theme} onChange={onTheme} compact />

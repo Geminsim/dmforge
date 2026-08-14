@@ -6,7 +6,12 @@ import { StatusLine } from '../../ds';
  * them here frees the header and gives the DM one place to glance at.
  */
 
-const TAB_LABEL = { map: '战术地图', items: '物品流转', excel: '玩家卡导入' };
+// StatusLine renders in mono and IBM Plex Mono has no Han glyphs, so the TOOL
+// cell carries Latin codes; the tab itself already shows the Chinese name.
+const TOOL_CODE = { map: 'MAP', items: 'ITEMS', excel: 'SHEETS' };
+
+/** Chinese inside the mono strip needs the sans face to render at all. */
+const cn = text => <span style={{ fontFamily: 'var(--font-sans)' }}>{text}</span>;
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '—';
@@ -41,13 +46,13 @@ export default function AppStatusLine({
   if (!isPlayerViewMode) {
     items.push({
       label: 'TURN',
-      value: isInCombat && activeTurnName ? activeTurnName : '自由行动',
+      value: isInCombat && activeTurnName ? cn(activeTurnName) : cn('自由行动'),
       tone: isInCombat && activeTurnName ? 'accent' : undefined
     });
   }
   items.push({ label: 'MAP', value: `${mapCells} · 1FT=${cellSize}PX` });
   if (!isPlayerViewMode) {
-    items.push({ label: 'TOOL', value: (TAB_LABEL[currentTab] || currentTab || '—').toUpperCase() });
+    items.push({ label: 'TOOL', value: TOOL_CODE[currentTab] || '—' });
   }
 
   const right = [];
@@ -59,7 +64,7 @@ export default function AppStatusLine({
   }
   right.push({
     label: 'LAN',
-    value: !isSyncEnabled ? '单机模式' : isSyncConnected ? lanAddress || '已连接' : '重试中',
+    value: !isSyncEnabled ? cn('单机模式') : isSyncConnected ? (lanAddress || cn('已连接')) : cn('重试中'),
     tone: !isSyncEnabled ? undefined : isSyncConnected ? 'verdigris' : 'ochre'
   });
 

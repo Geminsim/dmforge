@@ -1405,7 +1405,7 @@ export default function MapSystem({
         )}
 
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
-          {activeMap.width}×{activeMap.height} · 1格 = 1ft
+          {activeMap.width}×{activeMap.height} · 1ft
         </span>
 
         <span style={{ flex: 1 }} />
@@ -2593,7 +2593,7 @@ export default function MapSystem({
               }}
             >
               {label}
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{res.value > 0 ? '可用' : '已用'}</span>
+              <span>{res.value > 0 ? '可用' : '已用'}</span>
             </button>
           );
 
@@ -2782,8 +2782,8 @@ export default function MapSystem({
         )}
 
         <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
-          比例尺 1格 = 1ft
+        <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+          比例尺 <span style={{ fontFamily: 'var(--font-mono)' }}>1</span>格 = <span style={{ fontFamily: 'var(--font-mono)' }}>1ft</span>
         </span>
       </div>
 

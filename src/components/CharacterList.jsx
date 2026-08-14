@@ -34,7 +34,15 @@ function CharacterList({
     e.stopPropagation();
     setEditingGroupId(group.id);
     setEditingGroupName(group.name);
-    setEditingGroupColor(group.color || (group.id === 'group_pcs' ? '#60a5fa' : group.id === 'group_npcs' ? '#f87171' : '#c084fc'));
+    // <input type="color"> needs a literal hex — it cannot read a CSS variable —
+    // so seed it from the theme's actual pigment rather than leaving the old
+    // purple palette here. A group with no colour of its own still renders from
+    // var(--pigment-*) and follows the theme; only the picker's starting swatch
+    // is fixed, and the moment the DM picks a colour it is stored verbatim.
+    const seed = getComputedStyle(document.documentElement)
+      .getPropertyValue(group.id === 'group_pcs' ? '--pigment-woad' : group.id === 'group_npcs' ? '--pigment-madder' : '--accent')
+      .trim();
+    setEditingGroupColor(group.color || seed || '#c0503a');
   };
 
   const handleSaveGroupEdit = (groupId) => {
@@ -545,7 +553,7 @@ function CharacterList({
         }}
       >
         {label}
-        <span style={{ fontFamily: 'var(--font-mono)' }}>{res.value > 0 ? '可用' : '已用'}</span>
+        <span>{res.value > 0 ? '可用' : '已用'}</span>
       </button>
     );
     return (

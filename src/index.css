@@ -36,3 +36,11 @@ body {
   width: 0;
   height: 0;
 }
+
+/* Mono fields hold data the DM types — formulas, HP, coordinates — so the value
+   stays monospaced. Their placeholders are Chinese prose, and IBM Plex Mono has
+   no Han glyphs, so hint text takes the body face instead. */
+input::placeholder,
+textarea::placeholder {
+  font-family: var(--font-sans);
+}
