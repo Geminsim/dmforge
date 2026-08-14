@@ -1,15 +1,33 @@
 import React from 'react';
-import { X, Minimize2, Maximize2 } from 'lucide-react';
+import { NOTE_TONES, colorForTone, toneForNote } from '../utils/noteTone';
+
+/**
+ * A note the DM drags around on top of the map.
+ *
+ * This deliberately does not use the design system's FloatingNoteCard: that
+ * component is presentational (fixed title and body), while this one is an
+ * editor the DM types into mid-session and drags and resizes. What it does do
+ * is match FloatingNoteCard exactly — same overlay surface, same 2px tone rule
+ * along the top, same bracket ring and float shadow — so the two are
+ * indistinguishable on screen. Keep them in step if either changes.
+ *
+ * Notes and modals are the only surfaces in the system allowed to blur, because
+ * they sit above live content.
+ */
+
+const TONE_VAR = tone => (tone === 'accent' ? 'var(--accent)' : `var(--pigment-${tone})`);
+const TONE_SOFT = tone => (tone === 'accent' ? 'var(--accent-soft)' : `var(--pigment-${tone}-soft)`);
 
 function FloatingNote({ note, onClose, onUpdate }) {
   const containerRef = React.useRef(null);
-  
+  const tone = toneForNote(note);
+
   const handleDragStart = (e) => {
-    // Prevent dragging if the user is typing inside the inputs
+    // Don't start a drag when the DM is typing or clicking a control.
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') {
       return;
     }
-    
+
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
@@ -19,10 +37,8 @@ function FloatingNote({ note, onClose, onUpdate }) {
     let currentY = initialY;
 
     const handleMouseMove = (moveEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      currentX = initialX + dx;
-      currentY = initialY + dy;
+      currentX = initialX + (moveEvent.clientX - startX);
+      currentY = initialY + (moveEvent.clientY - startY);
       if (containerRef.current) {
         containerRef.current.style.left = `${currentX}px`;
         containerRef.current.style.top = `${currentY}px`;
@@ -42,19 +58,17 @@ function FloatingNote({ note, onClose, onUpdate }) {
   const handleResizeStart = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const startX = e.clientX;
     const startY = e.clientY;
-    const startWidth = note.width || (note.isRulebook ? 380 : 260);
-    const startHeight = note.height || (note.isRulebook ? 320 : 180);
+    const startWidth = note.width || (note.isRulebook ? 380 : 280);
+    const startHeight = note.height || (note.isRulebook ? 320 : 190);
     let currentWidth = startWidth;
     let currentHeight = startHeight;
 
     const handleMouseMove = (moveEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      currentWidth = Math.max(200, Math.min(800, startWidth + dx));
-      currentHeight = Math.max(120, Math.min(600, startHeight + dy));
+      currentWidth = Math.max(200, Math.min(800, startWidth + (moveEvent.clientX - startX)));
+      currentHeight = Math.max(120, Math.min(600, startHeight + (moveEvent.clientY - startY)));
       if (containerRef.current) {
         containerRef.current.style.width = `${currentWidth}px`;
         containerRef.current.style.height = `${currentHeight}px`;
@@ -71,15 +85,18 @@ function FloatingNote({ note, onClose, onUpdate }) {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const colors = [
-    { name: 'purple', value: 'var(--accent-purple)', bg: 'rgba(192, 132, 252, 0.1)' },
-    { name: 'blue', value: 'var(--accent-blue)', bg: 'rgba(96, 165, 250, 0.1)' },
-    { name: 'emerald', value: 'var(--accent-emerald)', bg: 'rgba(52, 211, 153, 0.1)' },
-    { name: 'amber', value: 'var(--accent-amber)', bg: 'rgba(251, 191, 36, 0.1)' },
-    { name: 'red', value: 'var(--accent-red)', bg: 'rgba(248, 113, 113, 0.1)' }
-  ];
-
-  const activeColor = colors.find(c => c.name === note.color) || colors[0];
+  const iconBtn = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    color: 'var(--text-muted)',
+    cursor: 'pointer'
+  };
 
   return (
     <div
@@ -88,152 +105,148 @@ function FloatingNote({ note, onClose, onUpdate }) {
         position: 'absolute',
         left: `${note.x}px`,
         top: `${note.y}px`,
-        width: `${note.width || (note.isRulebook ? 380 : 260)}px`,
-        height: note.isMinimized ? 'auto' : `${note.height || (note.isRulebook ? 320 : 180)}px`,
+        width: `${note.width || (note.isRulebook ? 380 : 280)}px`,
+        height: note.isMinimized ? 'auto' : `${note.height || (note.isRulebook ? 320 : 190)}px`,
         zIndex: 1000,
-        background: 'var(--bg-glass)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        border: '1px solid var(--border-light)',
-        borderLeft: `4px solid ${activeColor.value}`,
-        borderRadius: '8px',
-        boxShadow: 'var(--shadow-lg)',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        background: 'var(--surface-overlay)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        boxShadow: `inset 0 2px 0 ${TONE_VAR(tone)}, inset 0 0 0 1px var(--bracket-line), var(--shadow-float)`
       }}
     >
-      {/* Draggable Header */}
-      <div
+      <header
         onMouseDown={handleDragStart}
         style={{
-          padding: '8px 12px',
-          background: 'rgba(255, 255, 255, 0.02)',
-          borderBottom: note.isMinimized ? 'none' : '1px solid var(--border-light)',
-          cursor: 'move',
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 'var(--space-3)',
+          padding: 'var(--space-2) var(--space-3)',
+          borderBottom: note.isMinimized ? 'none' : 'var(--border-hairline)',
+          cursor: 'move',
           userSelect: 'none'
         }}
       >
+        <i className="ph-fill ph-note" style={{ fontSize: 12, color: TONE_VAR(tone) }} aria-hidden="true" />
         <input
           type="text"
           value={note.title}
           onChange={(e) => onUpdate(note.id, { title: e.target.value })}
           placeholder="笔记标题..."
           style={{
+            flex: 1,
+            minWidth: 0,
             background: 'transparent',
             border: 'none',
-            color: 'var(--text-primary)',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            width: '150px',
             outline: 'none',
-            padding: 0
+            padding: 0,
+            color: 'var(--text-body)',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 'var(--display-weight)',
+            fontSize: 'var(--type-body-sm)'
           }}
         />
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            type="button"
-            onClick={() => onUpdate(note.id, { isMinimized: !note.isMinimized })}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              padding: 0
-            }}
-            title={note.isMinimized ? '展开' : '折叠'}
-          >
-            {note.isMinimized ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => onClose(note.id)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--accent-red)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              padding: 0
-            }}
-            title="关闭笔记 (可在列表重新打开)"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      </div>
+        <button
+          type="button"
+          onClick={() => onUpdate(note.id, { isMinimized: !note.isMinimized })}
+          style={iconBtn}
+          title={note.isMinimized ? '展开' : '折叠'}
+        >
+          <i className={`ph-fill ph-${note.isMinimized ? 'arrows-out-simple' : 'minus'}`} style={{ fontSize: 11 }} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onClose(note.id)}
+          style={{ ...iconBtn, color: 'var(--pigment-madder)' }}
+          title="关闭笔记 (可在列表重新打开)"
+        >
+          <i className="ph-fill ph-x" style={{ fontSize: 11 }} aria-hidden="true" />
+        </button>
+      </header>
 
-      {/* Editable Body */}
       {!note.isMinimized && (
-        <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', background: activeColor.bg, flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            padding: 'var(--space-3)',
+            background: TONE_SOFT(tone)
+          }}
+        >
           <textarea
             value={note.content}
             onChange={(e) => onUpdate(note.id, { content: e.target.value })}
             placeholder="输入对话、描述、秘密或事件笔记..."
             style={{
-              width: '100%',
               flex: 1,
+              width: '100%',
               background: 'transparent',
               border: 'none',
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              lineHeight: '140%',
-              resize: 'none',
               outline: 'none',
-              padding: 0
+              resize: 'none',
+              padding: 0,
+              color: 'var(--text-body)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 'var(--type-meta)',
+              lineHeight: 'var(--type-body-lh)'
             }}
           />
 
-          {/* Color Selector Footer */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', marginTop: 'auto' }}>
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>分类标记:</span>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {colors.map(c => (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+              paddingTop: 'var(--space-2)',
+              borderTop: 'var(--border-hairline)'
+            }}
+          >
+            <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>分类标记</span>
+            <span style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              {NOTE_TONES.map(t => (
                 <button
-                  key={c.name}
+                  key={t}
                   type="button"
-                  onClick={() => onUpdate(note.id, { color: c.name })}
+                  onClick={() => onUpdate(note.id, { color: colorForTone(t) })}
+                  title={`将此笔记标记为${t === tone ? '（当前）' : ''}此分类颜色`}
                   style={{
-                    width: '10px',
-                    height: '10px',
-                    borderRadius: '50%',
-                    background: c.value,
-                    border: note.color === c.name ? '2px solid #fff' : 'none',
-                    cursor: 'pointer',
+                    width: 11,
+                    height: 11,
                     padding: 0,
-                    boxShadow: note.color === c.name ? '0 0 4px rgba(255,255,255,0.8)' : 'none'
+                    borderRadius: 'var(--radius-pill)',
+                    background: TONE_VAR(t),
+                    border: t === tone ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)',
+                    cursor: 'pointer'
                   }}
-                  title={c.name}
                 />
               ))}
-            </div>
+            </span>
           </div>
 
-          {/* Drag Resize Handle */}
           <div
             onMouseDown={handleResizeStart}
+            title="拖动右下角调整大小"
             style={{
               position: 'absolute',
-              right: '2px',
-              bottom: '2px',
-              width: '12px',
-              height: '12px',
+              right: 2,
+              bottom: 2,
+              width: 12,
+              height: 12,
               cursor: 'se-resize',
               zIndex: 1010,
               display: 'flex',
               alignItems: 'flex-end',
               justifyContent: 'flex-end'
             }}
-            title="拖动右下角调整大小"
           >
-            <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.5, color: activeColor.value }}>
+            <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.6, color: TONE_VAR(tone) }} aria-hidden="true">
               <line x1="6" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="1.2" />
               <line x1="6" y1="3" x2="3" y2="6" stroke="currentColor" strokeWidth="1.2" />
             </svg>

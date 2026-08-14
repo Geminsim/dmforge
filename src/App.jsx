@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import CharacterList from './components/CharacterList';
-import DiceRoller from './components/DiceRoller';
 import CampaignWorkspace from './components/CampaignWorkspace';
-import ActionLog from './components/ActionLog';
 import FloatingNote from './components/FloatingNote';
+import AppHeader from './components/shell/AppHeader';
+import AppStatusLine from './components/shell/AppStatusLine';
+import RightRail from './components/shell/RightRail';
+import CharacterEditorModal from './components/modals/CharacterEditorModal';
+import RestModal from './components/modals/RestModal';
+import SettingsModal from './components/modals/SettingsModal';
+import { ResizeHandle } from './ds';
+import { applyTheme, readStoredTheme } from './ds/theme';
 import { CURRENT_SCHEMA_VERSION, MAX_CAMPAIGN_FILE_BYTES, prepareCampaign } from './utils/campaignValidation';
 import { resolveSyncToken } from './utils/syncToken';
 import { createLocalRecoveryPoint, describeStorageError, listLocalRecoveryPoints, loadCampaignSnapshot, restoreLocalRecoveryPoint, safeWriteSetting, saveCampaignSnapshot } from './utils/campaignSnapshotStore';
@@ -11,8 +17,7 @@ import { createCampaignExport, openCampaignExport } from './utils/campaignExport
 import { serializeJsonOffThread } from './utils/jsonSerialization';
 import { decideInitialSync, decidePollingSync } from './utils/syncDecision';
 import { buildPublicPresentationSnapshot, DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings, PRESENTATION_PROTOCOL } from './utils/presentation';
-import PresentationControls from './components/PresentationControls';
-import { Shield, UserPlus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+
 
 // --- Helper to ensure all characters have default resources ---
 const sanitizeCharacters = (chars) => {
@@ -290,6 +295,9 @@ export default function App() {
   )));
   const [storageReady, setStorageReady] = useState(false);
   const [storageError, setStorageError] = useState('');
+  // Byte size of the last payload we serialized for sync. Measured only where a
+  // serialized string already exists — never worth a extra JSON pass per render.
+  const [campaignBytes, setCampaignBytes] = useState(0);
   const [storageStatus, setStorageStatus] = useState('正在加载本地存档…');
   const [localRecoveryPoints, setLocalRecoveryPoints] = useState([]);
   const [syncConflict, setSyncConflict] = useState(null);
@@ -429,9 +437,6 @@ export default function App() {
     levelHpIncreases: [],
     tempHp: 0
   });
-  const [tempResName, setTempResName] = useState('');
-  const [tempResMax, setTempResMax] = useState(4);
-  const [tempResResetType, setTempResResetType] = useState('long_rest');
 
   // Rest & Recovery Modal states
   const [isRestModalOpen, setIsRestModalOpen] = useState(false);
@@ -463,9 +468,8 @@ export default function App() {
       levelHpIncreases: [],
       tempHp: 0
     });
-    setTempResName('');
-    setTempResMax(4);
-    setTempResResetType('long_rest');
+    // The resource sub-form lives in CharacterEditorModal and unmounts with it,
+    // so it resets itself every time the modal opens.
     setIsAddCharModalOpen(true);
   }, []);
 
@@ -576,9 +580,8 @@ export default function App() {
       levelHpIncreases: char.levelHpIncreases ? [...char.levelHpIncreases] : [],
       tempHp: char.tempHp !== undefined ? char.tempHp : 0
     });
-    setTempResName('');
-    setTempResMax(4);
-    setTempResResetType('long_rest');
+    // The resource sub-form lives in CharacterEditorModal and unmounts with it,
+    // so it resets itself every time the modal opens.
     setIsAddCharModalOpen(true);
   }, []);
 
@@ -709,6 +712,7 @@ export default function App() {
     let body;
     try {
       body = await serializeJsonOffThread(payload);
+      setCampaignBytes(new Blob([body]).size);
     } catch (error) {
       setStorageError(`同步数据序列化失败：${error.message}`);
       isPushInFlight.current = false;
@@ -1405,187 +1409,154 @@ export default function App() {
     }));
   }, []);
 
+  const [theme, setTheme] = useState(() => readStoredTheme());
+  const handleTheme = React.useCallback(next => setTheme(applyTheme(next)), []);
+  React.useEffect(() => { applyTheme(theme); }, [theme]);
+
+  const activeMap = maps.find(m => m.id === activeMapId) || null;
+
+  // combatTurnOrder holds either ids or {id,...} entries depending on how the
+  // round was started; resolve both so the status line never shows an object.
+  const activeTurnEntry = isInCombat ? combatTurnOrder[currentTurnIndex] : null;
+  const activeTurnId = typeof activeTurnEntry === 'string' ? activeTurnEntry : activeTurnEntry?.id;
+  const activeTurnName = activeTurnId
+    ? (characters.find(c => c.id === activeTurnId)?.name ?? activeTurnEntry?.name ?? null)
+    : null;
+
+  const handleSaveCharacter = () => {
+    if (!newChar.name.trim()) {
+      alert('请输入角色/怪物名称！');
+      return;
+    }
+    const timestamp = new Date().toLocaleTimeString();
+
+    if (editingCharId) {
+      setCharacters(prev => sanitizeCharacters(prev.map(c => {
+        if (c.id !== editingCharId) return c;
+        return {
+          ...c,
+          name: newChar.name.trim(),
+          type: newChar.type,
+          class: newChar.class.trim() || '无职业',
+          maxHp: newChar.maxHp,
+          hp: Math.min(c.hp, newChar.maxHp), // keep current HP inside the new ceiling
+          ac: newChar.ac,
+          initiative: newChar.initiative,
+          speed: newChar.speed,
+          stats: newChar.stats,
+          resources: newChar.resources,
+          conditions: c.conditions || [],
+          level: newChar.level !== undefined ? newChar.level : (c.level || 1),
+          hitDice: newChar.hitDice !== undefined ? newChar.hitDice : (c.hitDice || 'd8'),
+          levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : (c.levelHpIncreases || []),
+          tempHp: newChar.tempHp !== undefined ? newChar.tempHp : (c.tempHp || 0)
+        };
+      })));
+
+      setIsAddCharModalOpen(false);
+      setEditingCharId(null);
+      addLog?.({
+        type: 'COMBAT',
+        content: `**修改角色属性**: [${newChar.type}] **${newChar.name}** (职业: ${newChar.class || '无职业'}, HP上限: ${newChar.maxHp}, AC: ${newChar.ac})`,
+        timestamp
+      });
+      return;
+    }
+
+    const created = {
+      id: 'char_' + Date.now(),
+      name: newChar.name.trim(),
+      type: newChar.type,
+      class: newChar.class.trim() || '无职业',
+      hp: newChar.maxHp,
+      maxHp: newChar.maxHp,
+      ac: newChar.ac,
+      initiative: newChar.initiative,
+      speed: newChar.speed,
+      gridX: 2,
+      gridY: 2,
+      stats: newChar.stats,
+      feats: { '特质': '新录入的角色' },
+      resources: newChar.resources,
+      groupId: newChar.type === 'PC' ? 'group_pcs' : 'group_npcs',
+      conditions: [],
+      combatSpeedRemaining: newChar.speed !== undefined ? newChar.speed : 30,
+      combatStartGridX: 2,
+      combatStartGridY: 2,
+      level: newChar.level !== undefined ? newChar.level : 1,
+      hitDice: newChar.hitDice !== undefined ? newChar.hitDice : 'd8',
+      levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : [],
+      tempHp: newChar.tempHp !== undefined ? newChar.tempHp : 0
+    };
+
+    setCharacters(prev => [...prev, sanitizeCharacters([created])[0]]);
+    setIsAddCharModalOpen(false);
+    addLog?.({
+      type: 'COMBAT',
+      content: `**新增角色/怪物**: [${newChar.type}] **${newChar.name}** (职业: ${created.class}, HP: ${newChar.maxHp}, AC: ${newChar.ac})`,
+      timestamp
+    });
+  };
+
+  const handleConfirmRest = () => {
+    const selectedIds = Object.keys(restParticipants).filter(id => restParticipants[id]);
+    if (selectedIds.length === 0) return;
+    if (restModalType === 'short') handleShortRest(selectedIds);
+    else handleLongRest(selectedIds);
+    setIsRestModalOpen(false);
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        alert(`进入全屏模式失败: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const showLeftSidebar = !isPlayerViewMode && !isLeftSidebarCollapsed;
+  const showRightRail = !isPlayerViewMode && !isRightSidebarCollapsed;
+
   return (
-    <div className="app-container">
-      
-      {/* 1. Header Toolbar */}
-      <header className="header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Shield size={24} style={{ color: 'var(--accent-purple)', filter: 'drop-shadow(0 0 8px var(--accent-purple-glow))' }} />
-          <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0, letterSpacing: '0' }}>
-            DMForge <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--accent-purple)' }}>TRPG 战役助手</span>
-          </h1>
-        </div>
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface-app)', overflow: 'hidden' }}>
+      <AppHeader
+        campaignName={activeMap?.name || '未命名战役'}
+        chapter={`${maps.length} 张地图 · ${characters.length} 名角色`}
+        theme={theme}
+        onTheme={handleTheme}
+        isPlayerViewMode={isPlayerViewMode}
+        onTogglePlayerView={() => handleSetAppRole(isPlayerViewMode ? 'DM' : 'PLAYER')}
+        syncConflict={syncConflict}
+        isSyncEnabled={isSyncEnabled}
+        isSyncConnected={isSyncConnected}
+        onToggleSync={() => (syncConflict ? setIsSettingsModalOpen(true) : setIsSyncEnabled(!isSyncEnabled))}
+        presentationConnected={presentationConnected}
+        isLeftSidebarCollapsed={isLeftSidebarCollapsed}
+        onToggleLeftSidebar={() => setIsLeftSidebarCollapsed(!isLeftSidebarCollapsed)}
+        isRightSidebarCollapsed={isRightSidebarCollapsed}
+        onToggleRightSidebar={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
 
-        {/* Presentation & Toggle Controls */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-
-
-          {/* LAN Sync Status Indicator Pill */}
-          <button 
-            onClick={() => syncConflict ? setIsSettingsModalOpen(true) : setIsSyncEnabled(!isSyncEnabled)}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px', 
-              background: syncConflict ? 'rgba(239,68,68,0.16)' : !isSyncEnabled
-                ? 'rgba(255, 255, 255, 0.05)' 
-                : isSyncConnected 
-                  ? 'rgba(52, 211, 153, 0.12)' 
-                  : 'rgba(251, 191, 36, 0.12)',
-              padding: '4px 10px', 
-              borderRadius: '20px', 
-              border: `1px solid ${
-                !isSyncEnabled 
-                  ? 'rgba(255, 255, 255, 0.15)' 
-                  : isSyncConnected 
-                    ? 'rgba(52, 211, 153, 0.4)' 
-                    : 'rgba(251, 191, 36, 0.4)'
-              }`,
-              boxShadow: isSyncEnabled && isSyncConnected ? '0 0 10px rgba(52, 211, 153, 0.2)' : 'none',
-              transition: 'all 0.3s ease',
-              height: '28px',
-              cursor: 'pointer',
-              outline: 'none'
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+        {showLeftSidebar && (
+          <aside
+            style={{
+              width: `${leftSidebarWidth}px`,
+              minWidth: `${leftSidebarWidth}px`,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              background: 'var(--surface-panel)',
+              borderRight: 'var(--border-hairline)',
+              overflow: 'hidden'
             }}
-            title={
-              syncConflict ? '需要处理同步冲突；点击打开设置选择保留版本。' : !isSyncEnabled
-                ? "局域网实时数据同步已关闭（单机离线模式，完全无网络请求消耗）。点击开启局域网同步" 
-                : isSyncConnected 
-                  ? "局域网实时数据同步开启中，其他设备更改会秒级在此拉取。点击关闭局域网同步" 
-                  : "同步暂不可用，应用已自动使用本地存档并继续重试。"
-            }
           >
-            <span 
-              className={isSyncEnabled && isSyncConnected ? "sync-dot-active" : ""}
-              style={{ 
-                width: '6px', 
-                height: '6px', 
-                borderRadius: '50%', 
-                background: syncConflict ? '#f87171' : !isSyncEnabled
-                  ? '#9ca3af' 
-                  : isSyncConnected 
-                    ? '#34d399' 
-                    : '#fbbf24',
-                display: 'inline-block'
-              }} 
-            />
-            <span style={{ 
-              fontSize: '11px', 
-              color: !isSyncEnabled 
-                ? '#9ca3af' 
-                : isSyncConnected 
-                  ? '#34d399' 
-                  : '#fbbf24',
-              fontWeight: '700', 
-              fontFamily: 'var(--font-heading)',
-              userSelect: 'none'
-            }}>
-              {syncConflict ? '⚠️ 同步冲突待处理' : !isSyncEnabled
-                ? '📡 同步已关闭' 
-                : isSyncConnected 
-                  ? '📡 局域网同步中' 
-                  : '💾 自动单机使用'}
-            </span>
-          </button>
-
-          {!isPlayerViewMode && (
-            <button
-              type="button"
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="btn"
-              style={{ height: '28px', padding: '3px 9px', fontSize: '10px', border: `1px solid ${presentationConnected ? 'rgba(52,211,153,.45)' : 'var(--border-light)'}`, background: presentationConnected ? 'rgba(52,211,153,.1)' : 'rgba(255,255,255,.04)', color: presentationConnected ? '#6ee7b7' : 'var(--text-secondary)' }}
-              title="打开直播展示控制面板"
-            >
-              📺 {presentationConnected ? '直播展示中' : '直播展示'}
-            </button>
-          )}
-
-          {/* Sidebar Collapse Controls (Hidden in Player View Mode) */}
-          {!isPlayerViewMode && (
-            <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.2)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-light)', height: '28px', alignItems: 'center' }}>
-              <button
-                onClick={() => setIsLeftSidebarCollapsed(!isLeftSidebarCollapsed)}
-                className="btn"
-                style={{ 
-                  padding: '2px 8px', 
-                  fontSize: '11px', 
-                  height: '22px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px',
-                  background: isLeftSidebarCollapsed ? 'rgba(192, 132, 252, 0.15)' : 'transparent',
-                  border: isLeftSidebarCollapsed ? '1px solid rgba(192, 132, 252, 0.4)' : '1px solid transparent',
-                  borderRadius: '6px',
-                  color: isLeftSidebarCollapsed ? 'var(--accent-purple)' : 'var(--text-primary)',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  transition: 'all 0.2s ease'
-                }}
-                title={isLeftSidebarCollapsed ? "展开左侧栏 (角色与NPC列表)" : "折叠隐藏左侧栏"}
-              >
-                {isLeftSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-                <span>{isLeftSidebarCollapsed ? "显示左栏" : "隐藏左栏"}</span>
-              </button>
-              
-              <div style={{ width: '1px', height: '12px', background: 'var(--border-light)', margin: '0 2px' }} />
-              
-              <button
-                onClick={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
-                className="btn"
-                style={{ 
-                  padding: '2px 8px', 
-                  fontSize: '11px', 
-                  height: '22px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px',
-                  background: isRightSidebarCollapsed ? 'rgba(192, 132, 252, 0.15)' : 'transparent',
-                  border: isRightSidebarCollapsed ? '1px solid rgba(192, 132, 252, 0.4)' : '1px solid transparent',
-                  borderRadius: '6px',
-                  color: isRightSidebarCollapsed ? 'var(--accent-purple)' : 'var(--text-primary)',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  transition: 'all 0.2s ease'
-                }}
-                title={isRightSidebarCollapsed ? "展开右侧栏 (掷骰与战役日志)" : "折叠隐藏右侧栏"}
-              >
-                <span>{isRightSidebarCollapsed ? "显示右栏" : "隐藏右栏"}</span>
-                {isRightSidebarCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-              </button>
-            </div>
-          )}
-
-          <button 
-            onClick={() => setIsSettingsModalOpen(true)} 
-            className="btn btn-secondary"
-            style={{ 
-              fontSize: '11px', 
-              padding: '4px 10px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '4px',
-              border: '1px solid rgba(192, 132, 252, 0.3)',
-              boxShadow: '0 0 6px rgba(192, 132, 252, 0.15)',
-              height: '28px'
-            }}
-            title="打开全局战役与多端系统设置面板"
-          >
-            <span style={{ fontSize: '12px' }}>⚙️</span>
-            <span>系统设置</span>
-          </button>
-        </div>
-      </header>
-
-      {/* 2. Main Columns Layout */}
-      <div className="main-content">
-        
-        {/* Left column (hidden in Player View Mode for security) */}
-        {!isPlayerViewMode && !isLeftSidebarCollapsed && (
-          <aside className="sidebar-left" style={{ width: `${leftSidebarWidth}px`, minWidth: `${leftSidebarWidth}px` }}>
-            <CharacterList 
-              characters={characters} 
-              setCharacters={setCharacters} 
+            <CharacterList
+              characters={characters}
+              setCharacters={setCharacters}
               addLog={addLog}
               onOpenAddCharModal={handleOpenAddCharModal}
               onOpenEditCharModal={handleOpenEditCharModal}
@@ -1601,14 +1572,7 @@ export default function App() {
           </aside>
         )}
 
-        {/* Drag handle for resizing left sidebar */}
-        {!isPlayerViewMode && !isLeftSidebarCollapsed && (
-          <div 
-            className="resize-handle"
-            onMouseDown={handleLeftMouseDown}
-            title="拖拽调整左侧栏宽度"
-          />
-        )}
+        {showLeftSidebar && <ResizeHandle onMouseDown={handleLeftMouseDown} title="拖拽调整左侧栏宽度" />}
 
         <CampaignWorkspace {...{
           currentTab, setCurrentTab, isPlayerViewMode, appRole, characters, setCharacters,
@@ -1622,917 +1586,123 @@ export default function App() {
           onPresentationInteractionChange: setPresentationInteraction
         }} />
 
-        {/* Drag handle for resizing right sidebar */}
-        {!isPlayerViewMode && !isRightSidebarCollapsed && (
-          <div 
-            className="resize-handle"
-            onMouseDown={handleRightMouseDown}
-            title="拖拽调整右侧栏宽度"
-          />
-        )}
+        {showRightRail && <ResizeHandle onMouseDown={handleRightMouseDown} title="拖拽调整右侧栏宽度" />}
 
-        {/* Right column (Dice roller & action log) (hidden in Player View Mode) */}
-        {!isPlayerViewMode && !isRightSidebarCollapsed && (
-          <aside className="sidebar-right" style={{ width: `${rightSidebarWidth}px`, minWidth: `${rightSidebarWidth}px`, gap: '16px', padding: '16px', overflowY: 'auto' }}>
-            <DiceRoller addLog={addLog} />
-            <div style={{ flex: 1 }}>
-              <ActionLog 
-                logs={logs} 
-                setLogs={setLogs}
-                floatingNotes={floatingNotes}
-                addFloatingNote={addFloatingNote} 
-                deleteFloatingNote={deleteFloatingNote}
-                updateFloatingNote={updateFloatingNote}
-              />
-            </div>
+        {showRightRail && (
+          <aside
+            style={{
+              width: `${rightSidebarWidth}px`,
+              minWidth: `${rightSidebarWidth}px`,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              overflow: 'hidden',
+              background: 'var(--surface-panel)',
+              borderLeft: 'var(--border-hairline)'
+            }}
+          >
+            <RightRail
+              addLog={addLog}
+              logs={logs}
+              setLogs={setLogs}
+              floatingNotes={floatingNotes}
+              addFloatingNote={addFloatingNote}
+              updateFloatingNote={updateFloatingNote}
+              deleteFloatingNote={deleteFloatingNote}
+            />
           </aside>
         )}
 
-        {/* Draggable Floating Notes Overlay (DM View Only) */}
         {!isPlayerViewMode && floatingNotes.filter(note => note.isOpen !== false).map(note => (
-          <FloatingNote 
+          <FloatingNote
             key={note.id}
             note={note}
             onClose={(id) => updateFloatingNote(id, { isOpen: false })}
             onUpdate={updateFloatingNote}
           />
         ))}
-
-        {/* Draggable Modal overlay (PC/NPC Creator Modal) at ROOT level */}
-        {isAddCharModalOpen && (
-          <div 
-            style={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(10, 11, 16, 0.75)',
-              backdropFilter: 'blur(10px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000
-            }} 
-            onClick={() => setIsAddCharModalOpen(false)}
-          >
-            <div 
-              style={{
-                width: '540px',
-                maxHeight: '85vh',
-                background: 'var(--bg-secondary)',
-                border: '1px solid rgba(192, 132, 252, 0.2)',
-                borderRadius: '16px',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 25px rgba(192, 132, 252, 0.1)',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'
-              }} 
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', padding: '16px 20px 12px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <UserPlus size={20} style={{ color: 'var(--accent-purple)' }} />
-                  <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, fontFamily: 'var(--font-heading)' }}>
-                    {editingCharId ? '📝 修改角色属性 / 资源槽' : '新建战役角色 / 怪物 NPC'}
-                  </h3>
-                </div>
-                <button 
-                  onClick={() => {
-                    setIsAddCharModalOpen(false);
-                    setEditingCharId(null);
-                  }}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Modal Form Scrollable Content Body */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* 1. Basic Info */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>1. 基础信息</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    placeholder="角色名称 (如: 甘道夫)"
-                    value={newChar.name}
-                    onChange={e => setNewChar({...newChar, name: e.target.value})}
-                  />
-                  <select 
-                    className="input-text" 
-                    value={newChar.type}
-                    onChange={e => setNewChar({...newChar, type: e.target.value})}
-                  >
-                    <option value="PC">PC (玩家角色)</option>
-                    <option value="NPC">NPC (敌对/怪物)</option>
-                  </select>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    placeholder="职业 (如: 法师 / 战士)"
-                    value={newChar.class}
-                    onChange={e => setNewChar({...newChar, class: e.target.value})}
-                  />
-                  <input 
-                    type="number" 
-                    className="input-text" 
-                    placeholder="初始生命 (Max HP)"
-                    value={newChar.maxHp}
-                    onChange={e => {
-                      const val = Math.max(1, parseInt(e.target.value, 10) || 10);
-                      setNewChar({...newChar, maxHp: val});
-                    }}
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>初始/当前等级 (Level)</label>
-                    <input 
-                      type="number" 
-                      className="input-text" 
-                      placeholder="等级"
-                      value={newChar.level}
-                      onChange={e => setNewChar({...newChar, level: Math.max(1, parseInt(e.target.value, 10) || 1)})}
-                      style={{ padding: '6px 10px', fontSize: '12px' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>生命骰 (Hit Dice规格)</label>
-                    <select 
-                      className="input-text"
-                      style={{ height: '32px', cursor: 'pointer', padding: '4px 8px', fontSize: '12px' }}
-                      value={newChar.hitDice}
-                      onChange={e => setNewChar({...newChar, hitDice: e.target.value})}
-                    >
-                      <option value="d6">d6 (如法师/术士)</option>
-                      <option value="d8">d8 (如牧师/游侠/武僧)</option>
-                      <option value="d10">d10 (如战士/圣骑士)</option>
-                      <option value="d12">d12 (如野蛮人)</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>初始临时生命 (Temp HP, 选填)</label>
-                    <input 
-                      type="number" 
-                      className="input-text" 
-                      placeholder="初始临时生命值"
-                      value={newChar.tempHp || 0}
-                      onChange={e => setNewChar({...newChar, tempHp: Math.max(0, parseInt(e.target.value, 10) || 0)})}
-                      style={{ padding: '6px 10px', fontSize: '12px' }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. Combat Stats */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>2. 战斗物理指标</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>护甲值 (AC)</label>
-                    <input 
-                      type="number" 
-                      className="input-text"
-                      value={newChar.ac}
-                      onChange={e => setNewChar({...newChar, ac: parseInt(e.target.value, 10) || 0})}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>先攻加成 (Initiative)</label>
-                    <input 
-                      type="number" 
-                      className="input-text"
-                      value={newChar.initiative}
-                      onChange={e => setNewChar({...newChar, initiative: parseInt(e.target.value, 10) || 0})}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>移动速度 (Speed ft)</label>
-                    <input 
-                      type="number" 
-                      className="input-text"
-                      value={newChar.speed}
-                      onChange={e => setNewChar({...newChar, speed: parseInt(e.target.value, 10) || 0})}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Core Stats 六维属性 */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>3. 六维核心属性</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                  {Object.entries(newChar.stats).map(([statKey, statVal]) => (
-                    <div key={statKey} style={{ display: 'flex', flexDirection: 'column', gap: '2px', background: 'rgba(255,255,255,0.02)', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
-                      <label style={{ fontSize: '9px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={customAttributeLabels[statKey] || statKey}>
-                        {customAttributeLabels[statKey] || statKey}
-                      </label>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                        <button 
-                          type="button" 
-                          onClick={() => {
-                            const updated = { ...newChar.stats, [statKey]: Math.max(1, statVal - 1) };
-                            setNewChar({ ...newChar, stats: updated });
-                          }}
-                          style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: 'var(--text-primary)', width: '18px', height: '18px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
-                        >
-                          -
-                        </button>
-                        <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{statVal}</span>
-                        <button 
-                          type="button" 
-                          onClick={() => {
-                            const updated = { ...newChar.stats, [statKey]: statVal + 1 };
-                            setNewChar({ ...newChar, stats: updated });
-                          }}
-                          style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: 'var(--text-primary)', width: '18px', height: '18px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 4. Skill Resources Slots 技能资源槽 */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px dashed var(--border-light)', paddingTop: '12px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>4. 技能资源槽预设 (如法术位、气、动作点)</span>
-                
-                {/* Dynamic adding sub-form */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr auto', gap: '6px', alignItems: 'center' }}>
-                  <input 
-                    type="text" 
-                    className="input-text" 
-                    placeholder="资源槽名称 (如: 1环法术位)"
-                    value={tempResName}
-                    onChange={e => setTempResName(e.target.value)}
-                    style={{ fontSize: '11px', padding: '6px 8px' }}
-                  />
-                  <input 
-                    type="number" 
-                    className="input-text" 
-                    placeholder="槽上限"
-                    value={tempResMax}
-                    onChange={e => setTempResMax(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    style={{ fontSize: '11px', padding: '6px 8px' }}
-                  />
-                  <select
-                    className="input-text"
-                    value={tempResResetType}
-                    onChange={e => setTempResResetType(e.target.value)}
-                    style={{ fontSize: '11px', padding: '6px 8px', height: '32px', cursor: 'pointer' }}
-                  >
-                    <option value="turn">每回合重置</option>
-                    <option value="short_rest">每短休重置</option>
-                    <option value="long_rest">每长休重置</option>
-                  </select>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      if (!tempResName.trim()) return;
-                      const newRes = { 
-                        name: tempResName.trim(), 
-                        max: tempResMax, 
-                        value: tempResMax,
-                        resetType: tempResResetType
-                      };
-                      setNewChar({ ...newChar, resources: [...newChar.resources, newRes] });
-                      setTempResName('');
-                      setTempResMax(4);
-                      setTempResResetType('long_rest');
-                    }}
-                    className="btn btn-secondary"
-                    style={{ fontSize: '11px', padding: '6px 12px', height: '32px' }}
-                  >
-                    ➕ 增设
-                  </button>
-                </div>
-
-                {/* Current Resource List */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-                  {newChar.resources.map((res, index) => (
-                    <div 
-                      key={index} 
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        background: 'rgba(192, 132, 252, 0.1)',
-                        border: '1px solid rgba(192, 132, 252, 0.2)',
-                        color: 'var(--accent-purple)',
-                        padding: '3px 8px',
-                        borderRadius: '16px',
-                        fontSize: '11px'
-                      }}
-                    >
-                      <span>{res.name} ({res.max}) <span style={{ fontSize: '9px', opacity: 0.75 }}>[{res.resetType === 'turn' ? '回合' : res.resetType === 'short_rest' ? '短休' : '长休'}]</span></span>
-                      <button 
-                        type="button" 
-                        onClick={() => {
-                          const filtered = newChar.resources.filter((_, idx) => idx !== index);
-                          setNewChar({ ...newChar, resources: filtered });
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: '0 2px', fontWeight: 'bold' }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  {newChar.resources.length === 0 && (
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                      暂未配置动态消耗资源槽。
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              </div> {/* Close scrollable form body */}
-
-              {/* Modal Controls */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-light)', padding: '12px 20px 16px 20px', marginTop: '0' }}>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setIsAddCharModalOpen(false);
-                    setEditingCharId(null);
-                  }}
-                  className="btn btn-secondary"
-                >
-                  取消
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    if (!newChar.name.trim()) {
-                      alert('请输入角色/怪物名称！');
-                      return;
-                    }
-                    
-                    if (editingCharId) {
-                      // Update existing character
-                      setCharacters(prev => {
-                        const updated = prev.map(c => {
-                          if (c.id === editingCharId) {
-                            // Keep current HP within new Max HP boundaries
-                            const newHp = Math.min(c.hp, newChar.maxHp);
-                            return {
-                              ...c,
-                              name: newChar.name.trim(),
-                              type: newChar.type,
-                              class: newChar.class.trim() || '无职业',
-                              maxHp: newChar.maxHp,
-                              hp: newHp,
-                              ac: newChar.ac,
-                              initiative: newChar.initiative,
-                              speed: newChar.speed,
-                              stats: newChar.stats,
-                              resources: newChar.resources,
-                              conditions: c.conditions || [],
-                              level: newChar.level !== undefined ? newChar.level : (c.level || 1),
-                              hitDice: newChar.hitDice !== undefined ? newChar.hitDice : (c.hitDice || 'd8'),
-                              levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : (c.levelHpIncreases || []),
-                              tempHp: newChar.tempHp !== undefined ? newChar.tempHp : (c.tempHp || 0)
-                            };
-                          }
-                          return c;
-                        });
-                        return sanitizeCharacters(updated);
-                      });
-                      
-                      setIsAddCharModalOpen(false);
-                      setEditingCharId(null);
-
-                      if (addLog) {
-                        addLog({
-                          type: 'COMBAT',
-                          content: `👤 **修改角色属性**: [${newChar.type}] **${newChar.name}** (职业: ${newChar.class || '无职业'}, HP上限: ${newChar.maxHp}, AC: ${newChar.ac})`,
-                          timestamp: new Date().toLocaleTimeString()
-                        });
-                      }
-                    } else {
-                      // Create new character
-                      const newCharacterData = {
-                        id: 'char_' + Date.now(),
-                        name: newChar.name.trim(),
-                        type: newChar.type,
-                        class: newChar.class.trim() || '无职业',
-                        hp: newChar.maxHp,
-                        maxHp: newChar.maxHp,
-                        ac: newChar.ac,
-                        initiative: newChar.initiative,
-                        speed: newChar.speed,
-                        gridX: 2,
-                        gridY: 2,
-                        stats: newChar.stats,
-                        feats: { '特质': '新录入的角色' },
-                        resources: newChar.resources,
-                        groupId: newChar.type === 'PC' ? 'group_pcs' : 'group_npcs',
-                        conditions: [],
-                        combatSpeedRemaining: newChar.speed !== undefined ? newChar.speed : 30,
-                        combatStartGridX: 2,
-                        combatStartGridY: 2,
-                        level: newChar.level !== undefined ? newChar.level : 1,
-                        hitDice: newChar.hitDice !== undefined ? newChar.hitDice : 'd8',
-                        levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : [],
-                        tempHp: newChar.tempHp !== undefined ? newChar.tempHp : 0
-                      };
-
-                      setCharacters(prev => [...prev, sanitizeCharacters([newCharacterData])[0]]);
-                      setIsAddCharModalOpen(false);
-
-                      if (addLog) {
-                        addLog({
-                          type: 'COMBAT',
-                          content: `👤 **新增角色/怪物**: [${newChar.type}] **${newChar.name}** (职业: ${newCharacterData.class}, HP: ${newChar.maxHp}, AC: ${newChar.ac})`,
-                          timestamp: new Date().toLocaleTimeString()
-                        });
-                      }
-                    }
-                  }}
-                  className="btn btn-primary"
-                >
-                  {editingCharId ? '💾 保存角色更改' : '💾 创建并召唤角色'}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* Draggable Rest Modal overlay at ROOT level */}
-        {isRestModalOpen && (
-          <div 
-            style={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(10, 11, 16, 0.75)',
-              backdropFilter: 'blur(10px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000
-            }} 
-            onClick={() => setIsRestModalOpen(false)}
-          >
-            <div 
-              style={{
-                width: '460px',
-                maxHeight: '80vh',
-                background: 'var(--bg-secondary)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                borderRadius: '16px',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 25px rgba(168, 85, 247, 0.1)',
-                padding: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '16px',
-                overflowY: 'auto'
-              }} 
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>{restModalType === 'short' ? '⏳ 战役休整：短休 (Short Rest)' : '💤 战役休整：长休 (Long Rest)'}</span>
-                </h3>
-                <button 
-                  onClick={() => setIsRestModalOpen(false)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Rest explanation */}
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-light)', lineHeight: '1.4' }}>
-                {restModalType === 'short' ? (
-                  <span><strong>短休效果</strong>：被勾选的角色恢复其 <strong>50% 最大生命值</strong>，并全部充能重置所有<strong>每短休重置</strong>与<strong>每回合重置</strong>的技能资源槽。</span>
-                ) : (
-                  <span><strong>长休效果</strong>：被勾选的角色恢复其 <strong>100% 生命值</strong>，全部充能重置所有资源槽（含长休/短休/回合重置型），<strong>清除身上所有特殊负面状态</strong>，并复原战斗移动力。</span>
-                )}
-              </div>
-
-              {/* Checklist of Characters */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>选择参与休整的角色:</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '35vh', overflowY: 'auto', paddingRight: '4px' }}>
-                  {characters.map(c => {
-                    const isChecked = !!restParticipants[c.id];
-                    return (
-                      <div 
-                        key={c.id} 
-                        onClick={() => setRestParticipants(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '8px 12px',
-                          background: isChecked ? 'rgba(168, 85, 247, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                          border: `1px solid ${isChecked ? 'rgba(168, 85, 247, 0.4)' : 'var(--border-light)'}`,
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {}} // handled by parent div
-                            style={{ accentColor: 'var(--accent-purple)', cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '12px', fontWeight: '600', color: isChecked ? '#fff' : 'var(--text-primary)' }}>
-                            {c.name}
-                          </span>
-                          <span style={{ fontSize: '9px', padding: '1px 4px', borderRadius: '3px', background: c.type === 'PC' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: c.type === 'PC' ? 'var(--accent-blue)' : 'var(--accent-red)', fontWeight: 'bold' }}>
-                            {c.type}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          HP: {c.hp}/{c.maxHp}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Controls */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => setIsRestModalOpen(false)}
-                  className="btn btn-secondary"
-                >
-                  取消
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    const selectedIds = Object.keys(restParticipants).filter(id => restParticipants[id]);
-                    if (selectedIds.length === 0) {
-                      alert('请至少勾选一位角色进行休整！');
-                      return;
-                    }
-                    if (restModalType === 'short') {
-                      handleShortRest(selectedIds);
-                    } else {
-                      handleLongRest(selectedIds);
-                    }
-                    setIsRestModalOpen(false);
-                  }}
-                  className="btn btn-primary"
-                  style={{ background: 'linear-gradient(135deg, #a855f7, #6b21a8)' }}
-                >
-                  {restModalType === 'short' ? '⏳ 确定进行短休' : '💤 确定进行长休'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* Campaign System Settings Modal */}
-      {isSettingsModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(5, 6, 10, 0.75)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999, // Over everything, including build loaders
-          animation: 'fadeIn 0.25s ease-out'
-        }}>
-          <div style={{
-            background: 'var(--bg-glass)',
-            border: '1px solid rgba(192, 132, 252, 0.25)',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(192, 132, 252, 0.15)',
-            borderRadius: '12px',
-            width: '560px',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            color: 'var(--text-primary)',
-            position: 'relative'
-          }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '18px' }}>⚙️</span>
-                <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, letterSpacing: '0.5px' }}>战役系统设置 (Campaign Settings)</h3>
-              </div>
-              <button 
-                onClick={() => setIsSettingsModalOpen(false)}
-                className="btn-close" 
-                style={{ 
-                  background: 'transparent', 
-                  border: 'none', 
-                  color: 'var(--text-secondary)', 
-                  cursor: 'pointer',
-                  fontSize: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Section 1: Page Running Role */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>🎭 页面运行角色 (Page Running Role)</label>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => handleSetAppRole('DM')}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    border: appRole === 'DM' ? '1px solid var(--accent-purple)' : '1px solid var(--border-light)',
-                    background: appRole === 'DM' ? 'rgba(192, 132, 252, 0.12)' : 'rgba(255,255,255,0.02)',
-                    boxShadow: appRole === 'DM' ? '0 0 10px rgba(192, 132, 252, 0.15)' : 'none',
-                    color: appRole === 'DM' ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s ease-out'
-                  }}
-                >
-                  <span style={{ fontSize: '18px' }}>🧙</span>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold' }}>DM 掌控端 (Full Control)</span>
-                  <span style={{ fontSize: '9px', opacity: 0.75, textAlign: 'center' }}>显示所有UI面板及编辑工具，修改将实时推送到局域网</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSetAppRole('PLAYER')}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    border: appRole === 'PLAYER' ? '1px solid var(--accent-blue)' : '1px solid var(--border-light)',
-                    background: appRole === 'PLAYER' ? 'rgba(96, 165, 250, 0.12)' : 'rgba(255,255,255,0.02)',
-                    boxShadow: appRole === 'PLAYER' ? '0 0 10px rgba(96, 165, 250, 0.15)' : 'none',
-                    color: appRole === 'PLAYER' ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '4px',
-                    transition: 'all 0.2s ease-out'
-                  }}
-                >
-                  <span style={{ fontSize: '18px' }}>👥</span>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold' }}>玩家展示端 (Read-Only)</span>
-                  <span style={{ fontSize: '9px', opacity: 0.75, textAlign: 'center' }}>只读不改展示大地图，隐藏所有边栏，绝不篡改/覆写数据</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Section 1.5: Screen Control */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>🖥️ 屏幕显示控制 (Screen Display Control)</label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch(err => {
-                      alert(`进入全屏模式失败: ${err.message}`);
-                    });
-                  } else {
-                    document.exitFullscreen();
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  background: isFullscreen ? 'rgba(192, 132, 252, 0.15)' : 'rgba(255, 255, 255, 0.02)',
-                  border: isFullscreen ? '1px solid var(--accent-purple)' : '1px solid var(--border-light)',
-                  color: isFullscreen ? '#fff' : 'var(--text-secondary)',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: isFullscreen ? '0 0 10px rgba(192, 132, 252, 0.15)' : 'none',
-                  transition: 'all 0.2s ease-out'
-                }}
-              >
-                <span>{isFullscreen ? '🖥️ 退出浏览器全屏模式 (Exit Fullscreen)' : '🖥️ 进入浏览器全屏模式 (Enter Fullscreen)'}</span>
-              </button>
-            </div>
-
-            {/* Section 1.8: Custom Core Attributes */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>📊 战役角色六维核心属性自定义更名</label>
-              <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
-                您可以重命名六个核心属性的显示名称（如：力量 ➔ 体魄，敏捷 ➔ 反射等）。底层数据键名保持不变，完美兼容已有历史存档与导入数据。
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
-                {Object.entries(customAttributeLabels).map(([originalKey, customVal]) => (
-                  <div key={originalKey} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }} title={originalKey}>
-                      原键: {originalKey}
-                    </span>
-                    <input
-                      type="text"
-                      className="input-text"
-                      style={{ padding: '6px 10px', fontSize: '11px', background: 'rgba(255,255,255,0.01)' }}
-                      value={customVal}
-                      onChange={(e) => {
-                        const updated = { ...customAttributeLabels, [originalKey]: e.target.value };
-                        setCustomAttributeLabels(updated);
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Section 2: LAN Sync Engine */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>📡 局域网实时云同步 (LAN Data Sync)</label>
-                <div 
-                  onClick={() => setIsSyncEnabled(!isSyncEnabled)}
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '6px', 
-                    background: !isSyncEnabled ? 'rgba(255,255,255,0.05)' : isSyncConnected ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
-                    border: `1px solid ${!isSyncEnabled ? 'rgba(255,255,255,0.15)' : isSyncConnected ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
-                    padding: '3px 8px',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    userSelect: 'none'
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSyncEnabled}
-                    onChange={() => {}}
-                    style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)' }}
-                  />
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: !isSyncEnabled ? '#9ca3af' : isSyncConnected ? '#34d399' : '#fbbf24' }}>
-                    {!isSyncEnabled ? '单机模式' : isSyncConnected ? '局域网同步' : '单机降级'}
-                  </span>
-                </div>
-              </div>
-              <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
-                {!isSyncEnabled
-                  ? '已手动关闭同步，战役数据仅保存在当前设备。'
-                  : isSyncConnected
-                    ? '局域网同步可用：每 1.5 秒检查远端修改，本地修改会快速推送。'
-                    : '同步服务或令牌不可用，已自动降级为单机使用；本地存档不受影响，连接恢复后会自动重试。'}
-              </p>
-              <input
-                type="password"
-                className="input-text"
-                value={syncToken}
-                onChange={event => setSyncToken(event.target.value)}
-                placeholder="局域网同步令牌（与服务器 DMFORGE_SYNC_TOKEN 一致）"
-                autoComplete="off"
-                style={{ fontSize: '11px' }}
-              />
-            </div>
-
-            <PresentationControls
-              settings={presentationSettings}
-              setSettings={setPresentationSettings}
-              characters={characters}
-              connected={presentationConnected}
-              windowOpen={presentationWindowOpen}
-              fallbackUrl={presentationFallbackUrl}
-              onOpen={openPresentationWindow}
-              onOpenTab={openPresentationTab}
-              onFocus={focusPresentationWindow}
-              onClose={closePresentationWindow}
-              onRequestFullscreen={requestPresentationFullscreen}
-            />
-
-            {/* Section 3: Campaign Save Database File */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>💾 战役物理存档数据管理 (Campaign File Database)</label>
-              <div style={{ fontSize: '10px', color: storageError ? '#f87171' : 'var(--text-secondary)', padding: '6px 8px', borderRadius: '6px', background: storageError ? 'rgba(239,68,68,0.12)' : 'rgba(52,211,153,0.08)' }}>
-                {storageError || `✓ ${storageStatus}（事务存档，自动保留上一版本）`}
-              </div>
-              <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-                自动备份：每次内容变化后约 250ms 自动保存，本机保留上一版本；服务器保留近期 20 份、7 天每小时和 30 天每日版本。
-              </div>
-              {syncConflict && (
-                <div style={{ padding: '8px', border: '1px solid #f59e0b', borderRadius: '6px', background: 'rgba(245,158,11,0.12)', fontSize: '10px' }}>
-                  <strong>检测到同步冲突，自动上传已暂停。</strong>
-                  <p>服务器和本机都发生了修改，请明确选择保留哪个版本。选择前不会覆盖任何一方。</p>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <button className="btn btn-secondary" onClick={resolveConflictWithServer}>使用服务器版本</button>
-                    <button className="btn btn-secondary" onClick={resolveConflictWithLocal}>使用本机版本</button>
-                    <button className="btn btn-secondary" onClick={handleExportCampaign}>先导出本机版本</button>
-                  </div>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={handleCreateManualBackup}
-                  className="btn btn-secondary"
-                  style={{ flex: '1 1 100%', fontSize: '11px', padding: '8px 12px', height: '32px' }}
-                  title="立即创建本机恢复点；同步可用时同时创建服务器备份"
-                >
-                  <span>💾 立即手动备份</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setIsSettingsModalOpen(false);
-                    handleExportCampaign();
-                  }}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '11px', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', height: '32px' }}
-                  title="导出整个战役推演进度为本地 JSON 文件备份存档"
-                >
-                  <span>📤 导出战役存档</span>
-                </button>
-                
-                <label
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '11px', padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', height: '32px', margin: 0 }}
-                  title="从外部 JSON 文件恢复导入已存战役存档"
-                >
-                  <span>📥 导入外部存档</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => {
-                      setIsSettingsModalOpen(false);
-                      handleImportCampaign(e);
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-
-                <button
-                  onClick={() => {
-                    setIsSettingsModalOpen(false);
-                    handleResetCampaign();
-                  }}
-                  className="btn btn-danger"
-                  style={{ flex: '1 1 100%', fontSize: '11px', padding: '8px 12px', height: '32px', background: 'rgba(239,68,68,0.15)' }}
-                  title="清空本地缓存，恢复酒馆/地底初始战术模板"
-                >
-                  <span>🔄 恢复出厂设置 (还原预设初始数据)</span>
-                </button>
-              </div>
-              <details onToggle={event => event.currentTarget.open && refreshRecoveryPoints()} style={{ fontSize: '10px' }}>
-                <summary style={{ cursor: 'pointer' }}>本机恢复点（{localRecoveryPoints.length}）</summary>
-                <div style={{ maxHeight: '130px', overflow: 'auto', marginTop: '6px' }}>
-                  {localRecoveryPoints.length === 0 && <div>暂无恢复点</div>}
-                  {localRecoveryPoints.map(point => (
-                    <div key={point.key} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 0' }}>
-                      <span>{point.label || point.key} · {point.savedAt ? new Date(point.savedAt).toLocaleString() : '旧版'}</span>
-                      <button className="btn btn-secondary" onClick={() => handleRestoreLocal(point.key)}>恢复</button>
-                    </div>
-                  ))}
-                </div>
-              </details>
-              {isSyncConnected && (
-                <details onToggle={event => event.currentTarget.open && refreshServerBackups()} style={{ fontSize: '10px' }}>
-                  <summary style={{ cursor: 'pointer' }}>服务器滚动备份（{serverBackups.length}）</summary>
-                  <div style={{ maxHeight: '150px', overflow: 'auto', marginTop: '6px' }}>
-                    {serverBackups.map(backup => (
-                      <div key={backup.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 0', color: backup.valid ? 'inherit' : '#f87171' }}>
-                        <span>{backup.name} · {backup.valid ? new Date(backup.modifiedAt).toLocaleString() : '损坏'}</span>
-                        {backup.valid && appRole !== 'PLAYER' && <button className="btn btn-secondary" onClick={() => handleRestoreServer(backup.name)}>恢复</button>}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-
-            {/* Footer info */}
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', textAlign: 'center', borderTop: '1px solid var(--border-light)', paddingTop: '12px', marginTop: '4px' }}>
-              DMForge Campaign Assistant v1.0.0 • ClientID: {clientId.current.substring(0, 8)}...
-            </div>
-          </div>
-        </div>
-      )}
-
       </div>
+
+      <AppStatusLine
+        isPlayerViewMode={isPlayerViewMode}
+        isInCombat={isInCombat}
+        combatRound={combatRound}
+        activeTurnName={activeTurnName}
+        activeMap={activeMap}
+        currentTab={currentTab}
+        saveBytes={campaignBytes}
+        saveLimitBytes={MAX_CAMPAIGN_FILE_BYTES}
+        isSyncEnabled={isSyncEnabled}
+        isSyncConnected={isSyncConnected}
+        lanAddress={typeof window !== 'undefined' ? window.location.host : ''}
+      />
+
+      <CharacterEditorModal
+        open={isAddCharModalOpen}
+        editingCharId={editingCharId}
+        newChar={newChar}
+        setNewChar={setNewChar}
+        customAttributeLabels={customAttributeLabels}
+        onClose={() => { setIsAddCharModalOpen(false); setEditingCharId(null); }}
+        onSave={handleSaveCharacter}
+      />
+
+      <RestModal
+        open={isRestModalOpen}
+        restType={restModalType}
+        characters={characters}
+        participants={restParticipants}
+        setParticipants={setRestParticipants}
+        onClose={() => setIsRestModalOpen(false)}
+        onConfirm={handleConfirmRest}
+      />
+
+      <SettingsModal
+        open={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        appRole={appRole}
+        onSetAppRole={handleSetAppRole}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
+        customAttributeLabels={customAttributeLabels}
+        setCustomAttributeLabels={setCustomAttributeLabels}
+        isSyncEnabled={isSyncEnabled}
+        setIsSyncEnabled={setIsSyncEnabled}
+        isSyncConnected={isSyncConnected}
+        syncToken={syncToken}
+        setSyncToken={setSyncToken}
+        syncConflict={syncConflict}
+        resolveConflictWithServer={resolveConflictWithServer}
+        resolveConflictWithLocal={resolveConflictWithLocal}
+        storageError={storageError}
+        storageStatus={storageStatus}
+        characterCount={characters.length}
+        mapCount={maps.length}
+        localRecoveryPoints={localRecoveryPoints}
+        refreshRecoveryPoints={refreshRecoveryPoints}
+        onRestoreLocal={handleRestoreLocal}
+        serverBackups={serverBackups}
+        refreshServerBackups={refreshServerBackups}
+        onRestoreServer={handleRestoreServer}
+        onCreateManualBackup={handleCreateManualBackup}
+        onExportCampaign={handleExportCampaign}
+        onImportCampaign={handleImportCampaign}
+        onResetCampaign={handleResetCampaign}
+        clientId={clientId.current}
+        presentationProps={{
+          settings: presentationSettings,
+          setSettings: setPresentationSettings,
+          characters,
+          connected: presentationConnected,
+          windowOpen: presentationWindowOpen,
+          fallbackUrl: presentationFallbackUrl,
+          onOpen: openPresentationWindow,
+          onOpenTab: openPresentationTab,
+          onFocus: focusPresentationWindow,
+          onClose: closePresentationWindow,
+          onRequestFullscreen: requestPresentationFullscreen
+        }}
+      />
     </div>
   );
 }

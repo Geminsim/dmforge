@@ -1,11 +1,26 @@
 import { lazy, Suspense } from 'react';
 import ItemManager from './ItemManager';
+import { Tabs, EmptyState } from '../ds';
 
 const MapSystem = lazy(() => import('./MapSystem'));
 const ExcelImporter = lazy(() => import('./ExcelImporter'));
 
+/**
+ * The centre column — the only region that changes with the active tab.
+ *
+ * Tabs render in the plate grammar's bracket form (`[ 1ft 战术地图 ]`, active
+ * state inverted into the accent); the emoji that used to stand in for icons
+ * are Phosphor glyphs now.
+ */
+
+const WORKSPACES = [
+  { id: 'map', label: '1ft 战术地图', icon: 'map-trifold' },
+  { id: 'items', label: '物品流转中心', icon: 'backpack' },
+  { id: 'excel', label: '玩家卡与规则书导入', icon: 'table' }
+];
+
 function ModuleFallback() {
-  return <div className="glass-panel panel-content" style={{ margin: '16px' }}>正在加载功能模块…</div>;
+  return <EmptyState icon="hourglass-medium" text="正在加载功能模块…" />;
 }
 
 export default function CampaignWorkspace({
@@ -21,16 +36,23 @@ export default function CampaignWorkspace({
   presentationInteraction, presentationCamera, presentationCameraMode
 }) {
   return (
-    <main className="center-area">
+    <main
+      style={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        background: 'var(--surface-app)'
+      }}
+    >
       {!isPlayerViewMode && (
-        <div className="tabs-container">
-          <button onClick={() => setCurrentTab('map')} className={`tab-btn ${currentTab === 'map' ? 'active' : ''}`}>🗺 1ft 战术地图</button>
-          <button onClick={() => setCurrentTab('items')} className={`tab-btn ${currentTab === 'items' ? 'active' : ''}`}>🎒 物品流转中心</button>
-          <button onClick={() => setCurrentTab('excel')} className={`tab-btn ${currentTab === 'excel' ? 'active' : ''}`}>📊 玩家卡与规则书导入</button>
-        </div>
+        <Tabs value={currentTab} onChange={setCurrentTab} items={WORKSPACES} />
       )}
       <Suspense fallback={<ModuleFallback />}>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {currentTab === 'map' && (
             <MapSystem {...{
               characters, setCharacters, updateTokenPosition, addLog, maps, activeMapId,
