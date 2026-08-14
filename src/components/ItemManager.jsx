@@ -1,12 +1,25 @@
 import React, { useState } from 'react';
-import { Package, Plus, Send, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Panel, Button, IconButton, TextInput, Select, SegmentedControl,
+  Badge, ItemRow, EmptyState, ToolbarLabel
+} from '../ds';
 
 const CATEGORIES = [
-  { value: '消耗品', label: '🧪 消耗品' },
-  { value: '装备及服装', label: '🛡️ 装备及服装' },
-  { value: '饰品', label: '💍 饰品' },
-  { value: '武器', label: '⚔️ 武器' }
+  { value: '消耗品', label: '消耗品' },
+  { value: '装备及服装', label: '装备及服装' },
+  { value: '饰品', label: '饰品' },
+  { value: '武器', label: '武器' }
 ];
+
+// `value` above is persisted in campaign saves, so it stays as-is; only the
+// pigment mapping is new. ItemRow carries its own map for the design system's
+// vocabulary — these are this product's categories.
+const CATEGORY_TONE = {
+  '消耗品': 'verdigris',
+  '装备及服装': 'woad',
+  '饰品': 'accent',
+  '武器': 'madder'
+};
 
 export default function ItemManager({ characters, itemPool, setItemPool, itemTemplates = [], setItemTemplates, addLog, groups = [] }) {
   const [newItemName, setNewItemName] = useState('');
@@ -14,11 +27,12 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemDesc, setNewItemDesc] = useState('');
 
-  const [distributeQty, setDistributeQty] = useState(1);
-  const [selectedCharId, setSelectedCharId] = useState('');
-
-  const [transferTargetId, setTransferTargetId] = useState('');
-  const [transferQty, setTransferQty] = useState(1);
+  // Keyed by item id. These used to be one shared target/quantity pair for the
+  // whole screen, so picking a recipient on one row also armed every other
+  // row's button — clicking 分发 on a second item sent it to the first item's
+  // target. Per-item drafts make each row mean what it shows.
+  const [distributeDraft, setDistributeDraft] = useState({});
+  const [transferDraft, setTransferDraft] = useState({});
 
   const [selectedFilterTab, setSelectedFilterTab] = useState('全部');
   const [showTemplateManager, setShowTemplateManager] = useState(false);
@@ -342,493 +356,330 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     ? itemTemplates.filter(t => t.name.toLowerCase().includes(newItemName.trim().toLowerCase()))
     : [];
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', height: '100%', overflowY: 'auto', padding: '16px' }}>
-      
-      {/* LEFT COLUMN: World loot / unacquired pool */}
-      <div className="glass-panel panel-content" style={{ alignSelf: 'start', gap: '14px' }}>
-        <div className="panel-title">
-          <Package size={18} style={{ color: 'var(--accent-amber)' }} />
-          <span>🌍 世界未获得物品池</span>
-        </div>
+  const SORT_ITEMS = [
+    { id: 'default', label: '默认顺序', icon: 'clock-counter-clockwise' },
+    { id: 'name', label: '按名称排序', icon: 'sort-ascending' }
+  ];
 
-        {/* Add new world item form */}
-        <form onSubmit={addItemToWorld} style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderBottom: '1px solid var(--border-light)', paddingBottom: '16px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-            <input 
-              type="text" 
-              className="input-text" 
-              placeholder="物品名称 (自动匹配已存模板)" 
+  /** Character options grouped the way the roster groups them. */
+  const characterOptions = (excludeId) => {
+    const options = [{ value: '', label: excludeId ? '转移给...' : '选择分发角色...' }];
+    allGroups.forEach(group => {
+      characters
+        .filter(c => getCharGroupId(c) === group.id && c.id !== excludeId)
+        .forEach(c => options.push({ value: c.id, label: `${group.name} · ${c.name}` }));
+    });
+    return options;
+  };
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 'var(--space-5)',
+        padding: 'var(--space-5)',
+        overflow: 'hidden'
+      }}
+    >
+      <Panel
+        code="POOL"
+        title="世界未获得物品池"
+        meta={`${worldItems.length} 件`}
+        scroll
+        bodyStyle={{ padding: 'var(--panel-pad)', gap: 'var(--space-5)', flex: 1, minHeight: 0, overflowY: 'auto' }}
+      >
+        <form onSubmit={addItemToWorld} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-3)' }}>
+            <TextInput
+              size="sm"
+              label="物品名称"
+              placeholder="物品名称 (自动匹配已存模板)"
               value={newItemName}
               onChange={(e) => handleNameChange(e.target.value)}
-              list="itemTemplatesDatalist"
-              autoComplete="off"
+              hint={matchedDatalistTemplates.length ? `${matchedDatalistTemplates.length} 个模板匹配，点击下方套用` : undefined}
             />
-            <datalist id="itemTemplatesDatalist">
-              {matchedDatalistTemplates.map((t, idx) => (
-                <option key={idx} value={t.name}>{t.category} - {t.description.substring(0, 25)}...</option>
-              ))}
-            </datalist>
-            
-            <input 
-              type="number" 
-              className="input-text" 
-              placeholder="数量" 
+            <TextInput
+              size="sm"
+              mono
+              type="number"
+              label="数量"
+              placeholder="数量"
               value={newItemQty}
               onChange={(e) => setNewItemQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <select 
-              className="input-text" 
-              value={newItemCategory}
-              onChange={(e) => setNewItemCategory(e.target.value)}
-              style={{ cursor: 'pointer' }}
-            >
-              {CATEGORIES.map(cat => (
-                <option key={cat.value} value={cat.value}>{cat.label}</option>
+          {matchedDatalistTemplates.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              {matchedDatalistTemplates.slice(0, 6).map((t, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleNameChange(t.name)}
+                  title={`套用模板「${t.name}」：填入分类 ${t.category} 与其描述`}
+                  style={{ padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                >
+                  <Badge tone={CATEGORY_TONE[t.category] || 'neutral'} variant="soft" icon="stack">{t.name}</Badge>
+                </button>
               ))}
-            </select>
-            <input 
-              type="text" 
-              className="input-text" 
-              placeholder="描述效果" 
-              value={newItemDesc}
-              onChange={(e) => setNewItemDesc(e.target.value)}
-            />
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <Select size="sm" label="分类" value={newItemCategory} onChange={(e) => setNewItemCategory(e.target.value)} options={CATEGORIES} />
+            <TextInput size="sm" label="描述效果" placeholder="描述效果" value={newItemDesc} onChange={(e) => setNewItemDesc(e.target.value)} />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ alignSelf: 'end' }}>
-            <Plus size={14} /> 添加至物品池
-          </button>
+          <Button type="submit" icon="plus" title="把这件物品加入世界物品池（未分配给任何角色）">添加至物品池</Button>
         </form>
 
-        {/* Collapsible Template Manager Panel */}
-        <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '10px' }}>
-          <div 
-            onClick={() => setShowTemplateManager(!showTemplateManager)}
-            style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
-              cursor: 'pointer',
-              userSelect: 'none'
-            }}
-          >
-            <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>📋 物品定义模板库 ({itemTemplates.length})</span>
-            </span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              {showTemplateManager ? '收起 ▲' : '管理 / 展开 ▼'}
-            </span>
-          </div>
-
-          {showTemplateManager && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-              {itemTemplates.length === 0 ? (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '12px 0' }}>
-                  模板库暂无数据，添加新物品时会自动录入。
-                </div>
-              ) : (
-                itemTemplates.map((t, idx) => (
-                  <div 
-                    key={idx}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between',
-                      background: 'rgba(0,0,0,0.15)',
-                      border: '1px solid var(--border-light)',
-                      borderRadius: '6px',
-                      padding: '6px 10px',
-                      fontSize: '11px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, marginRight: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <strong style={{ color: '#fff' }}>{t.name}</strong>
-                        <span style={{ fontSize: '9px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(192, 132, 252, 0.1)', color: 'var(--accent-purple)', fontWeight: 'bold' }}>
-                          {t.category}
-                        </span>
-                      </div>
-                      {t.description && (
-                        <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
-                          {t.description}
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteTemplate(t.name);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'color 0.2s',
-                        padding: '4px'
-                      }}
-                      title="删除此物品模板"
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-red)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Category Filter Tabs */}
-        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <button
-            type="button"
-            onClick={() => setSelectedFilterTab('全部')}
-            className={`tab-btn ${selectedFilterTab === '全部' ? 'active' : ''}`}
-            style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '12px', height: '24px', whiteSpace: 'nowrap' }}
-          >
-            全部 ({worldItems.length})
-          </button>
-          {CATEGORIES.map(cat => {
-            const count = worldItems.filter(i => i.category === cat.value).length;
-            return (
-              <button
-                key={cat.value}
-                type="button"
-                onClick={() => setSelectedFilterTab(cat.value)}
-                className={`tab-btn ${selectedFilterTab === cat.value ? 'active' : ''}`}
-                style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '12px', height: '24px', whiteSpace: 'nowrap' }}
-              >
-                {cat.label} ({count})
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Sort Controls Row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '6px 12px', margin: '4px 0' }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>排序方式:</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              type="button"
-              onClick={() => setSortBy('default')}
-              className={`tab-btn ${sortBy === 'default' ? 'active' : ''}`}
-              style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px', height: '22px' }}
-            >
-              ⏱️ 默认顺序
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy('name')}
-              className={`tab-btn ${sortBy === 'name' ? 'active' : ''}`}
-              style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px', height: '22px' }}
-            >
-              🔤 按名称排序
-            </button>
-          </div>
-        </div>
-
-        {/* Unacquired item list */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' }}>
-          {displayedWorldItems.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
-              物品池暂无此分类未分配物品
-            </div>
-          ) : (
-            displayedWorldItems.map(item => (
-              <div 
-                key={item.id} 
-                style={{ 
-                  background: 'rgba(255,255,255,0.01)', 
-                  border: '1px solid var(--border-light)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong style={{ color: 'var(--accent-amber)', fontSize: '14px' }}>{item.name}</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                      {item.category === '消耗品' && '🧪 '}
-                      {item.category === '装备及服装' && '🛡️ '}
-                      {item.category === '饰品' && '💍 '}
-                      {item.category === '武器' && '⚔️ '}
-                      {item.category}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 'bold' }}>x{item.quantity}</span>
-                    <button
-                      onClick={() => deleteItemFromPool(item.id)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'color 0.2s',
-                        padding: '2px'
-                      }}
-                      title="彻底删除物品"
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-red)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-                {item.description && (
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{item.description}</div>
-                )}
-                
-                {/* Distribution action */}
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                  <select 
-                    className="input-text" 
-                    style={{ flex: 1, padding: '4px 8px', fontSize: '12px' }}
-                    value={selectedCharId}
-                    onChange={(e) => setSelectedCharId(e.target.value)}
-                  >
-                    <option value="">选择分发角色...</option>
-                    {allGroups.map(group => {
-                      const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
-                      if (groupChars.length === 0) return null;
-                      return (
-                        <optgroup key={group.id} label={group.name} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-                          {groupChars.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
-                  <input 
-                    type="number" 
-                    className="input-text" 
-                    style={{ width: '50px', padding: '4px 8px', fontSize: '12px' }} 
-                    value={distributeQty}
-                    onChange={(e) => setDistributeQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  />
-                  <button 
-                    onClick={() => distributeItem(item.id, selectedCharId, distributeQty)}
-                    className="btn btn-secondary" 
-                    style={{ padding: '6px 12px', fontSize: '12px' }}
-                    disabled={!selectedCharId}
-                  >
-                    <Send size={12} /> 分发
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: Characters bags & transfers */}
-      <div className="glass-panel panel-content" style={{ alignSelf: 'start', gap: '14px' }}>
-        <div className="panel-title">
-          <RefreshCw size={18} style={{ color: 'var(--accent-purple)' }} />
-          <span>🎒 玩家角色背包与流转</span>
-        </div>
-
-        {/* Sort Controls Row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-light)', borderRadius: '6px', padding: '6px 12px', marginBottom: '4px' }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>排序方式:</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              type="button"
-              onClick={() => setCharSortBy('default')}
-              className={`tab-btn ${charSortBy === 'default' ? 'active' : ''}`}
-              style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px', height: '22px' }}
-            >
-              ⏱️ 默认顺序
-            </button>
-            <button
-              type="button"
-              onClick={() => setCharSortBy('name')}
-              className={`tab-btn ${charSortBy === 'name' ? 'active' : ''}`}
-              style={{ padding: '2px 8px', fontSize: '11px', borderRadius: '4px', height: '22px' }}
-            >
-              🔤 按名称排序
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '600px', overflowY: 'auto' }}>
-          {allGroups.map(group => {
-            const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
-            if (groupChars.length === 0) return null;
-
-            const sortedGroupChars = charSortBy === 'name'
-              ? [...groupChars].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-              : groupChars;
-
-            const isPcGroup = group.id === 'group_pcs';
-            const isNpcGroup = group.id === 'group_npcs';
-            const groupColor = isPcGroup ? 'var(--accent-blue)' : isNpcGroup ? 'var(--accent-red)' : 'var(--text-secondary)';
-
-            const isCollapsed = collapsedGroups[group.id];
-
-            return (
-              <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {/* Group Header */}
-                <div 
-                  onClick={() => toggleGroupCollapse(group.id)}
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    gap: '8px', 
-                    borderBottom: `2px solid ${groupColor}`, 
-                    paddingBottom: '6px', 
-                    marginTop: '6px', 
-                    marginBottom: '4px',
-                    cursor: 'pointer',
-                    userSelect: 'none'
+        <details open={showTemplateManager} onToggle={e => setShowTemplateManager(e.currentTarget.open)}>
+          <summary style={{ cursor: 'pointer', fontSize: 'var(--type-meta)', color: 'var(--text-muted)' }}>
+            物品定义模板库（{itemTemplates.length}）
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 180, overflowY: 'auto', marginTop: 'var(--space-3)' }}>
+            {itemTemplates.length === 0 ? (
+              <EmptyState compact icon="stack" text="模板库暂无数据，添加新物品时会自动录入。" />
+            ) : (
+              itemTemplates.map((t, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    padding: 'var(--space-2) var(--space-3)',
+                    minWidth: 0,
+                    background: 'var(--surface-raised)',
+                    boxShadow: 'inset 0 0 0 1px var(--line-hairline)'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ 
-                      fontSize: '9px', 
-                      color: 'var(--text-muted)', 
-                      transition: 'transform 0.2s', 
-                      transform: isCollapsed ? 'rotate(-90deg)' : 'none', 
-                      display: 'inline-block' 
-                    }}>
-                      ▼
-                    </span>
-                    <span style={{ fontWeight: 'bold', fontSize: '13px', color: groupColor }}>
-                      {group.name}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: '10px' }}>
-                    {sortedGroupChars.length} 个角色
-                  </span>
-                </div>
-
-                {!isCollapsed && sortedGroupChars.map(char => {
-                  const rawCharItems = itemPool.filter(i => i.ownerId === char.id);
-                  const charItems = charSortBy === 'name'
-                    ? [...rawCharItems].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
-                    : rawCharItems;
-
-                  return (
-                    <div 
-                      key={char.id} 
-                      style={{ 
-                        background: 'rgba(255,255,255,0.02)', 
-                        border: '1px solid var(--border-light)',
-                        borderRadius: '10px',
-                        padding: '14px'
-                      }}
-                    >
-                      <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '8px', color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
-                        {char.name} 的背包
-                      </div>
-
-                      {charItems.length === 0 ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
-                          背包空空如也
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {charItems.map(item => (
-                            <div 
-                              key={item.id} 
-                              style={{ 
-                                display: 'flex', 
-                                flexDirection: 'column', 
-                                gap: '6px', 
-                                background: 'rgba(0,0,0,0.2)',
-                                padding: '8px',
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                <div>
-                                  <strong style={{ color: 'var(--accent-purple)' }}>{item.name}</strong>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                                    ({item.category})
-                                  </span>
-                                </div>
-                                <span>x{item.quantity}</span>
-                              </div>
-
-                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                <select 
-                                  className="input-text" 
-                                  style={{ flex: 1, padding: '3px 6px', fontSize: '11px' }}
-                                  onChange={(e) => setTransferTargetId(e.target.value)}
-                                >
-                                  <option value="">转移给...</option>
-                                  {allGroups.map(g => {
-                                    const transferChars = characters.filter(c => getCharGroupId(c) === g.id && c.id !== char.id);
-                                    if (transferChars.length === 0) return null;
-                                    return (
-                                      <optgroup key={g.id} label={g.name} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-                                        {transferChars.map(c => (
-                                          <option key={c.id} value={c.id}>{c.name}</option>
-                                        ))}
-                                      </optgroup>
-                                    );
-                                  })}
-                                </select>
-                                <input 
-                                  type="number" 
-                                  className="input-text" 
-                                  style={{ width: '45px', padding: '3px 6px', fontSize: '11px' }} 
-                                  value={transferQty}
-                                  onChange={(e) => setTransferQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                />
-                                <button 
-                                  onClick={() => transferItem(item.id, char.id, transferTargetId, transferQty)}
-                                  className="btn btn-secondary" 
-                                  style={{ padding: '4px 8px', fontSize: '11px' }}
-                                  disabled={!transferTargetId}
-                                >
-                                  转移
-                                </button>
-                                <button 
-                                  onClick={() => consumeItem(item.id, char.id)}
-                                  className="btn btn-secondary" 
-                                  style={{ padding: '4px 8px', fontSize: '11px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.2)', color: 'var(--accent-purple)' }}
-                                  title="消耗1个物品"
-                                >
-                                  消耗
-                                </button>
-                                <button 
-                                  onClick={() => deleteItemFromPool(item.id)}
-                                  className="btn btn-danger" 
-                                  style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
-                                  title="彻底删除物品"
-                                >
-                                  <Trash2 size={11} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ fontSize: 'var(--type-body-sm)', color: 'var(--text-body)' }}>{t.name}</span>
+                      <Badge size="sm" tone={CATEGORY_TONE[t.category] || 'neutral'}>{t.category}</Badge>
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                    {t.description && (
+                      <div style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.description}
+                      </div>
+                    )}
+                  </div>
+                  <IconButton icon="trash" size="sm" tone="danger" onClick={(e) => { e.stopPropagation(); deleteTemplate(t.name); }} title="删除此物品模板" />
+                </div>
+              ))
+            )}
+          </div>
+        </details>
 
+        <SegmentedControl
+          value={selectedFilterTab}
+          onChange={setSelectedFilterTab}
+          items={[
+            { id: '全部', label: '全部', count: worldItems.length },
+            ...CATEGORIES.map(cat => ({
+              id: cat.value,
+              label: cat.label,
+              count: worldItems.filter(i => i.category === cat.value).length
+            }))
+          ]}
+        />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <ToolbarLabel>Sort</ToolbarLabel>
+          <div style={{ flex: 1 }}>
+            <SegmentedControl value={sortBy} onChange={setSortBy} items={SORT_ITEMS} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          {displayedWorldItems.length === 0 ? (
+            <EmptyState icon="backpack" text="物品池暂无此分类未分配物品" hint="换个分类，或用上方表单入库。" />
+          ) : (
+            displayedWorldItems.map(item => {
+              const draft = distributeDraft[item.id] || {};
+              return (
+                <div key={item.id} style={{ display: 'flex', flexDirection: 'column' }}>
+                  <ItemRow
+                    name={item.name}
+                    category={item.category}
+                    quantity={item.quantity}
+                    description={item.description}
+                    actions={<IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title="彻底删除物品" />}
+                  />
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto auto',
+                      gap: 'var(--space-2)',
+                      padding: '0 var(--space-4) var(--space-3)',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Select
+                      size="sm"
+                      value={draft.charId || ''}
+                      onChange={(e) => setDistributeDraft(prev => ({ ...prev, [item.id]: { ...prev[item.id], charId: e.target.value } }))}
+                      options={characterOptions()}
+                    />
+                    <TextInput
+                      size="sm"
+                      mono
+                      type="number"
+                      value={draft.qty ?? 1}
+                      onChange={(e) => setDistributeDraft(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty: Math.max(1, parseInt(e.target.value, 10) || 1) } }))}
+                      fullWidth={false}
+                      style={{ width: 64 }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon="paper-plane-tilt"
+                      disabled={!draft.charId}
+                      onClick={() => distributeItem(item.id, draft.charId, draft.qty ?? 1)}
+                      title="把指定数量分发给所选角色"
+                    >
+                      分发
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Panel>
+
+      <Panel
+        code="BAGS"
+        title="玩家角色背包与流转"
+        scroll
+        bodyStyle={{ padding: 'var(--panel-pad)', gap: 'var(--space-5)', flex: 1, minHeight: 0, overflowY: 'auto' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <ToolbarLabel>Sort</ToolbarLabel>
+          <div style={{ flex: 1 }}>
+            <SegmentedControl value={charSortBy} onChange={setCharSortBy} items={SORT_ITEMS} />
+          </div>
+        </div>
+
+        {allGroups.map(group => {
+          const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
+          if (groupChars.length === 0) return null;
+
+          const sortedGroupChars = charSortBy === 'name'
+            ? [...groupChars].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+            : groupChars;
+
+          const tone = group.id === 'group_pcs' ? 'var(--pigment-woad)' : group.id === 'group_npcs' ? 'var(--pigment-madder)' : 'var(--text-faint)';
+          const isCollapsed = collapsedGroups[group.id];
+
+          return (
+            <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div
+                onClick={() => toggleGroupCollapse(group.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-2) var(--space-3)',
+                  background: 'var(--surface-sunken)',
+                  boxShadow: `inset 2px 0 0 ${tone}`,
+                  cursor: 'pointer',
+                  userSelect: 'none'
+                }}
+              >
+                <i className={`ph-fill ph-caret-${isCollapsed ? 'right' : 'down'}`} style={{ fontSize: 10, color: 'var(--text-faint)' }} aria-hidden="true" />
+                <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-body)', fontWeight: 'var(--weight-medium)' }}>{group.name}</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+                  {sortedGroupChars.length} 个角色
+                </span>
+              </div>
+
+              {!isCollapsed && sortedGroupChars.map(char => {
+                const rawCharItems = itemPool.filter(i => i.ownerId === char.id);
+                const charItems = charSortBy === 'name'
+                  ? [...rawCharItems].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+                  : rawCharItems;
+
+                return (
+                  <div key={char.id} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-2)' }}>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-body-sm)', fontWeight: 'var(--display-weight)', color: 'var(--text-body)' }}>
+                        {char.name} 的背包
+                      </span>
+                      <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)', transform: 'translateY(-3px)' }} />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+                        {charItems.length}
+                      </span>
+                    </div>
+
+                    {charItems.length === 0 ? (
+                      <EmptyState compact icon="backpack" text="背包空空如也" />
+                    ) : (
+                      charItems.map(item => {
+                        const draft = transferDraft[item.id] || {};
+                        return (
+                          <div
+                            key={item.id}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 'var(--space-2)',
+                              padding: 'var(--space-3)',
+                              background: 'var(--surface-raised)',
+                              boxShadow: 'inset 0 0 0 1px var(--line-hairline)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+                              <span style={{ fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.name}
+                              </span>
+                              <Badge size="sm" tone={CATEGORY_TONE[item.category] || 'neutral'}>{item.category}</Badge>
+                              <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-numeral-sm)', color: 'var(--text-body)' }}>×{item.quantity}</span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: 'var(--space-2)', alignItems: 'center' }}>
+                              <Select
+                                size="sm"
+                                value={draft.targetId || ''}
+                                onChange={(e) => setTransferDraft(prev => ({ ...prev, [item.id]: { ...prev[item.id], targetId: e.target.value } }))}
+                                options={characterOptions(char.id)}
+                              />
+                              <TextInput
+                                size="sm"
+                                mono
+                                type="number"
+                                value={draft.qty ?? 1}
+                                onChange={(e) => setTransferDraft(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty: Math.max(1, parseInt(e.target.value, 10) || 1) } }))}
+                                fullWidth={false}
+                                style={{ width: 58 }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={!draft.targetId}
+                                onClick={() => transferItem(item.id, char.id, draft.targetId, draft.qty ?? 1)}
+                                title="把指定数量转移给另一名角色"
+                              >
+                                转移
+                              </Button>
+                              <Button size="sm" variant="secondary" onClick={() => consumeItem(item.id, char.id)} title="消耗1个物品">消耗</Button>
+                              <IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title="彻底删除物品" />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </Panel>
     </div>
   );
 }
