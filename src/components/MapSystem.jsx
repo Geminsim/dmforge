@@ -4,6 +4,12 @@ import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compa
 import { findShortestPath } from '../utils/pathfinding';
 import { advanceCombatTurn, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
 
+/** 45° survey hatch for terrain fills — the grammar's alternative to flat tints. */
+const TERRAIN_HATCH = (tone) => {
+  const soft = tone === 'accent' ? 'var(--accent-soft)' : `var(--pigment-${tone}-soft)`;
+  return `repeating-linear-gradient(45deg, ${soft} 0 3px, transparent 3px 7px)`;
+};
+
 export default function MapSystem({ 
   characters, 
   setCharacters,
@@ -1204,12 +1210,16 @@ export default function MapSystem({
   const selectedTokenObj = characters.find(c => c.id === selectedTokenId);
   const hoveredTokenObj = characters.find(c => c.id === hoveredTokenId);
 
+  // Colour keys are persisted in campaign saves, so they stay; only what they
+  // resolve to changed. `bg` is a 45° hatch rather than a flat tint — the plate
+  // grammar draws terrain as a survey hatch — and `glow` is now just a line,
+  // because the system has no glow shadows.
   const colorConfig = {
-    red: { value: 'var(--accent-red)', bg: 'rgba(239, 68, 68, 0.15)', glow: 'rgba(239, 68, 68, 0.3)', label: '烈火/熔岩' },
-    emerald: { value: 'var(--accent-emerald)', bg: 'rgba(16, 185, 129, 0.15)', glow: 'rgba(16, 185, 129, 0.3)', label: '剧毒/酸性' },
-    blue: { value: 'var(--accent-blue)', bg: 'rgba(59, 130, 246, 0.15)', glow: 'rgba(59, 130, 246, 0.3)', label: '冰霜/深水' },
-    amber: { value: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)', glow: 'rgba(245, 158, 11, 0.3)', label: '碎石/困难' },
-    purple: { value: 'var(--accent-purple)', bg: 'rgba(139, 92, 246, 0.15)', glow: 'rgba(139, 92, 246, 0.3)', label: '法术/诅咒' },
+    red: { value: 'var(--pigment-madder)', bg: TERRAIN_HATCH('madder'), glow: 'var(--pigment-madder-line)', label: '烈火/熔岩' },
+    emerald: { value: 'var(--pigment-verdigris)', bg: TERRAIN_HATCH('verdigris'), glow: 'var(--pigment-verdigris-line)', label: '剧毒/酸性' },
+    blue: { value: 'var(--pigment-woad)', bg: TERRAIN_HATCH('woad'), glow: 'var(--pigment-woad-line)', label: '冰霜/深水' },
+    amber: { value: 'var(--pigment-ochre)', bg: TERRAIN_HATCH('ochre'), glow: 'var(--pigment-ochre-line)', label: '碎石/困难' },
+    purple: { value: 'var(--accent)', bg: TERRAIN_HATCH('accent'), glow: 'var(--accent-line)', label: '法术/诅咒' },
   };
 
   // Filter terrains visible to the current perspective
@@ -1348,15 +1358,15 @@ export default function MapSystem({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       
       {/* Map Control Header */}
-      <div className="panel-header" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-light)', flexWrap: 'wrap', gap: '12px' }}>
+      <div className="panel-header" style={{ background: 'var(--surface-panel)', borderBottom: '1px solid var(--line-hairline)', flexWrap: 'wrap', gap: '12px' }}>
         <div className="panel-title">
-          <Map size={18} style={{ color: 'var(--accent-purple)' }} />
+          <Map size={18} style={{ color: 'var(--accent)' }} />
           <span>🗺 战术网格地图 (1格 = 1ft)</span>
         </div>
 
         {/* Map switching selector dropdown */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>当前地图:</label>
+          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>当前地图:</label>
           <select
             value={activeMapId}
             onChange={(e) => {
@@ -1368,9 +1378,9 @@ export default function MapSystem({
             style={{ 
               padding: '4px 8px', 
               fontSize: '11px', 
-              background: 'var(--bg-tertiary)', 
-              border: '1px solid var(--border-light)', 
-              color: '#fff',
+              background: 'var(--surface-raised)', 
+              border: '1px solid var(--line-hairline)', 
+              color: 'var(--text-body)',
               borderRadius: '4px',
               cursor: 'pointer',
               height: '30px'
@@ -1436,8 +1446,8 @@ export default function MapSystem({
                     display: 'flex', 
                     alignItems: 'center', 
                     gap: '4px',
-                    background: isForcedMoveMode ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'var(--bg-tertiary)',
-                    border: isForcedMoveMode ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid var(--border-light)',
+                    background: isForcedMoveMode ? 'var(--pigment-woad)' : 'var(--surface-raised)',
+                    border: isForcedMoveMode ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid var(--line-hairline)',
                     boxShadow: isForcedMoveMode ? '0 0 10px rgba(6, 182, 212, 0.3)' : 'none'
                   }}
                   title="开启后，战斗中可无视回合与移动力限制强制移动任何棋子，且不扣减其移动力（或在拖拽时按住 Shift 键触发临时强制位移）"
@@ -1449,7 +1459,7 @@ export default function MapSystem({
               <button
                 onClick={handleOpenCombatSetup}
                 className="btn btn-primary"
-                style={{ fontSize: '11px', padding: '6px 12px', height: '30px', display: 'flex', alignItems: 'center', gap: '4px', background: 'linear-gradient(135deg, #a855f7, #6b21a8)' }}
+                style={{ fontSize: '11px', padding: '6px 12px', height: '30px', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--accent)' }}
                 title="发起战斗回合，选择参战角色投先攻"
               >
                 <span>⚔️ 发起战斗</span>
@@ -1478,9 +1488,9 @@ export default function MapSystem({
       {showMapConfig && !isPlayerViewMode && (
         <div
           style={{
-            background: 'var(--bg-tertiary)',
+            background: 'var(--surface-raised)',
             padding: '12px 16px',
-            borderBottom: '1px solid var(--border-light)',
+            borderBottom: '1px solid var(--line-hairline)',
             display: 'flex',
             flexDirection: 'column',
             gap: '10px',
@@ -1490,7 +1500,7 @@ export default function MapSystem({
         >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>重命名当前地图:</label>
+              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>重命名当前地图:</label>
               <input
                 type="text"
                 value={activeMap.name}
@@ -1502,7 +1512,7 @@ export default function MapSystem({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>宽度 (ft):</label>
+              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>宽度 (ft):</label>
               <input
                 type="number"
                 value={activeMap.width}
@@ -1513,7 +1523,7 @@ export default function MapSystem({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>高度 (ft):</label>
+              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>高度 (ft):</label>
               <input
                 type="number"
                 value={activeMap.height}
@@ -1524,7 +1534,7 @@ export default function MapSystem({
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: '220px' }}>
-              <label style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>背景图片大图 URL (可选):</label>
+              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>背景图片大图 URL (可选):</label>
               <div style={{ display: 'flex', gap: '6px' }}>
                 <input
                   type="text"
@@ -1572,9 +1582,9 @@ export default function MapSystem({
       {isTerrainEditMode && !isPlayerViewMode && (
         <div 
           style={{ 
-            background: 'var(--bg-tertiary)', 
+            background: 'var(--surface-raised)', 
             padding: '10px 16px', 
-            borderBottom: '1px solid var(--border-light)',
+            borderBottom: '1px solid var(--line-hairline)',
             display: 'flex',
             flexDirection: 'column',
             gap: '8px',
@@ -1585,7 +1595,7 @@ export default function MapSystem({
           {/* Action buttons */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>网格刷子:</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>网格刷子:</span>
               <button
                 onClick={() => setTerrainEditTool('paint_block')}
                 className={`btn ${terrainEditTool === 'paint_block' ? 'btn-primary' : 'btn-secondary'}`}
@@ -1627,7 +1637,7 @@ export default function MapSystem({
 
             {terrainEditTool === 'box_select' && selectionBox && (
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: 'rgba(168, 85, 247, 0.1)', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(168, 85, 247, 0.25)' }}>
-                <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>已框选区域:</span>
+                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold' }}>已框选区域:</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -1662,7 +1672,7 @@ export default function MapSystem({
                     borderRadius: '4px', 
                     background: 'rgba(239, 68, 68, 0.15)', 
                     border: '1px solid rgba(239, 68, 68, 0.3)', 
-                    color: 'var(--accent-red)',
+                    color: 'var(--pigment-madder)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
@@ -1684,10 +1694,10 @@ export default function MapSystem({
               </div>
             )}
 
-            <div style={{ width: '1px', height: '16px', background: 'var(--border-light)' }} />
+            <div style={{ width: '1px', height: '16px', background: 'var(--line-hairline)' }} />
 
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>绘制区域:</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>绘制区域:</span>
               <button
                 onClick={handleAddRectArea}
                 className="btn btn-secondary"
@@ -1711,9 +1721,9 @@ export default function MapSystem({
                   alignItems: 'center', 
                   gap: '4px', 
                   fontSize: '11px', 
-                  color: 'var(--text-secondary)', 
+                  color: 'var(--text-muted)', 
                   background: 'rgba(255,255,255,0.03)',
-                  border: '1px dashed var(--border-light)',
+                  border: '1px dashed var(--line-hairline)',
                   padding: '2px 6px',
                   borderRadius: '4px',
                   cursor: 'pointer',
@@ -1727,7 +1737,7 @@ export default function MapSystem({
                   type="checkbox"
                   checked={defaultImpassable}
                   onChange={() => {}}
-                  style={{ cursor: 'pointer', accentColor: 'var(--accent-red)' }}
+                  style={{ cursor: 'pointer', accentColor: 'var(--pigment-madder)' }}
                 />
                 <label htmlFor="defaultImpassableCheck" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }} title="勾选后，新建的图形地形默认具备实体阻挡障碍物属性，防止棋子穿过">
                   <span>🚫 默认阻挡</span>
@@ -1748,8 +1758,8 @@ export default function MapSystem({
                   gap: '4px',
                   opacity: canUndo ? 1 : 0.45,
                   cursor: canUndo ? 'pointer' : 'not-allowed',
-                  border: canUndo ? '1px solid var(--accent-purple)' : '1px solid transparent',
-                  boxShadow: canUndo ? '0 0 6px var(--accent-purple-glow)' : 'none'
+                  border: canUndo ? '1px solid var(--accent)' : '1px solid transparent',
+                  boxShadow: canUndo ? '0 0 6px var(--accent-line)' : 'none'
                 }}
                 title={canUndo ? '撤销上一步地形或阻挡绘制' : '暂无可以撤销的操作'}
               >
@@ -1774,9 +1784,9 @@ export default function MapSystem({
               background: 'rgba(0,0,0,0.2)', 
               padding: '8px', 
               borderRadius: '6px',
-              border: '1px solid var(--border-light)' 
+              border: '1px solid var(--line-hairline)' 
             }}>
-              <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--text-muted)' }}>
                 📋 区域地形列表 ({terrainAreas.length}) - 在地图上点击图形或修改下方参数以调节大小与状态
               </span>
               <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '2px' }}>
@@ -1790,7 +1800,7 @@ export default function MapSystem({
                       style={{
                         minWidth: '220px',
                         background: isEditing ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.01)',
-                        border: isEditing ? `1px solid ${color.value}` : '1px solid var(--border-light)',
+                        border: isEditing ? `1px solid ${color.value}` : '1px solid var(--line-hairline)',
                         borderRadius: '6px',
                         padding: '6px 8px',
                         display: 'flex',
@@ -1809,34 +1819,34 @@ export default function MapSystem({
                           value={area.name}
                           onChange={(e) => handleUpdateArea(area.id, { name: e.target.value })}
                           className="input-text"
-                          style={{ fontSize: '11px', padding: '2px 4px', width: '120px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-light)', color: '#fff' }}
+                          style={{ fontSize: '11px', padding: '2px 4px', width: '120px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--line-hairline)', color: 'var(--text-body)' }}
                           placeholder="地形名称"
                         />
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isImpassable: !area.isImpassable }); }}
-                            style={{ background: 'transparent', border: 'none', color: area.isImpassable ? 'var(--accent-red)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'transform 0.2s' }}
+                            style={{ background: 'transparent', border: 'none', color: area.isImpassable ? 'var(--pigment-madder)' : 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'transform 0.2s' }}
                             title={area.isImpassable ? '实体阻挡已开启 (阻断角色通行)' : '自由通行区域 (角色可自由穿过)'}
                           >
                             <span style={{ fontSize: '11px', transform: area.isImpassable ? 'scale(1.2)' : 'none', display: 'inline-block' }}>{area.isImpassable ? '🚫' : '🟢'}</span>
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isSecret: !area.isSecret }); }}
-                            style={{ background: 'transparent', border: 'none', color: area.isSecret ? 'var(--accent-purple)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            style={{ background: 'transparent', border: 'none', color: area.isSecret ? 'var(--accent)' : 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             title={area.isSecret ? '玩家不可见 (隐秘陷阱)' : '玩家可见'}
                           >
                             {area.isSecret ? <EyeOff size={11} /> : <Eye size={11} />}
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDuplicateArea(area); }}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             title="快速复制此地形区域"
                           >
                             <Copy size={11} />
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteArea(area.id); }}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             title="删除地形"
                           >
                             <Trash2 size={11} />
@@ -1845,14 +1855,14 @@ export default function MapSystem({
                       </div>
 
                       {/* Dimensions controls */}
-                      <div style={{ display: 'flex', gap: '6px', fontSize: '9px', color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', gap: '6px', fontSize: '9px', color: 'var(--text-muted)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                           <span>X(ft):</span>
                           <input
                             type="number"
                             value={area.gridX}
                             onChange={(e) => handleUpdateArea(area.id, { gridX: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-light)', color: '#fff', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
+                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
                           />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
@@ -1861,7 +1871,7 @@ export default function MapSystem({
                             type="number"
                             value={area.gridY}
                             onChange={(e) => handleUpdateArea(area.id, { gridY: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-light)', color: '#fff', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
+                            style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
                           />
                         </div>
                         {area.type === 'rect' ? (
@@ -1872,7 +1882,7 @@ export default function MapSystem({
                                 type="number"
                                 value={area.width}
                                 onChange={(e) => handleUpdateArea(area.id, { width: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-light)', color: '#fff', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
+                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
                               />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
@@ -1881,7 +1891,7 @@ export default function MapSystem({
                                 type="number"
                                 value={area.height}
                                 onChange={(e) => handleUpdateArea(area.id, { height: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-light)', color: '#fff', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
+                                style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
                               />
                             </div>
                           </>
@@ -1892,7 +1902,7 @@ export default function MapSystem({
                               type="number"
                               value={area.radius}
                               onChange={(e) => handleUpdateArea(area.id, { radius: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                              style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-light)', color: '#fff', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
+                              style={{ width: '28px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line-hairline)', color: 'var(--text-body)', fontSize: '9px', padding: '1px', borderRadius: '3px', textAlign: 'center' }}
                             />
                           </div>
                         )}
@@ -1906,9 +1916,9 @@ export default function MapSystem({
                           alignItems: 'center', 
                           gap: '6px', 
                           fontSize: '10px', 
-                          color: area.isImpassable ? 'var(--accent-red)' : 'var(--text-secondary)',
+                          color: area.isImpassable ? 'var(--pigment-madder)' : 'var(--text-muted)',
                           background: area.isImpassable ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                          border: `1px solid ${area.isImpassable ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-light)'}`,
+                          border: `1px solid ${area.isImpassable ? 'rgba(239, 68, 68, 0.3)' : 'var(--line-hairline)'}`,
                           padding: '4px 6px',
                           borderRadius: '4px',
                           cursor: 'pointer',
@@ -1923,7 +1933,7 @@ export default function MapSystem({
                           type="checkbox"
                           checked={!!area.isImpassable}
                           onChange={() => {}}
-                          style={{ cursor: 'pointer', accentColor: 'var(--accent-red)' }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--pigment-madder)' }}
                         />
                         <span style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
                           <span>🚫</span> 实体阻挡障碍 (角色不可穿越)
@@ -1932,7 +1942,7 @@ export default function MapSystem({
 
                       {/* Color presets selection */}
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '9px' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>灾害级:</span>
+                        <span style={{ color: 'var(--text-faint)' }}>灾害级:</span>
                         <div style={{ display: 'flex', gap: '4px' }}>
                           {Object.keys(colorConfig).map(c => (
                             <button
@@ -1944,7 +1954,7 @@ export default function MapSystem({
                                 height: '7px',
                                 borderRadius: '50%',
                                 background: colorConfig[c].value,
-                                border: area.color === c ? '1px solid #fff' : 'none',
+                                border: area.color === c ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)',
                                 cursor: 'pointer',
                                 padding: 0
                               }}
@@ -1966,9 +1976,9 @@ export default function MapSystem({
       {isInCombat && (
         <div 
           style={{ 
-            background: 'var(--bg-glass)', 
+            background: 'var(--surface-overlay)', 
             backdropFilter: 'blur(16px)', 
-            borderBottom: '1px solid var(--border-light)',
+            borderBottom: '1px solid var(--line-hairline)',
             display: 'flex',
             flexDirection: 'column',
             flexShrink: 0,
@@ -1988,14 +1998,14 @@ export default function MapSystem({
               flexDirection: 'column', 
               alignItems: 'center', 
               justifyContent: 'center',
-              borderRight: '1px solid var(--border-light)',
+              borderRight: '1px solid var(--line-hairline)',
               paddingRight: '16px',
               height: '52px',
               minWidth: '70px'
             }}
           >
-            <span style={{ fontSize: '10px', color: 'var(--accent-purple)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Round</span>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'var(--font-heading)', color: '#fff', lineHeight: 1 }}>{combatRound}</span>
+            <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Round</span>
+            <span style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'var(--font-display)', color: 'var(--text-body)', lineHeight: 1 }}>{combatRound}</span>
           </div>
 
           {/* Timeline Order List */}
@@ -2018,9 +2028,9 @@ export default function MapSystem({
                     borderRadius: '12px',
                     background: isActive ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.02)',
                     border: isActive 
-                      ? '1px solid var(--accent-purple)' 
-                      : '1px solid var(--border-light)',
-                    boxShadow: isActive ? '0 0 12px var(--accent-purple-glow)' : 'none',
+                      ? '1px solid var(--accent)' 
+                      : '1px solid var(--line-hairline)',
+                    boxShadow: isActive ? '0 0 12px var(--accent-line)' : 'none',
                     height: '52px',
                     minWidth: '140px',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -2037,15 +2047,15 @@ export default function MapSystem({
                       width: '32px',
                       height: '32px',
                       borderRadius: '50%',
-                      background: isPC ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)' : 'linear-gradient(135deg, #ef4444, #b91c1c)',
+                      background: isPC ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: '11px',
                       fontWeight: 'bold',
-                      color: '#fff',
+                      color: 'var(--text-body)',
                       boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                      border: isActive ? '2px solid var(--accent-amber)' : '1.5px solid rgba(255,255,255,0.4)',
+                      border: isActive ? '2px solid var(--pigment-ochre)' : '1.5px solid rgba(255,255,255,0.4)',
                     }}
                   >
                     {char.name ? char.name.substring(0, 2) : 'TK'}
@@ -2058,7 +2068,7 @@ export default function MapSystem({
                         style={{ 
                           fontSize: '12px', 
                           fontWeight: 'bold', 
-                          color: isActive ? '#fff' : 'var(--text-primary)',
+                          color: isActive ? 'var(--text-body)' : 'var(--text-body)',
                           overflow: 'hidden', 
                           textOverflow: 'ellipsis', 
                           whiteSpace: 'nowrap'
@@ -2070,8 +2080,8 @@ export default function MapSystem({
                         <span 
                           style={{ 
                             fontSize: '8px', 
-                            background: 'var(--accent-amber)', 
-                            color: '#000', 
+                            background: 'var(--pigment-ochre)', 
+                            color: 'var(--text-on-accent)', 
                             padding: '1px 3px', 
                             borderRadius: '3px', 
                             fontWeight: '800' 
@@ -2082,7 +2092,7 @@ export default function MapSystem({
                       )}
                     </div>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', color: 'var(--text-muted)' }}>
                       <span>先攻: <strong>{participant.total}</strong></span>
                       <span>顺位 {index + 1}</span>
                     </div>
@@ -2107,7 +2117,7 @@ export default function MapSystem({
                     alignItems: 'center',
                     gap: '12px',
                     width: '100%',
-                    borderTop: '1px solid var(--border-light)',
+                    borderTop: '1px solid var(--line-hairline)',
                     padding: '10px 16px',
                     height: '118px',
                     minHeight: '118px',
@@ -2119,27 +2129,27 @@ export default function MapSystem({
                   {/* Active character summary, deliberately separated from initiative order */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '190px', paddingRight: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <strong style={{ fontSize: '13px', color: '#fff', maxWidth: '125px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeChar.name}</strong>
-                      <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '999px', background: 'rgba(245,158,11,.18)', color: 'var(--accent-amber)', border: '1px solid rgba(245,158,11,.35)' }}>当前行动</span>
+                      <strong style={{ fontSize: '13px', color: 'var(--text-body)', maxWidth: '125px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeChar.name}</strong>
+                      <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '999px', background: 'rgba(245,158,11,.18)', color: 'var(--pigment-ochre)', border: '1px solid rgba(245,158,11,.35)' }}>当前行动</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
-                      <div title="当前生命值" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'rgba(239,68,68,.1)', color: '#fca5a5' }}>❤️ {activeChar.hp}/{activeChar.maxHp}</div>
-                      <div title="护甲等级" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'rgba(59,130,246,.1)', color: '#93c5fd' }}>🛡️ AC {activeChar.ac ?? 10}</div>
+                      <div title="当前生命值" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'var(--pigment-madder-soft)', color: 'var(--pigment-madder)' }}>❤️ {activeChar.hp}/{activeChar.maxHp}</div>
+                      <div title="护甲等级" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'var(--pigment-woad-soft)', color: 'var(--pigment-woad)' }}>🛡️ AC {activeChar.ac ?? 10}</div>
                     </div>
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '3px' }}>
                         <span>🏃 移动力</span>
                         <strong>{Math.round(activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30)}/{activeChar.speed || 30}ft</strong>
                       </div>
                       <div style={{ height: '5px', borderRadius: '999px', background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, ((activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30) / (activeChar.speed || 30)) * 100))}%`, background: 'linear-gradient(90deg,#10b981,#34d399)', transition: 'width .25s ease' }} />
+                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, ((activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30) / (activeChar.speed || 30)) * 100))}%`, background: 'linear-gradient(90deg,var(--pigment-verdigris),var(--pigment-verdigris))', transition: 'width .25s ease' }} />
                       </div>
                     </div>
                   </div>
 
                   {/* Current conditions listing & Add Condition popover */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', position: 'relative', minWidth: '150px', maxWidth: '240px', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🏷️ 状态效果</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', position: 'relative', minWidth: '150px', maxWidth: '240px', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontWeight: 'bold' }}>🏷️ 状态效果</span>
                     
                     <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', overflowY: 'auto', maxHeight: '42px' }}>
                       {activeChar.conditions && activeChar.conditions.map(cond => (
@@ -2149,7 +2159,7 @@ export default function MapSystem({
                             fontSize: '10px', 
                             padding: '3px 7px', 
                             background: 'linear-gradient(135deg,rgba(239,68,68,.2),rgba(127,29,29,.14))', 
-                            color: 'var(--accent-red)', 
+                            color: 'var(--pigment-madder)', 
                             borderRadius: '4px',
                             border: '1px solid rgba(239,68,68,0.3)',
                             fontWeight: 'bold',
@@ -2162,7 +2172,7 @@ export default function MapSystem({
                           {cond.name}({cond.duration === 'permanent' ? '∞' : `${cond.duration}r`})
                           <button 
                             onClick={() => handleRemoveCondition(activeChar.id, cond.id)}
-                            style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
+                            style={{ background: 'none', border: 'none', color: 'var(--pigment-madder)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
                           >
                             ✕
                           </button>
@@ -2170,7 +2180,7 @@ export default function MapSystem({
                       ))}
 
                       {(!activeChar.conditions || activeChar.conditions.length === 0) && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>正常</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>正常</span>
                       )}
                     </div>
                     <button
@@ -2189,8 +2199,8 @@ export default function MapSystem({
                   </div>
 
                   {/* Active Unit Resources trackers (Spell slots, actions, etc) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px', flex: 1, minWidth: '280px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🔋 动作、法术与角色资源</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px', flex: 1, minWidth: '280px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontWeight: 'bold' }}>🔋 动作、法术与角色资源</span>
                     <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '2px' }}>
                       {activeChar.resources && activeChar.resources.map((res, resIdx) => (
                         <div 
@@ -2210,8 +2220,8 @@ export default function MapSystem({
                             boxShadow: res.value > 0 ? '0 0 8px rgba(192,132,252,.08)' : 'none'
                           }}
                         >
-                          <span style={{ fontSize: '10px', color: res.value <= 0 ? '#fca5a5' : 'var(--text-primary)', fontWeight: 'bold' }}>{res.name === '动作' ? '⚔️ ' : res.name === '附赠动作' ? '⚡ ' : /法术|魔法/.test(res.name) ? '🔮 ' : '◆ '}{res.name}</span>
-                          <span style={{ fontSize: '9px', color: res.value <= 0 ? '#f87171' : '#c4b5fd', justifySelf: 'end' }}>{res.value <= 0 ? '已耗尽' : `${res.value}/${res.max}`}</span>
+                          <span style={{ fontSize: '10px', color: res.value <= 0 ? 'var(--pigment-madder)' : 'var(--text-body)', fontWeight: 'bold' }}>{res.name === '动作' ? '⚔️ ' : res.name === '附赠动作' ? '⚡ ' : /法术|魔法/.test(res.name) ? '🔮 ' : '◆ '}{res.name}</span>
+                          <span style={{ fontSize: '9px', color: res.value <= 0 ? 'var(--pigment-madder)' : 'var(--accent)', justifySelf: 'end' }}>{res.value <= 0 ? '已耗尽' : `${res.value}/${res.max}`}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                             <button 
                               onClick={() => {
@@ -2225,13 +2235,13 @@ export default function MapSystem({
                                 }));
                               }}
                               disabled={res.value <= 0}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value <= 0 ? 'not-allowed' : 'pointer', opacity: res.value <= 0 ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
+                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'var(--text-body)', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value <= 0 ? 'not-allowed' : 'pointer', opacity: res.value <= 0 ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
                             >
                               -
                             </button>
                             <div style={{ display: 'flex', gap: '2px', minWidth: '35px', justifyContent: 'center' }} title={`${res.value}/${res.max}`}>
-                              {Array.from({ length: Math.min(res.max || 0, 8) }, (_, slot) => <span key={slot} style={{ width: '4px', height: '12px', borderRadius: '2px', background: slot < res.value ? '#a78bfa' : 'rgba(255,255,255,.1)' }} />)}
-                              {(res.max || 0) > 8 && <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>×{res.max}</span>}
+                              {Array.from({ length: Math.min(res.max || 0, 8) }, (_, slot) => <span key={slot} style={{ width: '4px', height: '12px', borderRadius: '2px', background: slot < res.value ? 'var(--accent)' : 'rgba(255,255,255,.1)' }} />)}
+                              {(res.max || 0) > 8 && <span style={{ fontSize: '9px', color: 'var(--text-faint)' }}>×{res.max}</span>}
                             </div>
                             <button 
                               onClick={() => {
@@ -2245,7 +2255,7 @@ export default function MapSystem({
                                 }));
                               }}
                               disabled={res.value >= res.max}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value >= res.max ? 'not-allowed' : 'pointer', opacity: res.value >= res.max ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
+                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'var(--text-body)', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value >= res.max ? 'not-allowed' : 'pointer', opacity: res.value >= res.max ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
                             >
                               +
                             </button>
@@ -2254,13 +2264,13 @@ export default function MapSystem({
                       ))}
 
                       {(!activeChar.resources || activeChar.resources.length === 0) && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>无资源槽</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>无资源槽</span>
                       )}
                     </div>
                   </div>
 
                   {/* Turn Controls */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px', minWidth: '112px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', borderLeft: '1px solid var(--line-hairline)', paddingLeft: '14px', minWidth: '112px' }}>
                     <button 
                       onClick={() => handleResetTurnMovement(activeChar.id)}
                       className="btn btn-secondary"
@@ -2273,7 +2283,7 @@ export default function MapSystem({
                     <button 
                       onClick={handleNextTurn}
                       className="btn btn-primary"
-                      style={{ fontSize: '11px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px', background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                      style={{ fontSize: '11px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '4px', height: '30px', background: 'var(--pigment-verdigris)' }}
                       title="结束该角色当前回合，移交行动权给下一位角色"
                     >
                       <span>⏭️ 结束回合</span>
@@ -2289,7 +2299,7 @@ export default function MapSystem({
 
       {/* Map Content Box */}
       <div 
-        style={{ flex: 1, minHeight: 0, position: 'relative', background: '#07080c', display: 'flex', overflow: 'hidden' }}
+        style={{ flex: 1, minHeight: 0, position: 'relative', background: 'var(--surface-sunken)', display: 'flex', overflow: 'hidden' }}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
@@ -2335,9 +2345,9 @@ export default function MapSystem({
                 flexDirection: 'column',
                 gap: '6px'
               }}>
-                <button onClick={() => zoomIn()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--bg-glass)' }}><ZoomIn size={16} /></button>
-                <button onClick={() => zoomOut()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--bg-glass)' }}><ZoomOut size={16} /></button>
-                <button onClick={() => resetTransform()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--bg-glass)' }}><RefreshCw size={14} /></button>
+                <button onClick={() => zoomIn()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><ZoomIn size={16} /></button>
+                <button onClick={() => zoomOut()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><ZoomOut size={16} /></button>
+                <button onClick={() => resetTransform()} className="btn btn-secondary btn-icon-only" style={{ background: 'var(--surface-overlay)' }}><RefreshCw size={14} /></button>
               </div>
 
               <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
@@ -2352,7 +2362,7 @@ export default function MapSystem({
                     width: `${mapWidth * gridSize}px`,
                     height: `${mapHeight * gridSize}px`,
                     position: 'relative',
-                    backgroundColor: mapBgUrl ? 'rgba(10, 12, 20, 0.82)' : '#0a0c14',
+                    backgroundColor: mapBgUrl ? 'var(--surface-scrim)' : 'var(--surface-sunken)',
                     backdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
                     WebkitBackdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
                     border: mapBgUrl ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
@@ -2410,7 +2420,7 @@ export default function MapSystem({
                             top: `${displayTop}px`,
                             width: `${displayWidth}px`,
                             height: `${displayHeight}px`,
-                            border: '2px dashed var(--accent-purple)',
+                            border: '2px dashed var(--accent)',
                             background: 'rgba(168, 85, 247, 0.08)',
                             boxShadow: '0 0 12px rgba(168, 85, 247, 0.4), inset 0 0 6px rgba(168, 85, 247, 0.2)',
                             pointerEvents: 'none',
@@ -2422,11 +2432,11 @@ export default function MapSystem({
                             top: '-20px',
                             left: 0,
                             background: 'rgba(20,20,25,0.85)',
-                            border: '1px solid var(--border-light)',
+                            border: '1px solid var(--line-hairline)',
                             borderRadius: '4px',
                             padding: '2px 6px',
                             fontSize: '10px',
-                            color: 'var(--accent-purple)',
+                            color: 'var(--accent)',
                             whiteSpace: 'nowrap',
                             pointerEvents: 'none',
                             display: 'flex',
@@ -2469,7 +2479,7 @@ export default function MapSystem({
                             width: `${gridSize}px`,
                             height: `${gridSize}px`,
                             background: 'repeating-linear-gradient(45deg, rgba(168, 85, 247, 0.3), rgba(168, 85, 247, 0.3) 4px, rgba(239, 68, 68, 0.3) 4px, rgba(239, 68, 68, 0.3) 8px)',
-                            border: '1px solid var(--accent-purple)',
+                            border: '1px solid var(--accent)',
                             boxShadow: '0 0 8px rgba(168, 85, 247, 0.5)',
                             pointerEvents: 'none',
                             zIndex: 2
@@ -2499,8 +2509,8 @@ export default function MapSystem({
                               ? `repeating-linear-gradient(45deg, ${color.bg}, ${color.bg} 8px, rgba(239, 68, 68, 0.15) 8px, rgba(239, 68, 68, 0.15) 16px)`
                               : color.bg,
                             border: isEditing 
-                              ? `2px solid ${area.isImpassable ? 'var(--accent-red)' : color.value}` 
-                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--accent-red)' : color.value}`,
+                              ? `2px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}` 
+                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
                             boxShadow: isEditing ? `0 0 12px ${color.glow}, inset 0 0 6px ${color.glow}` : `0 0 8px ${color.glow}`,
                             borderRadius: '4px',
                             pointerEvents: isTerrainEditMode ? 'auto' : 'none',
@@ -2521,12 +2531,12 @@ export default function MapSystem({
                         >
                           <span style={{
                             fontSize: '9px',
-                            color: '#fff',
+                            color: 'var(--text-body)',
                             background: 'rgba(10, 12, 20, 0.85)',
                             padding: '2px 5px',
                             borderRadius: '4px',
                             fontWeight: 'bold',
-                            border: `1px solid ${area.isImpassable ? 'var(--accent-red)' : color.value}`,
+                            border: `1px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
                             userSelect: 'none',
                             boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
                           }}>
@@ -2543,7 +2553,7 @@ export default function MapSystem({
                                 width: '10px',
                                 height: '10px',
                                 background: color.value,
-                                border: '1px solid #fff',
+                                border: '1px solid var(--bracket-line)',
                                 borderRadius: '2px',
                                 cursor: 'se-resize',
                                 zIndex: 10,
@@ -2570,8 +2580,8 @@ export default function MapSystem({
                               ? `repeating-linear-gradient(45deg, ${color.bg}, ${color.bg} 8px, rgba(239, 68, 68, 0.15) 8px, rgba(239, 68, 68, 0.15) 16px)`
                               : color.bg,
                             border: isEditing 
-                              ? `2px solid ${area.isImpassable ? 'var(--accent-red)' : color.value}` 
-                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--accent-red)' : color.value}`,
+                              ? `2px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}` 
+                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
                             boxShadow: isEditing ? `0 0 12px ${color.glow}, inset 0 0 6px ${color.glow}` : `0 0 8px ${color.glow}`,
                             borderRadius: '50%',
                             pointerEvents: isTerrainEditMode ? 'auto' : 'none',
@@ -2592,12 +2602,12 @@ export default function MapSystem({
                         >
                           <span style={{
                             fontSize: '9px',
-                            color: '#fff',
+                            color: 'var(--text-body)',
                             background: 'rgba(10, 12, 20, 0.85)',
                             padding: '2px 5px',
                             borderRadius: '4px',
                             fontWeight: 'bold',
-                            border: `1px solid ${area.isImpassable ? 'var(--accent-red)' : color.value}`,
+                            border: `1px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
                             userSelect: 'none',
                             boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
                           }}>
@@ -2614,7 +2624,7 @@ export default function MapSystem({
                                 width: '10px',
                                 height: '10px',
                                 background: color.value,
-                                border: '1px solid #fff',
+                                border: '1px solid var(--bracket-line)',
                                 borderRadius: '50%',
                                 cursor: 'ew-resize',
                                 zIndex: 10,
@@ -2644,7 +2654,7 @@ export default function MapSystem({
                         y1={(selectedTokenObj.gridY || 0) * gridSize + gridSize/2}
                         x2={(hoveredTokenObj.gridX || 0) * gridSize + gridSize/2}
                         y2={(hoveredTokenObj.gridY || 0) * gridSize + gridSize/2}
-                        stroke="var(--accent-purple)"
+                        stroke="var(--accent)"
                         strokeWidth="2"
                         strokeDasharray="4 4"
                       />
@@ -2655,13 +2665,13 @@ export default function MapSystem({
                         height="18"
                         rx="4"
                         fill="rgba(18, 20, 28, 0.95)"
-                        stroke="var(--accent-purple)"
+                        stroke="var(--accent)"
                         strokeWidth="1"
                       />
                       <text
                         x={((selectedTokenObj.gridX || 0) + (hoveredTokenObj.gridX || 0)) * gridSize / 2 + 38}
                         y={((selectedTokenObj.gridY || 0) + (hoveredTokenObj.gridY || 0)) * gridSize / 2 + 5}
-                        fill="#fff"
+                        fill="var(--text-body)"
                         fontSize="10"
                         fontWeight="bold"
                         textAnchor="middle"
@@ -2675,10 +2685,10 @@ export default function MapSystem({
                   {draggedToken && dragHoverCoords && (draggedToken.startX !== dragHoverCoords.x || draggedToken.startY !== dragHoverCoords.y) && (
                     (() => {
                       const isForced = isForcedMoveMode || dragIsShiftPressed;
-                      const pathColor = isForced ? '#22d3ee' : (dragPathExists ? 'var(--accent-purple)' : 'var(--accent-red)');
+                      const pathColor = isForced ? 'var(--pigment-woad)' : (dragPathExists ? 'var(--accent)' : 'var(--pigment-madder)');
                       const pathBgColor = isForced ? 'rgba(34, 211, 238, 0.05)' : (dragPathExists ? 'rgba(168, 85, 247, 0.05)' : 'rgba(239, 68, 68, 0.05)');
                       const pathBgColorHover = isForced ? 'rgba(34, 211, 238, 0.1)' : (dragPathExists ? 'rgba(168, 85, 247, 0.1)' : 'rgba(239, 68, 68, 0.1)');
-                      const pathDashedColor = isForced ? '#cffafe' : '#e9d5ff';
+                      const pathDashedColor = isForced ? 'var(--pigment-woad)' : 'var(--accent)';
 
                       return (
                         <>
@@ -2723,7 +2733,7 @@ export default function MapSystem({
                                   y1={draggedToken.startY * gridSize + gridSize/2}
                                   x2={dragHoverCoords.x * gridSize + gridSize/2}
                                   y2={dragHoverCoords.y * gridSize + gridSize/2}
-                                  stroke="var(--accent-red)"
+                                  stroke="var(--pigment-madder)"
                                   strokeWidth="4"
                                   opacity="0.4"
                                   filter="url(#drag-glow)"
@@ -2734,7 +2744,7 @@ export default function MapSystem({
                                   y1={draggedToken.startY * gridSize + gridSize/2}
                                   x2={dragHoverCoords.x * gridSize + gridSize/2}
                                   y2={dragHoverCoords.y * gridSize + gridSize/2}
-                                  stroke="var(--accent-red)"
+                                  stroke="var(--pigment-madder)"
                                   strokeWidth="2"
                                   strokeDasharray="4 4"
                                 />
@@ -2785,7 +2795,7 @@ export default function MapSystem({
                               borderRadius: '6px',
                               fontSize: '11px',
                               fontWeight: 'bold',
-                              color: '#fff',
+                              color: 'var(--text-body)',
                               whiteSpace: 'nowrap',
                               zIndex: 100,
                               pointerEvents: 'none',
@@ -2797,7 +2807,7 @@ export default function MapSystem({
                             {isForced ? (
                               <>
                                 <span style={{ fontSize: '11px' }}>💥</span>
-                                <span style={{ color: '#22d3ee' }}>强制位移: {dragPathDistance.toFixed(1)} ft</span>
+                                <span style={{ color: 'var(--pigment-woad)' }}>强制位移: {dragPathDistance.toFixed(1)} ft</span>
                               </>
                             ) : dragPathExists ? (
                               <>
@@ -2807,17 +2817,17 @@ export default function MapSystem({
                             ) : dragIsNonActiveCombatMove ? (
                               <>
                                 <span style={{ fontSize: '11px' }}>⚠️</span>
-                                <span style={{ color: 'var(--accent-red)' }}>非当前行动回合 (当前为: {dragActiveCharName})</span>
+                                <span style={{ color: 'var(--pigment-madder)' }}>非当前行动回合 (当前为: {dragActiveCharName})</span>
                               </>
                             ) : dragIsSpeedExceeded ? (
                               <>
                                 <span style={{ fontSize: '11px' }}>❌</span>
-                                <span style={{ color: 'var(--accent-red)' }}>移动力不足 (剩余: {dragSpeedRemaining.toFixed(1)} ft, 需: {dragPathDistance.toFixed(1)} ft)</span>
+                                <span style={{ color: 'var(--pigment-madder)' }}>移动力不足 (剩余: {dragSpeedRemaining.toFixed(1)} ft, 需: {dragPathDistance.toFixed(1)} ft)</span>
                               </>
                             ) : (
                               <>
                                 <span style={{ fontSize: '11px' }}>⚠️</span>
-                                <span style={{ color: 'var(--accent-red)' }}>路线受阻 (直线: {dragPathDistance.toFixed(1)} ft)</span>
+                                <span style={{ color: 'var(--pigment-madder)' }}>路线受阻 (直线: {dragPathDistance.toFixed(1)} ft)</span>
                               </>
                             )}
                           </div>
@@ -2851,7 +2861,7 @@ export default function MapSystem({
                           width: `${gridSize * 1.5}px`, // Slight padding for token nodes
                           height: `${gridSize * 1.5}px`,
                           transform: selectedTokenId === char.id ? 'scale(1.2)' : 'none',
-                          border: selectedTokenId === char.id ? '2px solid var(--accent-purple)' : '2px solid #fff',
+                          border: selectedTokenId === char.id ? '1px solid var(--accent)' : '1px solid var(--bracket-line)',
                           zIndex: selectedTokenId === char.id ? 10 : 3,
                           cursor: isTerrainEditMode && terrainEditTool !== 'select' ? 'not-allowed' : 'grab'
                         }}
@@ -2875,7 +2885,7 @@ export default function MapSystem({
               right: '16px',
               width: '300px',
               maxHeight: '85%',
-              background: 'var(--bg-glass)',
+              background: 'var(--surface-overlay)',
               backdropFilter: 'blur(20px)',
               border: '1px solid rgba(192, 132, 252, 0.3)',
               borderRadius: '12px',
@@ -2890,17 +2900,17 @@ export default function MapSystem({
             onClick={(e) => e.stopPropagation()} // Prevent deselecting when clicking inside
           >
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--border-light)', paddingBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed var(--line-hairline)', paddingBottom: '8px' }}>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ 
                   fontWeight: 'bold', 
                   fontSize: '14px', 
-                  color: selectedTokenObj.type === 'PC' ? 'var(--accent-blue)' : 'var(--accent-red)',
-                  fontFamily: 'var(--font-heading)'
+                  color: selectedTokenObj.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
+                  fontFamily: 'var(--font-display)'
                 }}>
                   👤 {selectedTokenObj.name}
                 </span>
-                <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '9px', color: 'var(--text-faint)' }}>
                   ({selectedTokenObj.type} | {selectedTokenObj.class || '无职业'} | {selectedTokenObj.gridX || 0}ft, {selectedTokenObj.gridY || 0}ft)
                 </span>
               </div>
@@ -2909,7 +2919,7 @@ export default function MapSystem({
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: 'var(--text-muted)',
+                  color: 'var(--text-faint)',
                   cursor: 'pointer',
                   fontSize: '14px',
                   fontWeight: 'bold',
@@ -2924,7 +2934,7 @@ export default function MapSystem({
             {/* HP Tracking Section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>❤️ 生命值 (HP):</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>❤️ 生命值 (HP):</span>
                 <span style={{ fontSize: '12px', fontWeight: 'bold' }}>
                   {selectedTokenObj.hp} / {selectedTokenObj.maxHp}
                 </span>
@@ -2963,7 +2973,7 @@ export default function MapSystem({
 
             {/* Combat Actions & Resources */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>🔋 战斗动作与资源:</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🔋 战斗动作与资源:</span>
               
               {/* Quick Actions (Action & Bonus Action) */}
               {(() => {
@@ -3009,8 +3019,8 @@ export default function MapSystem({
                         borderRadius: '4px',
                         cursor: 'pointer',
                         background: actionRes.value > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        color: actionRes.value > 0 ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                        border: `1px solid ${actionRes.value > 0 ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-light)'}`,
+                        color: actionRes.value > 0 ? 'var(--pigment-verdigris)' : 'var(--text-faint)',
+                        border: `1px solid ${actionRes.value > 0 ? 'rgba(16, 185, 129, 0.3)' : 'var(--line-hairline)'}`,
                         transition: 'all 0.2s',
                         userSelect: 'none'
                       }}
@@ -3032,8 +3042,8 @@ export default function MapSystem({
                         borderRadius: '4px',
                         cursor: 'pointer',
                         background: bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        color: bonusRes.value > 0 ? 'var(--accent-purple)' : 'var(--text-muted)',
-                        border: `1px solid ${bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.3)' : 'var(--border-light)'}`,
+                        color: bonusRes.value > 0 ? 'var(--accent)' : 'var(--text-faint)',
+                        border: `1px solid ${bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.3)' : 'var(--line-hairline)'}`,
                         transition: 'all 0.2s',
                         userSelect: 'none'
                       }}
@@ -3074,7 +3084,7 @@ export default function MapSystem({
                     };
 
                     return (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--line-hairline)' }}>
                         <span style={{ fontSize: '10px' }}>{res.name} ({res.value}/{res.max})</span>
                         <div style={{ display: 'flex', gap: '4px' }}>
                           <button onClick={() => handleAdjustCardResource(-1)} className="btn btn-secondary" style={{ padding: '0 4px', fontSize: '9px', height: '16px', width: '16px' }}>-</button>
@@ -3089,7 +3099,7 @@ export default function MapSystem({
 
             {/* Conditions Section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>🛡️ 状态管理:</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🛡️ 状态管理:</span>
               
               {/* Render current conditions */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '2px' }}>
@@ -3100,7 +3110,7 @@ export default function MapSystem({
                       fontSize: '9px', 
                       padding: '2px 5px', 
                       background: 'rgba(239, 68, 68, 0.15)', 
-                      color: 'var(--accent-red)', 
+                      color: 'var(--pigment-madder)', 
                       borderRadius: '4px',
                       border: '1px solid rgba(239,68,68,0.3)',
                       fontWeight: 'bold',
@@ -3112,7 +3122,7 @@ export default function MapSystem({
                     {cond.name}({cond.duration === 'permanent' ? '∞' : `${cond.duration}r`})
                     <button 
                       onClick={() => handleRemoveCondition(selectedTokenObj.id, cond.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
+                      style={{ background: 'none', border: 'none', color: 'var(--pigment-madder)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
                       title="清除状态"
                     >
                       ✕
@@ -3121,12 +3131,12 @@ export default function MapSystem({
                 ))}
 
                 {(!selectedTokenObj.conditions || selectedTokenObj.conditions.length === 0) && (
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>正常 (无特殊状态)</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-faint)', fontStyle: 'italic' }}>正常 (无特殊状态)</span>
                 )}
               </div>
 
               {/* Add condition controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.15)', padding: '6px', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.15)', padding: '6px', borderRadius: '6px', border: '1px solid var(--line-hairline)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '3px' }}>
                   {['眩晕', '倒地', '定身', '中毒', '致盲', '虚弱', '狂暴', '祝福'].map(condName => (
                     <button
@@ -3211,7 +3221,7 @@ export default function MapSystem({
                   width: '100%',
                   padding: '6px 12px',
                   fontSize: '11px',
-                  color: '#f87171',
+                  color: 'var(--pigment-madder)',
                   background: 'rgba(248, 113, 113, 0.05)',
                   border: '1px solid rgba(248, 113, 113, 0.25)',
                   borderRadius: '6px',
@@ -3243,9 +3253,9 @@ export default function MapSystem({
       {/* Map Bottom Information Panel */}
       <div 
         style={{ 
-          background: 'var(--bg-secondary)', 
+          background: 'var(--surface-panel)', 
           padding: '10px 16px', 
-          borderTop: '1px solid var(--border-light)',
+          borderTop: '1px solid var(--line-hairline)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -3256,7 +3266,7 @@ export default function MapSystem({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isTerrainEditMode ? (
-            <span style={{ color: 'var(--accent-purple)' }}>
+            <span style={{ color: 'var(--accent)' }}>
               🚧 正在进行地图地形编辑：
               {terrainEditTool === 'paint_block' ? '🧱 阻挡刷子激活（按住鼠标左键并在地图上拖动绘制）' :
                terrainEditTool === 'paint_erase' ? '🧽 橡皮擦激活（按住鼠标左键并在阻挡格上拖动擦除）' :
@@ -3264,11 +3274,11 @@ export default function MapSystem({
             </span>
           ) : selectedTokenObj ? (
             <span>
-              已选中: <strong style={{ color: 'var(--accent-purple)' }}>{selectedTokenObj.name}</strong> 
+              已选中: <strong style={{ color: 'var(--accent)' }}>{selectedTokenObj.name}</strong> 
               (位置: {selectedTokenObj.gridX || 0}ft, {selectedTokenObj.gridY || 0}ft)
             </span>
           ) : (
-            <span style={{ color: 'var(--text-muted)' }}>点击地图上的棋子进行选中或拖动以改变位置</span>
+            <span style={{ color: 'var(--text-faint)' }}>点击地图上的棋子进行选中或拖动以改变位置</span>
           )}
 
           {/* Summon PC character tokens button */}
@@ -3283,7 +3293,7 @@ export default function MapSystem({
                 alignItems: 'center',
                 gap: '4px',
                 boxShadow: '0 0 8px rgba(168, 85, 247, 0.4)',
-                border: '1px solid var(--accent-purple)',
+                border: '1px solid var(--accent)',
                 animation: 'pulse 2s infinite',
                 height: '24px'
               }}
@@ -3294,7 +3304,7 @@ export default function MapSystem({
           )}
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>比例尺: 1格 = 1ft</span>
+          <span style={{ color: 'var(--text-muted)' }}>比例尺: 1格 = 1ft</span>
         </div>
       </div>
 
@@ -3317,7 +3327,7 @@ export default function MapSystem({
             style={{
               width: '480px',
               maxHeight: '80vh',
-              background: 'var(--bg-secondary)',
+              background: 'var(--surface-panel)',
               border: '1px solid rgba(168, 85, 247, 0.25)',
               borderRadius: '16px',
               boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 25px rgba(168, 85, 247, 0.1)',
@@ -3330,13 +3340,13 @@ export default function MapSystem({
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line-hairline)', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0, color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>⚔️ 发起遭遇战：勾选参战单位</span>
               </h3>
               <button 
                 onClick={() => setShowInitiativePrep(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '16px' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '16px' }}
               >
                 ✕
               </button>
@@ -3344,7 +3354,7 @@ export default function MapSystem({
 
             {/* Characters List (Only those on current map) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--accent-purple)', fontWeight: 'bold' }}>选择参战成员 (自动加上先攻 Initiative 修正):</span>
+              <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold' }}>选择参战成员 (自动加上先攻 Initiative 修正):</span>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '40vh', overflowY: 'auto', paddingRight: '4px' }}>
                 {characters.filter(c => c.mapId === activeMapId).map(c => {
@@ -3359,7 +3369,7 @@ export default function MapSystem({
                         justifyContent: 'space-between',
                         padding: '10px 12px',
                         background: isChecked ? 'rgba(168, 85, 247, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                        border: `1px solid ${isChecked ? 'rgba(168, 85, 247, 0.4)' : 'var(--border-light)'}`,
+                        border: `1px solid ${isChecked ? 'rgba(168, 85, 247, 0.4)' : 'var(--line-hairline)'}`,
                         borderRadius: '8px',
                         cursor: 'pointer',
                         transition: 'all 0.2s'
@@ -3370,18 +3380,18 @@ export default function MapSystem({
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => {}} // Click is handled by parent div
-                          style={{ accentColor: 'var(--accent-purple)', cursor: 'pointer' }}
+                          style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
                         />
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: isChecked ? '#fff' : 'var(--text-primary)' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: isChecked ? 'var(--text-body)' : 'var(--text-body)' }}>
                           {c.name}
                         </span>
-                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: c.type === 'PC' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: c.type === 'PC' ? 'var(--accent-blue)' : 'var(--accent-red)', fontWeight: 'bold' }}>
+                        <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: c.type === 'PC' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: c.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)', fontWeight: 'bold' }}>
                           {c.type}
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          先攻修正: <strong style={{ color: 'var(--accent-amber)' }}>+{c.initiative || 0}</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--text-faint)' }}>
+                          先攻修正: <strong style={{ color: 'var(--pigment-ochre)' }}>+{c.initiative || 0}</strong>
                         </span>
                       </div>
                     </div>
@@ -3389,7 +3399,7 @@ export default function MapSystem({
                 })}
 
                 {characters.filter(c => c.mapId === activeMapId).length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '12px', fontStyle: 'italic' }}>
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-faint)', fontSize: '12px', fontStyle: 'italic' }}>
                     当前地图上没有放置任何角色 Token。请先从左侧列表拖动角色上图！
                   </div>
                 )}
@@ -3397,7 +3407,7 @@ export default function MapSystem({
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--line-hairline)', paddingTop: '16px' }}>
               <button 
                 type="button" 
                 onClick={() => setShowInitiativePrep(false)}
@@ -3409,7 +3419,7 @@ export default function MapSystem({
                 type="button" 
                 onClick={handleRollAndStartCombat}
                 className="btn btn-primary"
-                style={{ background: 'linear-gradient(135deg, #a855f7, #6b21a8)' }}
+                style={{ background: 'var(--accent)' }}
                 disabled={characters.filter(c => c.mapId === activeMapId).length === 0}
               >
                 🎲 一键掷先攻并开战！
