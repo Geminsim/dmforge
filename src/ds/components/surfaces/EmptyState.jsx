@@ -1,0 +1,16 @@
+import React from 'react';
+
+export function EmptyState({ icon, text, hint, action, compact = false, style }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)',
+      padding: compact ? 'var(--space-5) var(--space-4)' : 'var(--space-8) var(--space-5)',
+      textAlign: 'center', ...style
+    }}>
+      {icon ? <i className={'ph-fill ph-' + icon} style={{ fontSize: compact ? 18 : 26, color: 'var(--text-faint)', opacity: 0.7 }} aria-hidden="true" /> : null}
+      <p style={{ fontSize: compact ? 'var(--type-meta)' : 'var(--type-body-sm)', color: 'var(--text-muted)', fontStyle: 'italic' }}>{text}</p>
+      {hint ? <p style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)', maxWidth: '34ch' }}>{hint}</p> : null}
+      {action}
+    </div>
+  );
+}

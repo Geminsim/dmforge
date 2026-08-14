@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="700x290" name="Data display" subtitle="Badge, StatPill, Meter, ResourceSlot, StatusDot, StatusLine" -->
+<!doctype html><html data-theme="slate"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:16px;background:var(--surface-app)}.stack{display:flex;flex-direction:column;gap:14px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)}</style>
+</head><body><div id="root"></div><script type="text/babel">
+const { Badge, StatPill, Meter, ResourceSlot, StatusDot, StatusLine } = window.DMForgeDesignSystem_e4395c;
+function Card(){return(<div className="stack">
+<div className="row"><Badge tone="woad" size="sm">PC</Badge><Badge tone="verdigris" size="sm">NPC</Badge><Badge tone="madder" size="sm">怪物</Badge><Badge tone="ochre" icon="warning">隐藏陷阱</Badge><Badge tone="madder" icon="skull" onRemove={()=>{}}>中毒</Badge><Badge tone="accent" variant="solid">行动中</Badge><Badge variant="outline" mono>2d6 穿刺</Badge></div>
+<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+<StatPill label="力量" code="STR" value={16}/><StatPill label="敏捷" code="DEX" value={12}/><StatPill label="体质" code="FOR" value={14}/>
+<StatPill variant="plate" label="移动力剩余" value="30" sub="ft / 本回合" size="sm"/><StatPill variant="plate" label="临时生命" value="+4" tone="woad" size="sm"/><StatPill variant="plate" label="伤害减免" value={3} tone="madder" size="sm"/></div>
+<div className="grid2"><Meter label="生命值" value={45} max={55} temp={4}/><Meter label="生命值（濒死）" value={6} max={55}/></div>
+<div className="grid2"><ResourceSlot name="动作" value={1} max={1} resetType="turn" onSpend={()=>{}} onRestore={()=>{}}/><ResourceSlot name="法术位 (1环)" value={2} max={4} resetType="long" onSpend={()=>{}} onRestore={()=>{}} onDelete={()=>{}}/></div>
+<div className="row"><StatusDot state="synced" label="已同步 · 2 台设备"/><StatusDot state="local"/><StatusDot state="error"/><StatusDot state="idle"/></div>
+<StatusLine items={[{label:'ROUND',value:'03'},{label:'TURN',value:'奥利奥 (战士)',tone:'accent'},{label:'TOOL',value:'ROAM'}]} right={[{label:'SAVE',value:'1.2MB / 10MB'},{label:'LAN',value:'192.168.1.24',tone:'verdigris'}]}/>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Card />);
+</script></body></html>

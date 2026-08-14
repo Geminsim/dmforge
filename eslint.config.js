@@ -29,6 +29,19 @@ export default defineConfig([
     },
   },
   {
+    // Vendored design-system components, copied verbatim from the Claude Design
+    // project (see .claude/skills/dmforge-design/). They are authored for the
+    // classic JSX runtime used by that project's browser previews, so they carry
+    // an explicit `import React` this build does not need. Never hand-edit them
+    // here — fix upstream and re-copy — so silence the two rules that only
+    // object to the upstream authoring style, and keep everything else on.
+    files: ['src/ds/**/*.jsx'],
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^React$' }],
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
     files: ['vite.config.js', 'server.mjs', 'server/**/*.js', 'tests/**/*.js'],
     extends: [js.configs.recommended],
     languageOptions: {

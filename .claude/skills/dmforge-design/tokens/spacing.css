@@ -1,0 +1,20 @@
+:root{
+  --space-1:4px;--space-2:6px;--space-3:8px;--space-4:12px;--space-5:16px;
+  --space-6:20px;--space-7:24px;--space-8:32px;--space-9:40px;--space-10:48px;
+
+  /* Shell metrics — mirrors the app's resizable three-column console */
+  --shell-header-h:56px;
+  --shell-sidebar-w:360px;
+  --shell-sidebar-min:280px;
+  --shell-resize-w:4px;
+  --shell-tabbar-h:44px;
+  --map-cell:40px;          /* 1ft tactical grid cell */
+
+  /* Controls — the density step is here; "looser" build */
+  --control-h-sm:30px;--control-h:38px;--control-h-lg:44px;
+  --control-pad-x:14px;
+  --panel-pad:18px;
+  --row-pad-y:13px;
+  --radius-sm:0px;--radius-md:0px;--radius-lg:0px;--radius-pill:999px; /* squared: the plate grammar has no rounded corners; pill is for dots and meters only */
+  --bracket-size:10px;
+}

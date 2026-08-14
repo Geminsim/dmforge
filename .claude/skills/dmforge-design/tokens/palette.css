@@ -1,0 +1,21 @@
+/* Raw palette. Never reference these directly in product UI — use the semantic
+   aliases in themes.css so a surface follows the active theme. */
+:root{
+  /* Warm neutral ramp (slate/candlelight) */
+  --ink-900:#100e0c;--ink-850:#14120f;--ink-800:#1c1916;--ink-700:#241f1a;--ink-600:#2c2620;
+  --ink-500:#3a322a;--ink-400:#7a7168;--ink-300:#a89e91;--ink-200:#cec4b6;--ink-100:#ece4d8;--ink-050:#f7f1e4;
+  /* Parchment ramp (grimoire) */
+  --parch-500:#d9cbb2;--parch-400:#e5d9c3;--parch-300:#efe6d5;--parch-200:#f7f1e4;--parch-100:#fbf7ee;
+  /* Cold ramp (terminal) */
+  --cold-900:#06080a;--cold-850:#0a0c0e;--cold-800:#0f1317;--cold-700:#161b21;--cold-600:#1d242c;
+  --cold-400:#64707b;--cold-300:#93a1ad;--cold-100:#dfe6ec;
+  /* Accents — one per theme */
+  --brass-600:#a8851c;--brass-500:#c9a227;--brass-400:#dbb43a;--brass-300:#e8cd77;
+  --rubric-700:#7d2c1c;--rubric-600:#9d3b28;--rubric-500:#b74b34;--rubric-300:#d0846f;
+  --signal-600:#2fa3b5;--signal-500:#57cbdc;--signal-400:#7ad9e7;
+  /* Pigments — desaturated paint-box semantics, kept red/green/blue/yellow legible */
+  --madder-700:#7e2b1c;--madder-600:#9a3623;--madder-500:#c65a48;--madder-400:#dd8677;
+  --verdigris-700:#2f5340;--verdigris-600:#3f6b4f;--verdigris-500:#6fa07d;--verdigris-400:#9cc2a6;
+  --woad-700:#2c456b;--woad-600:#3c5b8c;--woad-500:#6f92c4;--woad-400:#9db4d8;
+  --ochre-700:#6a4c17;--ochre-600:#8a6420;--ochre-500:#cfa04f;--ochre-400:#e0bd84;
+}

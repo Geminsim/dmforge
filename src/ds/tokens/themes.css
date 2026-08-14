@@ -1,0 +1,151 @@
+/* Three themes. Set data-theme on <html> or on any wrapper element.
+   grimoire — dark codex: ink-black ground, aged-paper text, rubrication red (signature; also the :root default)
+   slate    — warm charcoal, brass accent
+   terminal — cold near-black, signal cyan
+   Each scope doubles its attribute selector so it outranks the :root defaults
+   while still matching a nested wrapper. */
+/* Defaults = the signature grimoire theme, so a page with no data-theme is already branded. */
+:root{
+  color-scheme:dark;
+  --surface-app:#171311;
+  --surface-panel:#1f1a17;
+  --surface-raised:#272120;
+  --surface-hover:#302827;
+  --surface-sunken:#100d0c;
+  --surface-overlay:rgba(23,19,17,.78);
+  --surface-scrim:rgba(10,8,7,.68);
+  --text-body:#e9dfcf;
+  --text-muted:#a2968a;
+  --text-faint:#776c63;
+  --text-on-accent:#17110f;
+  --line-hairline:rgba(233,223,207,.12);
+  --line-strong:rgba(233,223,207,.24);
+  --line-inset:rgba(0,0,0,.45);
+  --accent:#c0503a;
+  --accent-hover:#d2634c;
+  --accent-press:#9d3b28;
+  --accent-soft:rgba(192,80,58,.16);
+  --accent-line:rgba(192,80,58,.44);
+  --focus-ring:rgba(192,80,58,.45);
+  --pigment-madder:#cd5f49;--pigment-madder-soft:rgba(205,95,73,.16);--pigment-madder-line:rgba(205,95,73,.44);
+  --pigment-verdigris:#71a37e;--pigment-verdigris-soft:rgba(113,163,126,.16);--pigment-verdigris-line:rgba(113,163,126,.44);
+  --pigment-woad:#7093c4;--pigment-woad-soft:rgba(112,147,196,.16);--pigment-woad-line:rgba(112,147,196,.44);
+  --pigment-ochre:#cfa257;--pigment-ochre-soft:rgba(207,162,87,.16);--pigment-ochre-line:rgba(207,162,87,.44);
+  --radius-panel:0px;
+  --bracket-line:rgba(233,223,207,.42);
+  --rule-dotted:rgba(233,223,207,.26);
+  --meter-empty:rgba(233,223,207,.20);
+  --grid-line:rgba(233,223,207,.085);
+  --texture-surface:repeating-linear-gradient(0deg,rgba(233,223,207,.014) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(233,223,207,.010) 0 1px,transparent 1px 4px);
+  --font-display:'Spectral','Noto Serif SC',Georgia,serif;
+  --display-weight:600;
+  --display-tracking:0;
+}
+[data-theme="grimoire"][data-theme]{
+  color-scheme:dark;
+  --surface-app:#171311;
+  --surface-panel:#1f1a17;
+  --surface-raised:#272120;
+  --surface-hover:#302827;
+  --surface-sunken:#100d0c;
+  --surface-overlay:rgba(23,19,17,.78);
+  --surface-scrim:rgba(10,8,7,.68);
+  --text-body:#e9dfcf;
+  --text-muted:#a2968a;
+  --text-faint:#776c63;
+  --text-on-accent:#17110f;
+  --line-hairline:rgba(233,223,207,.12);
+  --line-strong:rgba(233,223,207,.24);
+  --line-inset:rgba(0,0,0,.45);
+  --accent:#c0503a;
+  --accent-hover:#d2634c;
+  --accent-press:#9d3b28;
+  --accent-soft:rgba(192,80,58,.16);
+  --accent-line:rgba(192,80,58,.44);
+  --focus-ring:rgba(192,80,58,.45);
+  --pigment-madder:#cd5f49;--pigment-madder-soft:rgba(205,95,73,.16);--pigment-madder-line:rgba(205,95,73,.44);
+  --pigment-verdigris:#71a37e;--pigment-verdigris-soft:rgba(113,163,126,.16);--pigment-verdigris-line:rgba(113,163,126,.44);
+  --pigment-woad:#7093c4;--pigment-woad-soft:rgba(112,147,196,.16);--pigment-woad-line:rgba(112,147,196,.44);
+  --pigment-ochre:#cfa257;--pigment-ochre-soft:rgba(207,162,87,.16);--pigment-ochre-line:rgba(207,162,87,.44);
+  --radius-panel:0px;
+  --bracket-line:rgba(233,223,207,.42);
+  --rule-dotted:rgba(233,223,207,.26);
+  --meter-empty:rgba(233,223,207,.20);
+  --grid-line:rgba(233,223,207,.085);
+  --texture-surface:repeating-linear-gradient(0deg,rgba(233,223,207,.014) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(233,223,207,.010) 0 1px,transparent 1px 4px);
+  --font-display:'Spectral','Noto Serif SC',Georgia,serif;
+  --display-weight:600;
+  --display-tracking:0;
+}
+[data-theme="slate"][data-theme]{
+  color-scheme:dark;
+  --surface-app:#14120f;
+  --surface-panel:#1c1916;
+  --surface-raised:#241f1a;
+  --surface-hover:#2c2620;
+  --surface-sunken:#100e0c;
+  --surface-overlay:rgba(16,14,12,.72);
+  --surface-scrim:rgba(8,7,6,.66);
+  --text-body:#ece4d8;
+  --text-muted:#a89e91;
+  --text-faint:#7a7168;
+  --text-on-accent:#17140f;
+  --line-hairline:rgba(236,228,216,.10);
+  --line-strong:rgba(236,228,216,.20);
+  --line-inset:rgba(0,0,0,.4);
+  --accent:#c9a227;
+  --accent-hover:#dbb43a;
+  --accent-press:#a8851c;
+  --accent-soft:rgba(201,162,39,.14);
+  --accent-line:rgba(201,162,39,.38);
+  --focus-ring:rgba(201,162,39,.45);
+  --pigment-madder:#c65a48;--pigment-madder-soft:rgba(198,90,72,.16);--pigment-madder-line:rgba(198,90,72,.42);
+  --pigment-verdigris:#6fa07d;--pigment-verdigris-soft:rgba(111,160,125,.16);--pigment-verdigris-line:rgba(111,160,125,.42);
+  --pigment-woad:#6f92c4;--pigment-woad-soft:rgba(111,146,196,.16);--pigment-woad-line:rgba(111,146,196,.42);
+  --pigment-ochre:#cfa04f;--pigment-ochre-soft:rgba(207,160,79,.16);--pigment-ochre-line:rgba(207,160,79,.42);
+  --radius-panel:0px;
+  --bracket-line:rgba(236,228,216,.34);
+  --rule-dotted:rgba(236,228,216,.24);
+  --meter-empty:rgba(236,228,216,.18);
+  --grid-line:rgba(236,228,216,.09);
+  --texture-surface:none;
+  --font-display:'Spectral','Noto Serif SC',Georgia,serif;
+  --display-weight:600;
+  --display-tracking:-.005em;
+}
+[data-theme="terminal"][data-theme]{
+  color-scheme:dark;
+  --surface-app:#0a0c0e;
+  --surface-panel:#0f1317;
+  --surface-raised:#161b21;
+  --surface-hover:#1d242c;
+  --surface-sunken:#06080a;
+  --surface-overlay:rgba(6,8,10,.78);
+  --surface-scrim:rgba(2,4,6,.7);
+  --text-body:#dfe6ec;
+  --text-muted:#93a1ad;
+  --text-faint:#64707b;
+  --text-on-accent:#06181c;
+  --line-hairline:rgba(223,230,236,.09);
+  --line-strong:rgba(223,230,236,.20);
+  --line-inset:rgba(0,0,0,.5);
+  --accent:#57cbdc;
+  --accent-hover:#7ad9e7;
+  --accent-press:#2fa3b5;
+  --accent-soft:rgba(87,203,220,.12);
+  --accent-line:rgba(87,203,220,.36);
+  --focus-ring:rgba(87,203,220,.45);
+  --pigment-madder:#d1604c;--pigment-madder-soft:rgba(209,96,76,.14);--pigment-madder-line:rgba(209,96,76,.40);
+  --pigment-verdigris:#63a889;--pigment-verdigris-soft:rgba(99,168,137,.14);--pigment-verdigris-line:rgba(99,168,137,.40);
+  --pigment-woad:#6d97cf;--pigment-woad-soft:rgba(109,151,207,.14);--pigment-woad-line:rgba(109,151,207,.40);
+  --pigment-ochre:#c9a961;--pigment-ochre-soft:rgba(201,169,97,.14);--pigment-ochre-line:rgba(201,169,97,.40);
+  --radius-panel:0px;
+  --bracket-line:rgba(87,203,220,.60);
+  --rule-dotted:rgba(223,230,236,.22);
+  --meter-empty:rgba(223,230,236,.18);
+  --grid-line:rgba(223,230,236,.10);
+  --texture-surface:none;
+  --font-display:'IBM Plex Mono','Noto Sans SC',ui-monospace,monospace;
+  --display-weight:500;
+  --display-tracking:.02em;
+}

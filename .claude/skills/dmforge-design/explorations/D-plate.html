@@ -1,0 +1,105 @@
+<!-- @dsCard group="Brand" viewport="1280x820" name="风格起点草图（浅色原版）" subtitle="线条语法的来源草图；配色后来按要求改为深色墨色典籍，见 制版语法 与 表面 · 墨色典籍" -->
+<!doctype html><html><head><meta charset="utf-8"><title>DMForge · 制图羊皮纸</title><link rel="stylesheet" href="../styles.css"><link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css"><style>
+:root{--pg:#ece1cc;--pl:#f6efe0;--pd:#e0d3b8;--sunk:#e6dcc6;--ink:#241f1a;--ink2:#5b5145;--ink3:#8d8172;--red:#9d3b28;--grn:#3f6b4f;--blu:#3c5b8c;--amb:#8a6420;--rule:rgba(36,31,26,.55);--rule2:rgba(36,31,26,.2)}
+*{box-sizing:border-box}
+body{margin:0;width:1280px;height:820px;background:var(--pg);background-image:repeating-linear-gradient(0deg,rgba(36,31,26,.022) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(36,31,26,.016) 0 1px,transparent 1px 4px);color:var(--ink);font-family:var(--font-mono);font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+.top{height:48px;flex-shrink:0;display:flex;align-items:center;gap:16px;padding:0 22px;border-bottom:1px solid var(--rule)}
+.wm{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.03em}
+.wm em{font-style:normal;color:var(--red)}
+.sp{flex:1}
+.t3{font-size:11px;letter-spacing:.08em;color:var(--ink3)}
+.tabs{display:flex;gap:22px;padding:9px 22px;border-bottom:1px solid var(--rule2);font-size:12px;letter-spacing:.12em;color:var(--ink3)}
+.tab.on{color:var(--pl);background:var(--red);padding:1px 8px;margin:-1px -8px}
+main{flex:1;min-height:0;display:flex;gap:16px;padding:16px 22px}
+.col{display:flex;flex-direction:column;gap:14px;min-height:0}
+.pn{position:relative;background:var(--pl);padding:13px 15px;min-height:0}
+.pn>.br{position:absolute;width:10px;height:10px;border:1px solid var(--rule)}
+.pn .b1{left:0;top:0;border-right:none;border-bottom:none}.pn .b2{right:0;top:0;border-left:none;border-bottom:none}
+.pn .b3{left:0;bottom:0;border-right:none;border-top:none}.pn .b4{right:0;bottom:0;border-left:none;border-top:none}
+.hd{display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.2em;color:var(--red);margin-bottom:12px}
+.hd:after{content:'';flex:1;border-top:1px dotted var(--rule)}
+.hd b{font-family:var(--font-display);font-size:14px;font-weight:600;letter-spacing:.02em;color:var(--ink)}
+.card{padding:11px 12px;background:var(--sunk);margin-bottom:10px}
+.card.on{box-shadow:inset 2px 0 0 var(--red)}
+.cname{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:.01em;margin-bottom:3px}
+.cname i{font-style:normal;font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;color:var(--red)}
+.row{display:flex;align-items:baseline;font-size:12px;color:var(--ink2);padding:2px 0}
+.row b{color:var(--ink);font-weight:600}
+.row .lead{flex:1;margin:0 6px;border-bottom:1px dotted var(--rule2);transform:translateY(-3px)}
+.blk{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink3);margin-top:4px}
+.blk .seg{display:flex;gap:2px}
+.blk .seg i{width:9px;height:9px;background:var(--grn)}
+.blk .seg i.o{background:transparent;box-shadow:inset 0 0 0 1px var(--rule2)}
+.blk.warn .seg i{background:var(--red)}
+.tag{font-size:10px;letter-spacing:.08em;color:var(--amb);border:1px solid rgba(138,100,32,.45);padding:1px 6px;margin-right:5px}
+.tag.r{color:var(--red);border-color:rgba(157,59,40,.45)}
+.map{flex:1;position:relative;background:var(--pd);overflow:hidden;background-image:linear-gradient(to right,rgba(36,31,26,.09) 1px,transparent 1px),linear-gradient(to bottom,rgba(36,31,26,.09) 1px,transparent 1px);background-size:40px 40px}
+.gut{position:absolute;font-size:9px;letter-spacing:.1em;color:var(--ink3)}
+.ret{position:absolute;background:rgba(157,59,40,.3)}
+.tk{position:absolute;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:11px;font-weight:700;color:var(--pl);box-shadow:0 0 0 1px var(--rule)}
+.tk.on{outline:1px solid var(--red);outline-offset:2px}
+.terr{position:absolute;border:1px solid rgba(157,59,40,.6);background:repeating-linear-gradient(45deg,rgba(157,59,40,.14) 0 3px,transparent 3px 7px);font-size:10px;letter-spacing:.06em;color:var(--red);padding:3px 5px}
+.rnd{display:flex;align-items:center;gap:14px;padding:9px 15px;background:var(--pl);font-size:12px;letter-spacing:.08em;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule2)}
+.rnd .n{font-family:var(--font-display);font-size:21px;font-weight:700;color:var(--red);line-height:1}
+.dice{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.die{aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:var(--sunk);font-size:14px;font-weight:600;letter-spacing:.03em;box-shadow:inset 0 0 0 1px var(--rule2)}
+.roll{background:var(--sunk);padding:11px 13px;display:flex;align-items:baseline;justify-content:space-between;box-shadow:inset 2px 0 0 var(--red)}
+.roll .t{font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--red);line-height:1}
+.roll .m{font-size:12px;color:var(--ink2)}
+.log{font-size:11px;color:var(--ink2);line-height:1.75}
+.log b{color:var(--red);font-weight:600}
+.log .k{color:var(--ink3)}
+.cur{display:inline-block;width:6px;height:11px;background:var(--red);transform:translateY(1px)}
+.stat{height:26px;flex-shrink:0;display:flex;align-items:center;gap:18px;padding:0 22px;background:var(--pl);border-top:1px solid var(--rule);font-size:11px;letter-spacing:.1em;color:var(--ink3)}
+.btn{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;padding:5px 12px;color:var(--red);background:transparent;border:1px solid rgba(157,59,40,.5);cursor:pointer}
+.btn.p{color:var(--pl);background:var(--red);border-color:var(--red)}
+.tab,.tag,.btn,.row>span,.die,.cname,.hd,.stat span,.rnd span,.blk span{white-space:nowrap}
+</style></head><body>
+<div class="top"><span class="wm">D<em>M</em>Forge</span><span class="t3">CAMPAIGN / 村口酒馆大厅 (地上) · CH.3 北山矿井</span><span class="sp"></span><span class="t3" style="color:var(--grn)">SYNC OK · 2 PEERS</span></div>
+<div class="tabs"><span class="tab on">[ MAP ]</span><span class="tab">[ ITEMS ]</span><span class="tab">[ SHEETS ]</span></div>
+<main>
+<div class="col" style="width:296px">
+<div class="pn" style="flex:1"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<div class="hd">ROSTER<b>角色与分组</b>· 05</div>
+<div class="card on"><div class="cname">奥利奥（战士） <i>ACTIVE</i></div>
+<div class="row"><span>HP</span><span class="lead"></span><b>45/55 <span style="color:var(--blu)">+4</span></b></div>
+<div class="blk"><span class="seg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i></span><span>82%</span></div>
+<div class="row" style="margin-top:7px"><span>SPD</span><span class="lead"></span><b>30ft</b></div>
+<div style="margin-top:8px"><span class="tag">重甲防护</span></div>
+<div class="row" style="margin-top:9px"><span>力量 STR</span><span class="lead"></span><b>16</b></div>
+<div class="row"><span>敏捷 DEX</span><span class="lead"></span><b>12</b></div>
+<div class="row"><span>体质 FOR</span><span class="lead"></span><b>14</b></div></div>
+<div class="card"><div class="cname">莉拉（游荡者）</div>
+<div class="row"><span>HP</span><span class="lead"></span><b>28/34</b></div>
+<div class="blk"><span class="seg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i></span><span>82%</span></div></div>
+<div class="card"><div class="cname">巴克（牧师）</div>
+<div class="row"><span>HP</span><span class="lead"></span><b style="color:var(--red)">09/30</b></div>
+<div class="blk warn"><span class="seg"><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i><i class="o"></i></span><span>30%</span></div>
+<div style="margin-top:7px"><span class="tag r">流血</span><span class="tag r">恐慌</span></div></div>
+<button class="btn p" style="width:100%">+ 新建角色</button>
+</div></div>
+<div class="col" style="flex:1;min-width:0">
+<div class="rnd"><span class="t3">ROUND</span><span class="n">03</span><span class="sp"></span><span class="t3">ORDER 21 莉拉 · <b style="color:var(--red)">18 奥利奥</b> · 14 哥布林 · 07 巴克</span><button class="btn">UNDO</button><button class="btn p">结束回合</button></div>
+<div class="map">
+<span class="gut" style="left:6px;top:4px">Y00</span><span class="gut" style="left:6px;top:164px">Y04</span><span class="gut" style="left:6px;top:324px">Y08</span><span class="gut" style="left:166px;bottom:4px">X04</span><span class="gut" style="left:326px;bottom:4px">X08</span>
+<span class="ret" style="left:0;right:0;top:176px;height:1px"></span><span class="ret" style="top:0;bottom:0;left:176px;width:1px"></span>
+<span class="terr" style="left:280px;top:200px;width:320px;height:160px">LAVA · 烈焰熔岩深渊 8×4</span>
+<span class="terr" style="left:120px;top:400px;width:80px;height:80px;border-style:dashed;opacity:.8">TRAP 2×2</span>
+<span class="tk on" style="left:160px;top:160px;background:var(--blu)">奥利</span>
+<span class="tk" style="left:200px;top:240px;background:var(--blu)">莉拉</span>
+<span class="tk" style="left:420px;top:340px;background:var(--red)">哥布</span>
+</div></div>
+<div class="col" style="width:300px">
+<div class="pn"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<div class="hd">DICE<b>核心掷骰器</b></div>
+<div class="dice"><span class="die">d4</span><span class="die">d6</span><span class="die">d8</span><span class="die">d10</span><span class="die">d12</span><span class="die">d20</span><span class="die">d100</span></div>
+<div class="roll" style="margin-top:11px"><span class="m">2d20kh1+5</span><span class="t">24</span></div>
+<div class="row" style="margin-top:6px"><span class="t3">[7, 18 → KEEP HIGH 18] +5</span></div>
+</div>
+<div class="pn" style="flex:1"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<div class="hd">LOG<b>战役历史</b>· 07</div>
+<div class="log"><span class="k">21:03:20</span> COMBAT — 奥利奥（战士）对哥布林斥候 x3 发动横扫攻击，命中 <b>2</b> 个目标。<br><span class="k">21:03:21</span> COMBAT — 哥布林斥候 x3 受到 <b>8</b> 点物理伤害，剩余 <b>7/15</b>。<br><span class="k">21:08:39</span> COMBAT — 巴克（牧师）进入 <b>濒死</b> 状态。<span class="cur"></span></div>
+</div></div>
+</main>
+<div class="stat"><span>ROUND 03</span><span>TURN 奥利奥（战士）</span><span>MAP 60×40 · 1FT=40PX</span><span>TOOL ROAM</span><span class="sp"></span><span>SAVE 1.2MB / 10MB</span><span style="color:var(--grn)">LAN 192.168.1.24</span></div>
+</body></html>

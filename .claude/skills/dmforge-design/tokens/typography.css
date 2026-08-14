@@ -1,0 +1,47 @@
+:root{
+  --font-display:'Spectral','Noto Serif SC',Georgia,serif;
+  --font-sans:'Source Sans 3','Noto Sans SC',system-ui,-apple-system,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',monospace;
+  /* Latin small-caps keys (ROSTER, ROUND, SPD). Mono in the console, Alegreya Sans SC on the player display. */
+  --font-label:'IBM Plex Mono',ui-monospace,monospace;
+
+  /* Display / serif — screen titles, panel names, campaign names */
+  --type-display-lg:28px;--type-display-lg-lh:1.2;
+  --type-display-md:20px;--type-display-md-lh:1.25;
+  --type-display-sm:16px;--type-display-sm-lh:1.3;
+
+  /* Body sans */
+  --type-body:14px;--type-body-lh:1.6;
+  --type-body-sm:13px;--type-body-sm-lh:1.55;
+  --type-meta:12px;--type-meta-lh:1.5;
+  --type-micro:11px;--type-micro-lh:1.45;
+
+  /* Mono numerals — HP, dice, coordinates, timestamps, tokens */
+  --type-numeral-xl:32px;--type-numeral-lg:20px;--type-numeral:14px;--type-numeral-sm:12px;
+
+  --weight-regular:400;--weight-medium:500;--weight-semibold:600;
+  --tracking-label:.08em;   /* uppercase / spaced small labels */
+  --tracking-tight:-.01em;
+}
+
+/* Player display — the read-across-the-table register. Put data-view="player" on the
+   wrapper and every component inherits book typography one step larger; the doubled
+   attribute keeps it above the theme scopes, which also set --font-display. */
+[data-view="player"][data-view]{
+  /* The scope must declare the inherited properties itself — custom properties alone
+     don't re-resolve font-family further down the tree. */
+  font-family:var(--font-sans);
+  font-size:var(--type-body);
+  line-height:var(--type-body-lh);
+  --font-display:'Cinzel','Noto Serif SC',Georgia,serif;
+  --font-sans:'EB Garamond','Noto Serif SC',Georgia,serif;
+  --font-label:'Alegreya Sans SC','Noto Sans SC',sans-serif;
+  --display-weight:600;
+  --display-tracking:.04em;
+  --type-display-lg:32px;--type-display-md:24px;--type-display-sm:19px;
+  --type-body:18px;--type-body-lh:1.65;
+  --type-body-sm:17px;--type-body-sm-lh:1.6;
+  --type-meta:15px;--type-micro:13px;
+  --type-numeral-xl:34px;--type-numeral-lg:23px;--type-numeral:17px;--type-numeral-sm:15px;
+  --tracking-label:.1em;
+}

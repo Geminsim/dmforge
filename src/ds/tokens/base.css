@@ -1,0 +1,18 @@
+/* Minimal element defaults so a bare page inherits the brand. */
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface-app);color:var(--text-body);font-family:var(--font-sans);font-size:var(--type-body);line-height:var(--type-body-lh);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+h1,h2,h3,h4,h5{margin:0;font-family:var(--font-display);font-weight:var(--display-weight);letter-spacing:var(--display-tracking);color:var(--text-body)}
+h1{font-size:var(--type-display-lg);line-height:var(--type-display-lg-lh)}
+h2{font-size:var(--type-display-md);line-height:var(--type-display-md-lh)}
+h3{font-size:var(--type-display-sm);line-height:var(--type-display-sm-lh)}
+p{margin:0;text-wrap:pretty}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-line);transition:var(--motion-control)}
+a:hover{color:var(--accent-hover);border-bottom-color:var(--accent-hover)}
+code,kbd,samp{font-family:var(--font-mono);font-size:.94em}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:none;box-shadow:var(--ring-focus)}
+::selection{background:var(--accent-soft);color:var(--text-body)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:var(--radius-pill)}
+::-webkit-scrollbar-thumb:hover{background:var(--text-faint)}

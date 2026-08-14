@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="700x210" name="Map" subtitle="MapToken allegiances + TerrainChip legend" -->
+<!doctype html><html data-theme="slate"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:16px;background:var(--surface-app)}.stack{display:flex;flex-direction:column;gap:14px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)}</style>
+</head><body><div id="root"></div><script type="text/babel">
+const { MapToken, TerrainChip } = window.DMForgeDesignSystem_e4395c;
+function Card(){return(<div style={{display:'grid',gridTemplateColumns:'250px 1fr',gap:18,alignItems:'start'}}>
+<div style={{padding:14,background:'var(--surface-sunken)',border:'var(--border-hairline)',borderRadius:'var(--radius-panel)',backgroundImage:'linear-gradient(to right,var(--grid-line) 1px,transparent 1px),linear-gradient(to bottom,var(--grid-line) 1px,transparent 1px)',backgroundSize:'40px 40px'}}>
+<div className="row" style={{gap:14}}><MapToken kind="PC" name="奥利奥 (战士)" active conditions={1}/><MapToken kind="NPC" name="村长"/><MapToken kind="MONSTER" name="哥布林斥候 x3" size={40}/><MapToken kind="PC" name="莉拉" dimmed/></div>
+<div className="lbl" style={{marginTop:12}}>1ft grid · 40px cell</div></div>
+<div style={{display:'flex',flexDirection:'column',gap:8}}>
+<TerrainChip name="烈焰熔岩深渊" tone="madder" meta="8×4" blocked/>
+<TerrainChip name="剧毒腐蚀气溶胶" tone="verdigris" shape="circle" meta="r5"/>
+<TerrainChip name="寒冰深水潭" tone="woad" shape="circle" meta="r4"/>
+<TerrainChip name="隐藏针刺陷阱" tone="ochre" secret meta="2×2"/>
+</div></div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Card />);
+</script></body></html>

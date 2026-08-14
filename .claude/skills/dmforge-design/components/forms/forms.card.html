@@ -1,0 +1,20 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Forms" subtitle="TextInput, Select, Checkbox, Slider — recessed fields, accent focus ring" -->
+<!doctype html><html data-theme="slate"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:16px;background:var(--surface-app)}.stack{display:flex;flex-direction:column;gap:14px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)}</style>
+</head><body><div id="root"></div><script type="text/babel">
+const { TextInput, Select, Checkbox, Slider } = window.DMForgeDesignSystem_e4395c;
+function Card(){const[v,setV]=React.useState('2d20kh1+5');const[c,setC]=React.useState(true);const[s,setS]=React.useState(1);return(<div className="stack">
+<div className="grid2"><TextInput mono icon="dice-six" label="掷骰公式" value={v} onChange={e=>setV(e.target.value)} suffix="Enter"/><Select label="归属" options={[{value:'w',label:'世界物品池'},{value:'a',label:'奥利奥 (战士)'}]}/></div>
+<div className="grid2"><TextInput label="地图名称" size="sm" defaultValue="村口酒馆大厅 (地上)"/><TextInput label="数量" size="sm" mono defaultValue="3" invalid hint="超出物品池上限"/></div>
+<TextInput multiline rows={2} label="笔记内容" defaultValue="北山废弃矿井深处，每到月圆之夜就会传出低沉的龙吼声。"/>
+<Checkbox checked={c} onChange={()=>setC(!c)} label="新建地形默认阻挡" hint="勾选后，新建的图形地形默认具备实体阻挡属性，防止棋子穿过"/>
+<div className="grid2"><Slider label="界面字号" min={0.75} max={1.5} step={0.05} value={s} onChange={e=>setS(Number(e.target.value))} format={x=>Math.round(x*100)+'%'}/><Slider label="地图格边长" min={24} max={64} step={2} value={40} suffix="px"/></div>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Card />);
+</script></body></html>

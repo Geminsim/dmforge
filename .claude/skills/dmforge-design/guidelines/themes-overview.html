@@ -1,0 +1,50 @@
+<!-- @dsCard group="Brand" viewport="700x330" name="三套主题 · 同一套语法" subtitle="data-theme 切换配色，度量与组件完全不变；墨色典籍为默认" -->
+<!doctype html><html data-theme="grimoire"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css"><style>body{margin:0;padding:16px;background:var(--surface-app);color:var(--text-body);font-family:var(--font-sans)}
+.plate{position:relative;background:var(--surface-panel);padding:12px 13px}
+.plate i.br{position:absolute;width:10px;height:10px;border:1px solid var(--bracket-line)}
+.b1{left:0;top:0;border-right:none;border-bottom:none}.b2{right:0;top:0;border-left:none;border-bottom:none}
+.b3{left:0;bottom:0;border-right:none;border-top:none}.b4{right:0;bottom:0;border-left:none;border-top:none}
+.k{font-family:var(--font-label);font-size:10px;letter-spacing:.2em;color:var(--accent)}
+.nm{font-family:var(--font-display);font-weight:var(--display-weight);letter-spacing:var(--display-tracking);font-size:15px;margin:4px 0 8px}
+.row{display:flex;align-items:baseline;gap:6px;font-size:12px;color:var(--text-muted)}
+.row .lead{flex:1;border-top:1px dotted var(--rule-dotted);transform:translateY(-3px)}
+.row b{font-family:var(--font-mono);color:var(--text-body)}
+.seg{display:flex;gap:2px;margin:7px 0}.seg i{flex:1;height:8px;background:var(--pigment-verdigris)}.seg i.o{background:transparent;box-shadow:inset 0 0 0 1px var(--meter-empty)}
+.btn{display:inline-block;padding:5px 11px;background:var(--accent);color:var(--text-on-accent);font-size:12px;letter-spacing:.03em}
+.cap{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-top:9px;line-height:1.6}
+.cap b{color:var(--text-muted)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.frame{padding:12px;background:var(--surface-app)}</style></head><body>
+<div class="grid">
+<div class="frame" data-theme="grimoire">
+<div class="plate"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<span class="k">ROSTER</span>
+<div class="nm">奥利奥（战士）</div>
+<div class="row"><span>HP</span><span class="lead"></span><b>45/55</b></div>
+<span class="seg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i></span>
+<div class="row" style="margin-bottom:9px"><span>SPD</span><span class="lead"></span><b>30ft</b></div>
+<span class="btn">投掷 1d20</span>
+</div>
+<div class="cap"><b>墨色典籍</b><br>data-theme="grimoire"<br>accent #c0503a<br>默认 · 昏暗房间 / 长时间主持</div>
+</div><div class="frame" data-theme="slate">
+<div class="plate"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<span class="k">ROSTER</span>
+<div class="nm">奥利奥（战士）</div>
+<div class="row"><span>HP</span><span class="lead"></span><b>45/55</b></div>
+<span class="seg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i></span>
+<div class="row" style="margin-bottom:9px"><span>SPD</span><span class="lead"></span><b>30ft</b></div>
+<span class="btn">投掷 1d20</span>
+</div>
+<div class="cap"><b>石板烛火</b><br>data-theme="slate"<br>accent #c9a227<br>暖调 · 偏经典桌游氛围</div>
+</div><div class="frame" data-theme="terminal">
+<div class="plate"><i class="br b1"></i><i class="br b2"></i><i class="br b3"></i><i class="br b4"></i>
+<span class="k">ROSTER</span>
+<div class="nm">奥利奥（战士）</div>
+<div class="row"><span>HP</span><span class="lead"></span><b>45/55</b></div>
+<span class="seg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i></span>
+<div class="row" style="margin-bottom:9px"><span>SPD</span><span class="lead"></span><b>30ft</b></div>
+<span class="btn">投掷 1d20</span>
+</div>
+<div class="cap"><b>战术终端</b><br>data-theme="terminal"<br>accent #57cbdc<br>冷峻 · 强调数据与坐标</div>
+</div>
+</div></body></html>

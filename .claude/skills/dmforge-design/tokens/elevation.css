@@ -1,0 +1,16 @@
+:root{
+  --border-hairline:1px solid var(--line-hairline);
+  --border-strong:1px solid var(--line-strong);
+  --rule-dot:1px dotted var(--rule-dotted);
+  /* No neon glows. Elevation is shadow + hairline only. */
+  --shadow-raised:0 1px 0 var(--line-hairline);
+  --shadow-panel:none; /* plates are held by corner brackets, not elevation */
+  --shadow-float:0 6px 18px -8px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.2);
+  --shadow-modal:0 24px 60px -20px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.3);
+  --shadow-inset:inset 0 1px 0 var(--line-inset);
+  --ring-focus:0 0 0 2px var(--focus-ring);
+}
+[data-theme="terminal"][data-theme]{
+  --shadow-float:0 4px 14px -6px rgba(0,0,0,.7);
+  --shadow-modal:0 20px 50px -18px rgba(0,0,0,.8);
+}
