@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, Heart, FileText, Settings, ShieldAlert, Award, Trash2, Plus, Minus, Shield, FolderPlus, Folder } from 'lucide-react';
+import { Users, UserPlus, FileText, Settings, ShieldAlert, Award, Trash2, FolderPlus, Folder } from 'lucide-react';
 
 function CharacterList({ 
   characters, 
@@ -90,7 +90,8 @@ function CharacterList({
       // Safety update characters back to default groups
       setCharacters(prev => prev.map(c => {
         if (c.groupId === groupId) {
-          const { groupId: _, ...rest } = c; // remove groupId so it falls back to type default
+          const rest = { ...c };
+          delete rest.groupId; // remove groupId so it falls back to type default
           return rest;
         }
         return c;

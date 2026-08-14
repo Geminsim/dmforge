@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import { History, MessageSquare, Swords, Package, Dices, Layers, Eye, EyeOff, Trash2 } from 'lucide-react';
 
+function renderBoldText(content) {
+  return String(content ?? '').split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : <React.Fragment key={index}>{part}</React.Fragment>
+  );
+}
+
 function ActionLog({ logs, setLogs, floatingNotes = [], addFloatingNote, deleteFloatingNote, updateFloatingNote }) {
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, COMBAT, ITEMS, DICE
 
@@ -328,10 +336,9 @@ function ActionLog({ logs, setLogs, floatingNotes = [], addFloatingNote, deleteF
                   <span style={{ fontWeight: 'bold', color: borderLeftColor }}>{iconText} {log.type}</span>
                   <span>{log.timestamp}</span>
                 </div>
-                <div 
-                  style={{ color: 'var(--text-primary)', wordBreak: 'break-all', lineHeight: '140%' }}
-                  dangerouslySetInnerHTML={{ __html: log.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }}
-                />
+                <div style={{ color: 'var(--text-primary)', wordBreak: 'break-all', lineHeight: '140%' }}>
+                  {renderBoldText(log.content)}
+                </div>
               </div>
             );
           })

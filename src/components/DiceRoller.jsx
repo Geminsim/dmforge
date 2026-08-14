@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Sparkles, History, HelpCircle } from 'lucide-react';
+import { Sparkles, History } from 'lucide-react';
+import { evaluateArithmetic } from '../utils/arithmetic';
 
 function DiceRoller({ addLog }) {
   const [customFormula, setCustomFormula] = useState('');
@@ -19,11 +20,8 @@ function DiceRoller({ addLog }) {
     const diceRegex = /(\d*)d(\d+)(kh1|kl1)?/g;
     
     let rollDetails = [];
-    let totalDiceSum = 0;
-    
     // Process dice parts
     let match;
-    let tempFormula = cleanFormula;
     let replacedText = cleanFormula;
 
     while ((match = diceRegex.exec(cleanFormula)) !== null) {
@@ -37,8 +35,8 @@ function DiceRoller({ addLog }) {
         rolls.push(Math.floor(Math.random() * sides) + 1);
       }
 
-      let subtotal = 0;
-      let rollExplanation = '';
+      let subtotal;
+      let rollExplanation;
 
       if (keep === 'kh1') {
         const highest = Math.max(...rolls);
@@ -59,14 +57,13 @@ function DiceRoller({ addLog }) {
 
     // Now calculate modifiers using a safe math evaluator
     // Only allow safe math tokens: digits, +, -, *, /, (, )
-    let finalResult = 0;
+    let finalResult;
     const isSafe = /^[0-9+\-*/().\s]+$/.test(replacedText);
     
     if (isSafe) {
       try {
-        // Safe evaluation of mathematical expression
-        finalResult = Function(`"use strict"; return (${replacedText})`)();
-      } catch (err) {
+        finalResult = evaluateArithmetic(replacedText);
+      } catch {
         finalResult = 'Error';
       }
     } else {

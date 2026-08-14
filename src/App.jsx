@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import CharacterList from './components/CharacterList';
 import DiceRoller from './components/DiceRoller';
-import ExcelImporter from './components/ExcelImporter';
-import MapSystem from './components/MapSystem';
-import ItemManager from './components/ItemManager';
+import CampaignWorkspace from './components/CampaignWorkspace';
 import ActionLog from './components/ActionLog';
 import FloatingNote from './components/FloatingNote';
-import { Eye, EyeOff, Shield, UserPlus, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { assertValidCampaign, MAX_CAMPAIGN_FILE_BYTES } from './utils/campaignValidation';
+import { resolveSyncToken } from './utils/syncToken';
+import { Shield, UserPlus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // --- Helper to ensure all characters have default resources ---
 const sanitizeCharacters = (chars) => {
@@ -252,9 +252,13 @@ export default function App() {
   // --- LAN Sync System States ---
   const clientId = React.useRef(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
   const lastUpdatedRef = React.useRef(getSavedState('dmforge_lastUpdated', 0));
+  const serverRevisionRef = React.useRef(null);
   const isServerUpdateInProgress = React.useRef(false);
   const isSyncInitialized = React.useRef(false);
   const [isSyncEnabled, setIsSyncEnabled] = useState(() => getSavedState('dmforge_isSyncEnabled', true));
+  const [syncToken, setSyncToken] = useState(() => {
+    return resolveSyncToken(window.location.hash, getSavedState('dmforge_syncToken', ''));
+  });
   const [isSyncConnected, setIsSyncConnected] = useState(true);
 
   const [currentTab, setCurrentTab] = useState('map'); // map, items, excel
@@ -543,11 +547,17 @@ export default function App() {
     const payload = getCampaignPayload(timestamp);
     fetch('/api/campaign', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
+        'If-Match': serverRevisionRef.current || '"empty"'
+      },
       body: JSON.stringify(payload)
     })
     .then(res => {
+      if (res.status === 409) throw new Error('SYNC_CONFLICT');
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
       return res.json();
     })
     .then(data => {
@@ -636,12 +646,15 @@ export default function App() {
     }, 150);
 
     return () => clearTimeout(handler);
+  // pushCampaignToServer intentionally captures the same state listed below;
+  // adding its changing identity would retrigger this debounce on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     characters, itemPool, logs, floatingNotes, maps, activeMapId,
     excelCards, groups, isInCombat,
     combatRound, currentTurnIndex, combatParticipants, combatTurnOrder,
     customAttributeLabels,
-    isSyncEnabled, appRole
+    isSyncEnabled, appRole, syncToken
   ]);
 
   // Effect 2: Initial alignment on mount and Background polling (1500ms)
@@ -654,9 +667,10 @@ export default function App() {
     let active = true;
 
     const alignAndSync = () => {
-      fetch('/api/campaign')
+      fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
         .then(res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
+          serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
           return res.json();
         })
         .then(data => {
@@ -736,9 +750,10 @@ export default function App() {
         return;
       }
 
-      fetch('/api/campaign')
+      fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
         .then(res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
+          serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
           return res.json();
         })
         .then(data => {
@@ -771,12 +786,22 @@ export default function App() {
       active = false;
       clearInterval(pollInterval);
     };
-  }, [isSyncEnabled, appRole]);
+  // Recreate polling only when its operating mode changes. The helper reads the
+  // current campaign snapshot used during this effect's alignment lifecycle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSyncEnabled, appRole, syncToken]);
 
   // --- Auto-Save Effects ---
   useEffect(() => {
     localStorage.setItem('dmforge_isSyncEnabled', JSON.stringify(isSyncEnabled));
   }, [isSyncEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('dmforge_syncToken', JSON.stringify(syncToken));
+    if (new URLSearchParams(window.location.hash.slice(1)).has('syncToken')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [syncToken]);
 
   useEffect(() => {
     localStorage.setItem('dmforge_leftSidebarWidth', JSON.stringify(leftSidebarWidth));
@@ -909,16 +934,16 @@ export default function App() {
   const handleImportCampaign = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > MAX_CAMPAIGN_FILE_BYTES) {
+      alert('战役存档超过 10MB 安全上限，请先精简存档。');
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target.result);
-        
-        if (!data.characters || !data.maps || !data.floatingNotes) {
-          alert('无效的战役备份存档！文件缺少必要的字段。');
-          return;
-        }
+        const data = assertValidCampaign(JSON.parse(event.target.result));
 
         setCharacters(sanitizeCharacters(data.characters));
         setItemPool(data.itemPool || []);
@@ -1202,7 +1227,7 @@ export default function App() {
                 ? 'rgba(255, 255, 255, 0.05)' 
                 : isSyncConnected 
                   ? 'rgba(52, 211, 153, 0.12)' 
-                  : 'rgba(239, 68, 68, 0.12)', 
+                  : 'rgba(251, 191, 36, 0.12)',
               padding: '4px 10px', 
               borderRadius: '20px', 
               border: `1px solid ${
@@ -1210,7 +1235,7 @@ export default function App() {
                   ? 'rgba(255, 255, 255, 0.15)' 
                   : isSyncConnected 
                     ? 'rgba(52, 211, 153, 0.4)' 
-                    : 'rgba(239, 68, 68, 0.4)'
+                    : 'rgba(251, 191, 36, 0.4)'
               }`,
               boxShadow: isSyncEnabled && isSyncConnected ? '0 0 10px rgba(52, 211, 153, 0.2)' : 'none',
               transition: 'all 0.3s ease',
@@ -1223,7 +1248,7 @@ export default function App() {
                 ? "局域网实时数据同步已关闭（单机离线模式，完全无网络请求消耗）。点击开启局域网同步" 
                 : isSyncConnected 
                   ? "局域网实时数据同步开启中，其他设备更改会秒级在此拉取。点击关闭局域网同步" 
-                  : "局域网服务器连接断开或处于离线模式。点击关闭局域网同步"
+                  : "同步暂不可用，应用已自动使用本地存档并继续重试。"
             }
           >
             <span 
@@ -1236,7 +1261,7 @@ export default function App() {
                   ? '#9ca3af' 
                   : isSyncConnected 
                     ? '#34d399' 
-                    : '#ef4444',
+                    : '#fbbf24',
                 display: 'inline-block'
               }} 
             />
@@ -1246,7 +1271,7 @@ export default function App() {
                 ? '#9ca3af' 
                 : isSyncConnected 
                   ? '#34d399' 
-                  : '#ef4444', 
+                  : '#fbbf24',
               fontWeight: '700', 
               fontFamily: 'var(--font-heading)',
               userSelect: 'none'
@@ -1255,7 +1280,7 @@ export default function App() {
                 ? '📡 同步已关闭' 
                 : isSyncConnected 
                   ? '📡 局域网同步中' 
-                  : '📡 同步离线模式'}
+                  : '💾 自动单机使用'}
             </span>
           </button>
 
@@ -1368,87 +1393,16 @@ export default function App() {
           />
         )}
 
-        {/* Center operational area */}
-        <main className="center-area">
-          
-          {/* Tabs header (hidden in Player View Mode) */}
-          {!isPlayerViewMode && (
-            <div className="tabs-container">
-              <button 
-                onClick={() => setCurrentTab('map')} 
-                className={`tab-btn ${currentTab === 'map' ? 'active' : ''}`}
-              >
-                🗺 1ft 战术地图
-              </button>
-              <button 
-                onClick={() => setCurrentTab('items')} 
-                className={`tab-btn ${currentTab === 'items' ? 'active' : ''}`}
-              >
-                🎒 物品流转中心
-              </button>
-              <button 
-                onClick={() => setCurrentTab('excel')} 
-                className={`tab-btn ${currentTab === 'excel' ? 'active' : ''}`}
-              >
-                📊 玩家卡与规则书导入
-              </button>
-            </div>
-          )}
-
-          {/* Active Tab View */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            {currentTab === 'map' && (
-              <MapSystem 
-                characters={characters}
-                setCharacters={setCharacters}
-                updateTokenPosition={updateTokenPosition}
-                addLog={addLog}
-                maps={maps}
-                activeMapId={activeMapId}
-                setActiveMapId={setActiveMapId}
-                addMap={addMap}
-                deleteMap={deleteMap}
-                updateMap={updateMap}
-                isPlayerViewMode={isPlayerViewMode}
-                appRole={appRole}
-                isInCombat={isInCombat}
-                setIsInCombat={setIsInCombat}
-                combatRound={combatRound}
-                setCombatRound={setCombatRound}
-                currentTurnIndex={currentTurnIndex}
-                setCurrentTurnIndex={setCurrentTurnIndex}
-                combatParticipants={combatParticipants}
-                setCombatParticipants={setCombatParticipants}
-                combatTurnOrder={combatTurnOrder}
-                setCombatTurnOrder={setCombatTurnOrder}
-              />
-            )}
-            {currentTab === 'items' && !isPlayerViewMode && (
-              <ItemManager 
-                characters={characters}
-                itemPool={itemPool}
-                setItemPool={setItemPool}
-                itemTemplates={itemTemplates}
-                setItemTemplates={setItemTemplates}
-                addLog={addLog}
-                groups={groups}
-              />
-            )}
-            {currentTab === 'excel' && !isPlayerViewMode && (
-              <ExcelImporter 
-                excelCards={excelCards}
-                setExcelCards={setExcelCards}
-                activeExcelCardId={activeExcelCardId}
-                setActiveExcelCardId={setActiveExcelCardId}
-                addLog={addLog}
-                floatingNotes={floatingNotes}
-                setFloatingNotes={setFloatingNotes}
-                updateFloatingNote={updateFloatingNote}
-                deleteFloatingNote={deleteFloatingNote}
-              />
-            )}
-          </div>
-        </main>
+        <CampaignWorkspace {...{
+          currentTab, setCurrentTab, isPlayerViewMode, appRole, characters, setCharacters,
+          updateTokenPosition, addLog, maps, activeMapId, setActiveMapId, addMap, deleteMap,
+          updateMap, isInCombat, setIsInCombat, combatRound, setCombatRound,
+          currentTurnIndex, setCurrentTurnIndex, combatParticipants, setCombatParticipants,
+          combatTurnOrder, setCombatTurnOrder, itemPool, setItemPool, itemTemplates,
+          setItemTemplates, groups, excelCards, setExcelCards, activeExcelCardId,
+          setActiveExcelCardId, floatingNotes, setFloatingNotes, updateFloatingNote,
+          deleteFloatingNote
+        }} />
 
         {/* Drag handle for resizing right sidebar */}
         {!isPlayerViewMode && !isRightSidebarCollapsed && (
@@ -2218,16 +2172,27 @@ export default function App() {
                     onChange={() => {}}
                     style={{ cursor: 'pointer', accentColor: 'var(--accent-purple)' }}
                   />
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: !isSyncEnabled ? '#9ca3af' : isSyncConnected ? '#34d399' : '#ef4444' }}>
-                    {isSyncEnabled ? '同步已开启' : '同步已禁用'}
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: !isSyncEnabled ? '#9ca3af' : isSyncConnected ? '#34d399' : '#fbbf24' }}>
+                    {!isSyncEnabled ? '单机模式' : isSyncConnected ? '局域网同步' : '单机降级'}
                   </span>
                 </div>
               </div>
               <p style={{ fontSize: '10px', color: 'var(--text-secondary)', margin: 0 }}>
-                {isSyncEnabled 
-                  ? '目前以 1.5 秒频率智能进行增量对比轮询（修改时 150ms 瞬时推送）。' 
-                  : '单机离线模式已激活，完全不产生后台网络请求消耗，战役数据已安全保存在本地。'}
+                {!isSyncEnabled
+                  ? '已手动关闭同步，战役数据仅保存在当前设备。'
+                  : isSyncConnected
+                    ? '局域网同步可用：每 1.5 秒检查远端修改，本地修改会快速推送。'
+                    : '同步服务或令牌不可用，已自动降级为单机使用；本地存档不受影响，连接恢复后会自动重试。'}
               </p>
+              <input
+                type="password"
+                className="input-text"
+                value={syncToken}
+                onChange={event => setSyncToken(event.target.value)}
+                placeholder="局域网同步令牌（与服务器 DMFORGE_SYNC_TOKEN 一致）"
+                autoComplete="off"
+                style={{ fontSize: '11px' }}
+              />
             </div>
 
             {/* Section 3: Campaign Save Database File */}

@@ -1,96 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { Map, ZoomIn, ZoomOut, RefreshCw, Eye, EyeOff, Paintbrush, Eraser, Compass, Plus, Trash2, Scissors, Copy } from 'lucide-react';
-
-// A* Pathfinding algorithm for 8-directional shortest path on tactical grids
-function findShortestPath(startX, startY, endX, endY, mapWidth, mapHeight, isBlocked, isDifficult) {
-  if (startX === endX && startY === endY) {
-    return [{ x: startX, y: startY }];
-  }
-
-  const toKey = (x, y) => `${x}_${y}`;
-  const startKey = toKey(startX, startY);
-  const endKey = toKey(endX, endY);
-
-  if (startX < 0 || startX >= mapWidth || startY < 0 || startY >= mapHeight) return null;
-  if (endX < 0 || endX >= mapWidth || endY < 0 || endY >= mapHeight) return null;
-
-  const openSet = [];
-  const closedSet = new Set();
-
-  const gScore = { [startKey]: 0 };
-  const fScore = { [startKey]: Math.hypot(endX - startX, endY - startY) };
-  const cameFrom = {};
-
-  openSet.push({ x: startX, y: startY, f: fScore[startKey] });
-
-  while (openSet.length > 0) {
-    openSet.sort((a, b) => a.f - b.f);
-    const current = openSet.shift();
-    const currKey = toKey(current.x, current.y);
-
-    if (current.x === endX && current.y === endY) {
-      const path = [];
-      let tempKey = currKey;
-      while (tempKey in cameFrom) {
-        const [x, y] = tempKey.split('_').map(Number);
-        path.push({ x, y });
-        tempKey = cameFrom[tempKey];
-      }
-      path.push({ x: startX, y: startY });
-      path.reverse();
-      return path;
-    }
-
-    closedSet.add(currKey);
-
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        if (dx === 0 && dy === 0) continue;
-
-        const nx = current.x + dx;
-        const ny = current.y + dy;
-
-        if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
-
-        const neighborKey = toKey(nx, ny);
-
-        if (closedSet.has(neighborKey) || isBlocked(nx, ny)) continue;
-
-        // Diagonal corner cutting check:
-        // Prevent moving diagonally through a wall corner (if both orthogonal sides are blocked)
-        if (dx !== 0 && dy !== 0) {
-          if (isBlocked(current.x + dx, current.y) && isBlocked(current.x, current.y + dy)) {
-            continue;
-          }
-        }
-
-        let stepCost = (dx !== 0 && dy !== 0) ? Math.SQRT2 : 1.0;
-        if (isDifficult && isDifficult(nx, ny)) {
-          stepCost *= 2.0;
-        }
-        
-        const tentativeGScore = gScore[currKey] + stepCost;
-
-        if (gScore[neighborKey] === undefined || tentativeGScore < gScore[neighborKey]) {
-          cameFrom[neighborKey] = currKey;
-          gScore[neighborKey] = tentativeGScore;
-          const h = Math.hypot(endX - nx, endY - ny);
-          fScore[neighborKey] = tentativeGScore + h;
-
-          const existing = openSet.find(item => item.x === nx && item.y === ny);
-          if (existing) {
-            existing.f = fScore[neighborKey];
-          } else {
-            openSet.push({ x: nx, y: ny, f: fScore[neighborKey] });
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}
+import { findShortestPath } from '../utils/pathfinding';
+import { advanceCombatTurn, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
 
 export default function MapSystem({ 
   characters, 
@@ -111,12 +23,11 @@ export default function MapSystem({
   setCombatRound,
   currentTurnIndex = 0,
   setCurrentTurnIndex,
-  combatParticipants = [],
   setCombatParticipants,
   combatTurnOrder = [],
   setCombatTurnOrder
 }) {
-  const [gridSize, setGridSize] = useState(20); // 20px represents 1ft
+  const [gridSize] = useState(20); // 20px represents 1ft
   
   // Retrieve the active map state
   const activeMap = maps.find(m => m.id === activeMapId) || maps[0] || {
@@ -132,7 +43,7 @@ export default function MapSystem({
   const mapWidth = activeMap.width || 60;
   const mapHeight = activeMap.height || 40;
   const mapBgUrl = activeMap.bgUrl || '';
-  const blockedCells = activeMap.blockedCells || {};
+  const blockedCells = useMemo(() => activeMap.blockedCells || {}, [activeMap.blockedCells]);
   const terrainAreas = activeMap.terrainAreas || [];
 
   // Custom setters routing back to App.jsx updateMap callback
@@ -265,8 +176,8 @@ export default function MapSystem({
   // Turn-based Combat Local UI states
   const [showInitiativePrep, setShowInitiativePrep] = useState(false);
   const [tempParticipants, setTempParticipants] = useState({}); // { charId: boolean }
-  const [manualInitiatives, setManualInitiatives] = useState({}); // { charId: number }
-  const [showConditionPopupId, setShowConditionPopupId] = useState(null);
+  const [, setManualInitiatives] = useState({}); // { charId: number }
+  const [, setShowConditionPopupId] = useState(null);
 
   // Map Property Configuration panel state
   const [showMapConfig, setShowMapConfig] = useState(false);
@@ -530,7 +441,7 @@ export default function MapSystem({
         }
 
         if (intersected) {
-          let warningText = '';
+          let warningText;
           if (area.color === 'red') {
             warningText = `🔥 警告：[${token.name}] 踏入了 [${area.name}] (烈火地形)！请注意扣减生命值并做反射豁免！`;
           } else if (area.color === 'emerald') {
@@ -1035,66 +946,22 @@ export default function MapSystem({
       return;
     }
 
-    const rolls = [];
-    activeParticipantsIds.forEach(id => {
-      const char = characters.find(c => c.id === id);
-      if (char) {
-        // Roll d20
-        const d20 = Math.floor(Math.random() * 20) + 1;
-        const modifier = char.initiative !== undefined ? char.initiative : 0;
-        // Total initiative
-        const total = d20 + modifier;
-        rolls.push({
-          id,
-          roll: d20,
-          modifier,
-          total
+    const rolls = rollInitiative(characters, activeParticipantsIds);
+    rolls.forEach(result => {
+      const character = characters.find(candidate => candidate.id === result.id);
+      if (character && addLog) {
+        addLog({
+          type: 'DICE',
+          content: `🎲 先攻投掷: [${character.name}] 1d20(${result.roll}) + 修正(${result.modifier}) = **${result.total}**`,
+          timestamp: new Date().toLocaleTimeString()
         });
-
-        // Trigger log
-        if (addLog) {
-          addLog({
-            type: 'DICE',
-            content: `🎲 先攻投掷: [${char.name}] 1d20(${d20}) + 修正(${modifier}) = **${total}**`,
-            timestamp: new Date().toLocaleTimeString()
-          });
-        }
       }
-    });
-
-    // Sort order: initiative total descending. 
-    // Tie breaker: Dexterity stats (Agility) descending. 
-    // Second tie breaker: PCs before NPCs.
-    rolls.sort((a, b) => {
-      if (b.total !== a.total) return b.total - a.total;
-      
-      const charA = characters.find(c => c.id === a.id);
-      const charB = characters.find(c => c.id === b.id);
-      const agilA = charA?.stats ? (charA.stats['敏捷 (Agility)'] || 10) : 10;
-      const agilB = charB?.stats ? (charB.stats['敏捷 (Agility)'] || 10) : 10;
-      if (agilB !== agilA) return agilB - agilA;
-
-      const typeA = charA?.type === 'PC' ? 1 : 0;
-      const typeB = charB?.type === 'PC' ? 1 : 0;
-      return typeB - typeA;
     });
 
     // Reset each participant character's combat speeds, start grids, and turn resources
     setCharacters(prev => prev.map(c => {
       if (activeParticipantsIds.includes(c.id)) {
-        const updatedResources = (c.resources || []).map(res => {
-          if (res.resetType === 'turn') {
-            return { ...res, value: res.max };
-          }
-          return res;
-        });
-        return {
-          ...c,
-          combatSpeedRemaining: c.speed !== undefined ? c.speed : 30,
-          combatStartGridX: c.gridX !== undefined ? c.gridX : 2,
-          combatStartGridY: c.gridY !== undefined ? c.gridY : 2,
-          resources: updatedResources
-        };
+        return resetTurnResources(c);
       }
       return c;
     }));
@@ -1140,41 +1007,19 @@ export default function MapSystem({
   const handleNextTurn = () => {
     if (combatTurnOrder.length === 0) return;
 
-    let nextIndex = currentTurnIndex + 1;
-    let nextRound = combatRound;
+    const { nextIndex, nextRound, wrapped } = advanceCombatTurn(currentTurnIndex, combatRound, combatTurnOrder.length);
 
-    // Check if round finishes and wraps to next round
-    if (nextIndex >= combatTurnOrder.length) {
-      nextIndex = 0;
-      nextRound = combatRound + 1;
+    if (wrapped) {
       setCombatRound(nextRound);
-
-      // 1. Tick down and remove condition statuses on round transition
-      setCharacters(prev => prev.map(c => {
-        if (c.conditions && c.conditions.length > 0) {
-          const tickedConditions = c.conditions.map(cond => {
-            if (cond.duration === 'permanent') return cond;
-            return { ...cond, duration: cond.duration - 1 };
-          });
-
-          // Check for expired ones
-          const expired = tickedConditions.filter(cond => cond.duration <= 0);
-          const active = tickedConditions.filter(cond => cond.duration > 0);
-
-          if (expired.length > 0 && addLog) {
-            expired.forEach(ex => {
-              addLog({
-                type: 'COMBAT',
-                content: `🟢 状态消除：角色 [${c.name}] 身上的 [${ex.name}] 持续时间到期，状态已被完全清除。`,
-                timestamp: new Date().toLocaleTimeString()
-              });
-            });
-          }
-
-          return { ...c, conditions: active };
-        }
-        return c;
-      }));
+      setCharacters(previous => {
+        const result = tickRoundConditions(previous);
+        result.expired.forEach(({ characterName, condition }) => addLog?.({
+          type: 'COMBAT',
+          content: `🟢 状态消除：角色 [${characterName}] 身上的 [${condition.name}] 持续时间到期，状态已被完全清除。`,
+          timestamp: new Date().toLocaleTimeString()
+        }));
+        return result.characters;
+      });
     }
 
     setCurrentTurnIndex(nextIndex);
@@ -1185,19 +1030,7 @@ export default function MapSystem({
     // 2. Refresh next active character's movement points & start grid anchors, and reset turn resources
     setCharacters(prev => prev.map(c => {
       if (c.id === nextActiveId) {
-        const updatedResources = (c.resources || []).map(res => {
-          if (res.resetType === 'turn') {
-            return { ...res, value: res.max };
-          }
-          return res;
-        });
-        return {
-          ...c,
-          combatSpeedRemaining: c.speed !== undefined ? c.speed : 30,
-          combatStartGridX: c.gridX !== undefined ? c.gridX : 2,
-          combatStartGridY: c.gridY !== undefined ? c.gridY : 2,
-          resources: updatedResources
-        };
+        return resetTurnResources(c);
       }
       return c;
     }));
@@ -1378,7 +1211,7 @@ export default function MapSystem({
   };
 
   // Calculate A* path for dragging
-  let dragPath = null;
+  let dragPath;
   let dragPathDistance = 0;
   let dragPathExists = false;
   let dragSvgPathD = '';

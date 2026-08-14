@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+release
+.dmforge-sync-token
+campaign_state.tmp.json
 *.local
 
 # Editor directories and files

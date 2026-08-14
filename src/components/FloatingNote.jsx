@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Minus, Square, Minimize2, Maximize2 } from 'lucide-react';
+import { X, Minimize2, Maximize2 } from 'lucide-react';
 
 function FloatingNote({ note, onClose, onUpdate }) {
   const containerRef = React.useRef(null);

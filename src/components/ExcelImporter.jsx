@@ -1,6 +1,48 @@
-import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Trash2, Search, FileUp, X, Eye, EyeOff } from 'lucide-react';
+
+const MAX_EXCEL_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_WORKBOOK_SHEETS = 50;
+const ALLOWED_EXCEL_EXTENSIONS = new Set(['xlsx', 'xls', 'xlsm', 'xlsb']);
+
+function validateWorkbook(wb) {
+  if (!wb || !Array.isArray(wb.SheetNames)) {
+    throw new Error('工作簿缺少有效的工作表目录。');
+  }
+  if (wb.SheetNames.length > MAX_WORKBOOK_SHEETS) {
+    throw new Error(`工作簿包含 ${wb.SheetNames.length} 个工作表，超过安全上限 ${MAX_WORKBOOK_SHEETS}。`);
+  }
+}
+
+function parseCellAddress(address) {
+  const match = /^([A-Z]+)(\d+)$/i.exec(address);
+  if (!match) throw new Error('Invalid cell address');
+  let column = 0;
+  for (const character of match[1].toUpperCase()) column = column * 26 + character.charCodeAt(0) - 64;
+  return { c: column - 1, r: Number(match[2]) - 1 };
+}
+
+function parseWorkbookInWorker(base64, timeoutMs = 8_000) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/excel.worker.js', import.meta.url), { type: 'module' });
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error('Excel 解析超过 8 秒安全时限，任务已终止。'));
+    }, timeoutMs);
+    worker.onmessage = event => {
+      clearTimeout(timeout);
+      worker.terminate();
+      if (event.data.ok) resolve(event.data.workbook);
+      else reject(new Error(event.data.error || 'Excel Worker 解析失败。'));
+    };
+    worker.onerror = () => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(new Error('Excel 隔离解析进程异常退出。'));
+    };
+    worker.postMessage({ base64 });
+  });
+}
 
 // Convert column index (e.g. 0, 1, 2) to Excel column letters (A, B, C... Z, AA, AB...)
 function getColLetter(index) {
@@ -40,7 +82,7 @@ function getActualSheetRange(ws) {
     // Count cell if it contains a value, formatted text, or formula
     if (cell && ((cell.v !== undefined && cell.v !== null && cell.v !== '') || cell.f)) {
       try {
-        const decoded = XLSX.utils.decode_cell(key);
+        const decoded = parseCellAddress(key);
         if (decoded && typeof decoded.r === 'number' && typeof decoded.c === 'number') {
           if (!hasCells) {
             minRow = decoded.r;
@@ -55,7 +97,7 @@ function getActualSheetRange(ws) {
             maxCol = Math.max(maxCol, decoded.c);
           }
         }
-      } catch (err) {
+      } catch {
         // Skip invalid keys gracefully
       }
     }
@@ -158,7 +200,7 @@ function parseWorksheet(ws) {
   // 3. Fill in cell values with strict fallbacks & boundary protection to avoid any data loss
   for (let r = 0; r <= maxRow; r++) {
     for (let c = 0; c <= maxCol; c++) {
-      const cellRef = XLSX.utils.encode_cell({ r, c });
+      const cellRef = `${getColLetter(c)}${r + 1}`;
       const cell = ws[cellRef];
       if (cell) {
         const gridCell = grid[r] ? grid[r][c] : null;
@@ -314,45 +356,18 @@ export default function ExcelImporter({
 
   // Parse Excel file from Base64 on the fly in memory whenever selected card changes
   useEffect(() => {
+    let active = true;
     if (selectedCard && selectedCard.fileData) {
       setParseError(null);
       setParsedSheets(null);
       
       // Delay parsing slightly by 50ms to ensure the spinner mounts cleanly and keeps the main thread fully fluid
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         try {
-          let wb;
-          try {
-            // Stage 1: Full-fidelity styled parsing (preferred)
-            wb = XLSX.read(selectedCard.fileData, { 
-              type: 'base64',
-              cellFormula: true,
-              cellNF: true,
-              cellText: true,
-              cellStyles: true
-            });
-          } catch (e1) {
-            console.warn('Stage 1 full parse failed, attempting Stage 2 standard parse without cellStyles...', e1);
-            try {
-              // Stage 2: Fallback without cellStyles (bypasses potential parsing library crashes)
-              wb = XLSX.read(selectedCard.fileData, { 
-                type: 'base64',
-                cellFormula: true,
-                cellNF: true,
-                cellText: true
-              });
-            } catch (e2) {
-              console.warn('Stage 2 parse failed, attempting Stage 3 raw basic parse...', e2);
-              try {
-                // Stage 3: Raw core reading (bypasses formula calculation chain compatibility bugs)
-                wb = XLSX.read(selectedCard.fileData, { 
-                  type: 'base64'
-                });
-              } catch (e3) {
-                throw new Error('此 Excel 工作簿结构或编码被严重破坏，无法被正常识别。' + (e3.message || String(e3)));
-              }
-            }
-          }
+          const wb = await parseWorkbookInWorker(selectedCard.fileData);
+          if (!active) return;
+
+          validateWorkbook(wb);
           
           const sheets = {};
           wb.SheetNames.forEach(name => {
@@ -380,13 +395,19 @@ export default function ExcelImporter({
         }
       }, 50);
 
-      return () => clearTimeout(timer);
+      return () => {
+        active = false;
+        clearTimeout(timer);
+      };
     } else {
       setParsedSheets(null);
       setSheetNames([]);
       setActiveSheetName('');
       setParseError(null);
     }
+  // The card id/list are the parse triggers. activeSheetName is deliberately
+  // excluded because selecting a sheet must not reparse the workbook.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeExcelCardId, excelCards]);
 
   // Read Excel spreadsheet and convert to lightweight base64 string using native, high-speed readAsDataURL
@@ -395,13 +416,21 @@ export default function ExcelImporter({
     if (!file) return;
 
     // Safety limit of 2MB to protect LocalStorage quota limits
-    if (file.size > 2 * 1024 * 1024) {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!extension || !ALLOWED_EXCEL_EXTENSIONS.has(extension)) {
+      alert('⚠️ 上传失败\n仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_EXCEL_FILE_BYTES) {
       alert('⚠️ 上传失败\n为了保证本地存盘性能与浏览器流畅度，角色卡文件大小不能超过 2MB。请裁剪或精简您的 Excel 表格。');
+      e.target.value = '';
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const dataUrl = evt.target.result;
         // Extract raw base64 string from data URL
@@ -411,31 +440,26 @@ export default function ExcelImporter({
         }
 
         // Pre-read workbook quickly to verify index integrity and extract sheet names
-        let tempWb;
         try {
-          tempWb = XLSX.read(base64, { type: 'base64' });
-        } catch (readErr) {
-          throw new Error('无法解析该工作簿的目录索引，请确保文件未损坏。详情: ' + (readErr.message || String(readErr)));
-        }
-
-        const newCard = {
-          id: 'excel_' + Date.now(),
-          filename: file.name,
-          fileData: base64, // Keep raw base64 string (extremely small size!)
-          sheetNames: tempWb.SheetNames,
-          uploadTime: new Date().toLocaleString(),
-          sizeBytes: file.size
-        };
-
-        setExcelCards(prev => [...prev, newCard]);
-        setActiveExcelCardId(newCard.id);
-
-        if (addLog) {
-          addLog({
+          const tempWb = await parseWorkbookInWorker(base64);
+          validateWorkbook(tempWb);
+          const newCard = {
+            id: 'excel_' + Date.now(),
+            filename: file.name,
+            fileData: base64,
+            sheetNames: tempWb.SheetNames,
+            uploadTime: new Date().toLocaleString(),
+            sizeBytes: file.size
+          };
+          setExcelCards(prev => [...prev, newCard]);
+          setActiveExcelCardId(newCard.id);
+          addLog?.({
             type: 'SYSTEM',
-            content: `📊 **成功载入 Excel 角色卡**: [${file.name}]，包含 ${tempWb.SheetNames.length} 个工作表。已在网页中重组结构。`,
+            content: `📊 **成功载入 Excel 角色卡**: [${file.name}]，包含 ${tempWb.SheetNames.length} 个工作表。已在隔离进程中解析。`,
             timestamp: new Date().toLocaleTimeString()
           });
+        } catch (readErr) {
+          throw new Error('无法安全解析该工作簿，请确保文件未损坏。详情: ' + (readErr.message || String(readErr)), { cause: readErr });
         }
       } catch (err) {
         console.error('Import failed:', err);
@@ -449,6 +473,12 @@ export default function ExcelImporter({
   const handleRulebookFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (file.size > MAX_EXCEL_FILE_BYTES) {
+      alert('规则书文件不能超过 2MB。');
+      e.target.value = '';
+      return;
+    }
 
     const fileExt = file.name.split('.').pop().toLowerCase();
     
@@ -513,10 +543,11 @@ export default function ExcelImporter({
       reader.readAsText(file);
     } else if (fileExt === 'xlsx' || fileExt === 'xls') {
       const reader = new FileReader();
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
         try {
-          const data = evt.target.result;
-          const wb = XLSX.read(data, { type: 'array' });
+          const base64 = String(evt.target.result).split(',')[1];
+          if (!base64) throw new Error('规则书工作簿编码为空。');
+          const wb = await parseWorkbookInWorker(base64);
           let combinedText = '';
           
           wb.SheetNames.forEach(sheetName => {
@@ -533,7 +564,7 @@ export default function ExcelImporter({
               const rowValues = [];
               let hasRowValue = false;
               for (let c = 0; c <= maxCol; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r, c });
+                const cellRef = `${getColLetter(c)}${r + 1}`;
                 const cell = ws[cellRef];
                 let val = '';
                 if (cell && cell.v !== undefined && cell.v !== null) {
@@ -580,7 +611,7 @@ export default function ExcelImporter({
           alert(`❌ 导入规则表失败:\n${err.message || '未知文件读取错误'}`);
         }
       };
-      reader.readAsArrayBuffer(file);
+      reader.readAsDataURL(file);
     } else {
       // txt, md and standard fallbacks
       const reader = new FileReader();
@@ -1759,7 +1790,6 @@ export default function ExcelImporter({
                                   rowSpan={cell.rowSpan > 1 ? cell.rowSpan : undefined}
                                   colSpan={cell.colSpan > 1 ? cell.colSpan : undefined}
                                   style={{
-                                    border: '1px solid var(--border-light)',
                                     padding: '6px 8px',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
@@ -1795,7 +1825,7 @@ export default function ExcelImporter({
       </div>
 
       {/* Embedded CSS for custom transitions and hover highlights */}
-      <style dangerouslySetInnerHTML={{__html: `
+      <style>{`
         .excel-card-item:hover {
           background: rgba(255,255,255,0.06) !important;
           border-color: rgba(192, 132, 252, 0.4) !important;
@@ -1865,7 +1895,7 @@ export default function ExcelImporter({
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-      `}} />
+      `}</style>
     </div>
   );
 }
