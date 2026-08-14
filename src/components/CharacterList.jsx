@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, FileText, Settings, ShieldAlert, Award, Trash2, FolderPlus, Folder } from 'lucide-react';
+import {
+  Button, IconButton, TextInput, Select, Badge, StatPill,
+  ResourceSlot, EmptyState, CharacterCard
+} from '../ds';
 
 function CharacterList({ 
   characters, 
@@ -145,6 +148,10 @@ function CharacterList({
   const [cardResResetType, setCardResResetType] = useState('long_rest');
   const [newFeatName, setNewFeatName] = useState('');
   const [newFeatDesc, setNewFeatDesc] = useState('');
+  // Keyed by character id. The old markup reached for the input through
+  // document.getElementById because the field lived inside a map(); holding the
+  // draft in state keeps the value where React can see it.
+  const [customCondDraft, setCustomCondDraft] = useState({});
 
   const handleToggleQuickResource = (charId, resName, e) => {
     e.stopPropagation(); // Prevent card expansion
@@ -508,1045 +515,516 @@ function CharacterList({
     setExpandedCharId(id === expandedCharId ? null : id);
   };
 
-  return (
-    <div className="glass-panel panel-content" style={{ height: '100%', overflowY: 'auto' }}>
-      <div className="panel-title">
-        <Users size={18} style={{ color: 'var(--accent-purple)' }} />
-        <span>👥 角色列表与生命追踪</span>
-      </div>
+  const groupTone = (group) =>
+    group.color || (group.id === 'group_pcs' ? 'var(--pigment-woad)' : group.id === 'group_npcs' ? 'var(--pigment-madder)' : 'var(--text-faint)');
 
-      {/* 1. Modal trigger button (Calls Root-level App.jsx Modal) */}
-      <button 
-        onClick={onOpenAddCharModal}
-        className="btn btn-primary"
+  /** The two toggles the DM hits most during a round. */
+  const QuickActions = ({ char }) => {
+    const action = (char.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
+    const bonus = (char.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
+    const chip = (res, label, name, tone) => (
+      <button
+        type="button"
+        onClick={(e) => handleToggleQuickResource(char.id, name, e)}
+        title={res.value > 0 ? `点击消耗 [${name}]` : `点击恢复 [${name}]`}
         style={{
-          width: '100%',
-          height: '38px',
-          justifyContent: 'center',
-          marginBottom: '8px',
-          border: '1px solid rgba(192, 132, 252, 0.3)',
-          boxShadow: '0 0 10px rgba(192, 132, 252, 0.1)',
-          cursor: 'pointer'
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          height: 19,
+          padding: '0 6px',
+          border: 'none',
+          cursor: 'pointer',
+          background: res.value > 0 ? `var(--pigment-${tone}-soft)` : 'transparent',
+          boxShadow: `inset 0 0 0 1px ${res.value > 0 ? `var(--pigment-${tone}-line)` : 'var(--line-hairline)'}`,
+          color: res.value > 0 ? `var(--pigment-${tone})` : 'var(--text-faint)',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 'var(--type-micro)',
+          letterSpacing: '.04em',
+          transition: 'var(--motion-control)'
         }}
       >
-        <UserPlus size={16} />
-        <span>➕ 新建战役角色 / 怪物</span>
+        {label}
+        <span style={{ fontFamily: 'var(--font-mono)' }}>{res.value > 0 ? '可用' : '已用'}</span>
       </button>
-
-      {/* Rest & Recovery Buttons Row */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
-        <button
-          onClick={() => onOpenRestModal && onOpenRestModal('short')}
-          className="btn btn-secondary"
-          style={{
-            flex: 1,
-            height: '28px',
-            justifyContent: 'center',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            background: 'rgba(59, 130, 246, 0.05)',
-            fontSize: '11px',
-            cursor: 'pointer',
-            margin: 0
-          }}
-          title="对选中的角色进行短休（恢复50%生命值，充能重置短休/回合资源）"
-        >
-          <span>⏳ 队伍短休</span>
-        </button>
-        <button
-          onClick={() => onOpenRestModal && onOpenRestModal('long')}
-          className="btn btn-secondary"
-          style={{
-            flex: 1,
-            height: '28px',
-            justifyContent: 'center',
-            border: '1px solid rgba(168, 85, 247, 0.3)',
-            background: 'rgba(168, 85, 247, 0.05)',
-            fontSize: '11px',
-            cursor: 'pointer',
-            margin: 0
-          }}
-          title="对选中的角色进行长休（恢复全部生命值/资源槽，重置移动力，且彻底清除负面状态）"
-        >
-          <span>💤 队伍长休</span>
-        </button>
+    );
+    return (
+      <div style={{ display: 'flex', gap: 'var(--space-2)' }} onClick={e => e.stopPropagation()}>
+        {chip(action, '动作', '动作', 'verdigris')}
+        {chip(bonus, '附赠', '附赠动作', 'woad')}
       </div>
+    );
+  };
 
-      {/* 1.5 Group Creator Input Bar */}
-      <div style={{
+  /** ±1 / ±5 HP, sitting in the card's action slot. */
+  const HpSteppers = ({ char }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }} onClick={e => e.stopPropagation()}>
+      <IconButton icon="caret-double-down" size="sm" tone="danger" onClick={() => adjustHp(char.id, -5)} title="扣除 5 点生命值" />
+      <IconButton icon="minus" size="sm" tone="danger" onClick={() => adjustHp(char.id, -1)} title="扣除 1 点生命值" />
+      <IconButton icon="plus" size="sm" onClick={() => adjustHp(char.id, 1)} title="恢复 1 点生命值" />
+      <IconButton icon="caret-double-up" size="sm" onClick={() => adjustHp(char.id, 5)} title="恢复 5 点生命值" />
+    </div>
+  );
+
+  const SheetKey = ({ children }) => (
+    <span
+      style={{
+        fontFamily: 'var(--font-label)',
+        fontSize: 'var(--type-micro)',
+        letterSpacing: 'var(--tracking-label)',
+        textTransform: 'uppercase',
+        color: 'var(--text-faint)'
+      }}
+    >
+      {children}
+    </span>
+  );
+
+  const promptCondition = (charId, name) => {
+    const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
+    if (rounds !== null) handleAddConditionCard(charId, name, rounds);
+  };
+
+  /** Everything behind the card's expand toggle. */
+  const ExpandedSheet = ({ char }) => (
+    <div
+      style={{
         display: 'flex',
-        gap: '6px',
-        marginBottom: '16px',
-        alignItems: 'center',
-        background: 'rgba(0,0,0,0.15)',
-        padding: '6px 10px',
-        borderRadius: '8px',
-        border: '1px solid var(--border-light)'
-      }}>
-        <input 
-          type="text" 
-          placeholder="📁 新建分组名称 (如: 地牢伏兵)..." 
-          value={newGroupName}
-          onChange={e => setNewGroupName(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') handleCreateGroup();
-          }}
+        flexDirection: 'column',
+        gap: 'var(--space-5)',
+        paddingTop: 'var(--space-4)',
+        marginTop: 'var(--space-2)',
+        borderTop: 'var(--border-hairline)'
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+        <TextInput size="sm" label="角色/怪物名称" value={char.name} onChange={e => handleUpdateBasicInfo(char.id, 'name', e.target.value)} />
+        <TextInput size="sm" label="职业 (Class)" value={char.class || ''} placeholder="无职业" onChange={e => handleUpdateBasicInfo(char.id, 'class', e.target.value)} />
+        <TextInput size="sm" mono type="number" label="最大生命 (Max HP)" value={char.maxHp} onChange={e => handleUpdateBasicInfo(char.id, 'maxHp', e.target.value)} />
+        <TextInput size="sm" mono type="number" label="护甲值 (AC)" value={char.ac !== undefined ? char.ac : 10} onChange={e => handleUpdateBasicInfo(char.id, 'ac', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label="先攻加成 (Initiative)" value={char.initiative !== undefined ? char.initiative : 0} onChange={e => handleUpdateBasicInfo(char.id, 'initiative', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label="移动速度 (Speed ft)" value={char.speed !== undefined ? char.speed : 30} onChange={e => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)} />
+        <TextInput size="sm" mono type="number" label="临时生命 (Temp HP)" value={char.tempHp !== undefined ? char.tempHp : 0} onChange={e => handleUpdateBasicInfo(char.id, 'tempHp', Math.max(0, parseInt(e.target.value, 10) || 0))} />
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <SheetKey>等级与生命骰</SheetKey>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 'var(--space-3)', alignItems: 'end' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+              height: 'var(--control-h-sm)',
+              padding: '0 var(--space-3)',
+              background: 'var(--surface-sunken)',
+              boxShadow: 'inset 0 0 0 1px var(--line-hairline)'
+            }}
+          >
+            <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)' }}>等级</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-numeral)', fontWeight: 'var(--weight-semibold)', color: 'var(--accent)' }}>
+              {char.level || 1}
+            </span>
+            <span style={{ display: 'flex', gap: '2px' }}>
+              <IconButton icon="minus" size="sm" tone="danger" onClick={() => handleLevelChange(char, -1)} title="降低等级并撤销生命提升 (防止误操作)" />
+              <IconButton icon="plus" size="sm" onClick={() => handleLevelChange(char, 1)} title="升级并掷生命骰增加最大生命值" />
+            </span>
+          </div>
+          <Select
+            size="sm"
+            value={char.hitDice || 'd8'}
+            onChange={e => handleUpdateBasicInfo(char.id, 'hitDice', e.target.value)}
+            options={[
+              { value: 'd6', label: '生命骰: d6' },
+              { value: 'd8', label: '生命骰: d8' },
+              { value: 'd10', label: '生命骰: d10' },
+              { value: 'd12', label: '生命骰: d12' }
+            ]}
+          />
+        </div>
+      </section>
+
+      {char.excelPath && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--type-meta)', color: 'var(--pigment-verdigris)' }}>
+          <i className="ph-fill ph-file-xls" style={{ fontSize: 12 }} aria-hidden="true" />
+          已同步 Excel: [ {char.excelPath} ]
+        </span>
+      )}
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <SheetKey>技能资源槽追踪</SheetKey>
+        {char.resources && char.resources.length > 0 ? (
+          char.resources.map((res, resIndex) => (
+            <ResourceSlot
+              key={resIndex}
+              name={res.name}
+              value={res.value}
+              max={res.max}
+              resetType={res.resetType === 'short_rest' ? 'short' : res.resetType === 'long_rest' ? 'long' : 'turn'}
+              onSpend={() => handleAdjustResource(char.id, resIndex, -1)}
+              onRestore={() => handleAdjustResource(char.id, resIndex, 1)}
+              onDelete={() => handleDeleteResource(char.id, resIndex, res.name)}
+            />
+          ))
+        ) : (
+          <EmptyState compact icon="flask" text="暂无任何资源追踪槽。可通过下方添加。" />
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.4fr auto', gap: 'var(--space-2)' }}>
+          <TextInput size="sm" placeholder="新增槽名 (如: 法术位)" value={cardResName} onChange={e => setCardResName(e.target.value)} />
+          <TextInput size="sm" mono type="number" placeholder="上限" value={cardResMax} onChange={e => setCardResMax(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+          <Select
+            size="sm"
+            value={cardResResetType}
+            onChange={e => setCardResResetType(e.target.value)}
+            options={[
+              { value: 'turn', label: '每回合' },
+              { value: 'short_rest', label: '短休' },
+              { value: 'long_rest', label: '长休' }
+            ]}
+          />
+          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddResourceToCard(char.id)} title="为此角色增设一个资源槽" />
+        </div>
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <SheetKey>特殊状态管理</SheetKey>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+          {char.conditions && char.conditions.length > 0 ? (
+            char.conditions.map(cond => (
+              <Badge
+                key={cond.id}
+                tone="ochre"
+                variant="soft"
+                onRemove={() => handleRemoveConditionCard(char.id, cond.id)}
+              >
+                {cond.name}（{cond.duration === 'permanent' ? '∞' : `${cond.duration} 回合`}）
+              </Badge>
+            ))
+          ) : (
+            <span style={{ fontSize: 'var(--type-meta)', color: 'var(--pigment-verdigris)', fontStyle: 'italic' }}>
+              正常 (无负面/正面特殊状态)
+            </span>
+          )}
+        </div>
+        <div
           style={{
-            flex: 1,
-            height: '28px',
-            fontSize: '11px',
-            background: 'rgba(0,0,0,0.3)',
-            border: '1px solid var(--border-light)',
-            borderRadius: '4px',
-            padding: '0 8px',
-            color: 'var(--text-primary)',
-            outline: 'none'
-          }}
-        />
-        <button 
-          onClick={handleCreateGroup}
-          className="btn btn-secondary"
-          style={{
-            height: '28px',
-            padding: '0 10px',
-            fontSize: '11px',
             display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            margin: 0,
-            cursor: 'pointer'
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+            padding: 'var(--space-3)',
+            background: 'var(--surface-sunken)',
+            boxShadow: 'inset 0 0 0 1px var(--line-hairline)'
           }}
-          title="创建新角色分组"
         >
-          <FolderPlus size={12} />
-          <span>新建</span>
-        </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            {['眩晕', '倒地', '定身', '中毒', '致盲', '虚弱', '狂暴', '祝福'].map(condName => (
+              <Button
+                key={condName}
+                size="sm"
+                variant="secondary"
+                onClick={() => promptCondition(char.id, condName)}
+                title={`为此角色附加 [${condName}] 状态，并指定持续回合数`}
+              >
+                {condName}
+              </Button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <TextInput
+              size="sm"
+              placeholder="手填其他自定义效果..."
+              value={customCondDraft[char.id] || ''}
+              onChange={e => setCustomCondDraft(prev => ({ ...prev, [char.id]: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                  promptCondition(char.id, e.target.value.trim());
+                  setCustomCondDraft(prev => ({ ...prev, [char.id]: '' }));
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="plus"
+              title="添加手填的自定义状态"
+              onClick={() => {
+                const name = (customCondDraft[char.id] || '').trim();
+                if (!name) return;
+                promptCondition(char.id, name);
+                setCustomCondDraft(prev => ({ ...prev, [char.id]: '' }));
+              }}
+            >
+              添加
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+        <SheetKey>核心属性</SheetKey>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 var(--space-4)' }}>
+          {Object.entries(char.stats || {}).map(([key, val]) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+              <StatPill label={customAttributeLabels[key] || key} value={val} size="sm" style={{ flex: 1, minWidth: 0 }} />
+              <IconButton icon="minus" size="sm" onClick={() => handleUpdateStat(char.id, key, val - 1)} title={`降低 ${customAttributeLabels[key] || key} 1 点`} />
+              <IconButton icon="plus" size="sm" onClick={() => handleUpdateStat(char.id, key, val + 1)} title={`提高 ${customAttributeLabels[key] || key} 1 点`} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <SheetKey>专长与特质描述</SheetKey>
+        {char.feats && Object.keys(char.feats).length > 0 ? (
+          Object.entries(char.feats).map(([k, v]) => (
+            <div
+              key={k}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 'var(--space-3)',
+                padding: 'var(--space-3)',
+                background: 'var(--surface-sunken)',
+                boxShadow: 'inset 0 0 0 1px var(--line-hairline)'
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 'var(--type-body-sm)', fontWeight: 'var(--weight-medium)', color: 'var(--text-body)' }}>{k}</div>
+                <div style={{ fontSize: 'var(--type-meta)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)' }}>{v}</div>
+              </div>
+              <IconButton icon="trash" size="sm" tone="danger" onClick={() => handleDeleteFeat(char.id, k)} title="删除此特质/技能" />
+            </div>
+          ))
+        ) : (
+          <EmptyState compact icon="scroll" text="当前没有任何专长或技能描述。" />
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 'var(--space-2)' }}>
+          <TextInput size="sm" placeholder="技能名称" value={newFeatName} onChange={e => setNewFeatName(e.target.value)} />
+          <TextInput size="sm" placeholder="效果描述" value={newFeatDesc} onChange={e => setNewFeatDesc(e.target.value)} />
+          <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddFeat(char.id)} title="为此角色添加技能 / 专长特质">添加</Button>
+        </div>
+      </section>
+
+      {char.mapId && (
+        <Button
+          variant="danger"
+          size="sm"
+          icon="map-pin-simple-area"
+          fullWidth
+          onClick={() => handleRemoveFromMap(char.id, char.name)}
+          title="把此棋子从当前地图上移除（角色卡保留）"
+        >
+          手动从地图移出
+        </Button>
+      )}
+
+      <div style={{ display: 'flex', gap: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }}>
+        <Button size="sm" variant="secondary" icon="gear-six" style={{ flex: 1 }} onClick={() => onOpenEditCharModal(char)} title="打开完整角色编辑面板">详细编辑</Button>
+        <Button size="sm" variant="secondary" icon="copy" style={{ flex: 1 }} onClick={() => onDuplicateChar(char)} title="快速复制此角色及所有当前属性和技能资源槽">快速复制</Button>
+        <Button size="sm" variant="danger" icon="trash" style={{ flex: 1 }} onClick={() => handleDeleteCharacter(char.id, char.name)} title="彻底从本战役中移除此角色卡">彻底删除</Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <div
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-3)',
+          padding: 'var(--space-4)',
+          borderBottom: 'var(--border-hairline)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-label)',
+              fontSize: 'var(--type-micro)',
+              letterSpacing: 'var(--tracking-label)',
+              textTransform: 'uppercase',
+              color: 'var(--accent)'
+            }}
+          >
+            Roster
+          </span>
+          <h3 style={{ fontSize: 'var(--type-display-sm)' }}>角色列表与生命追踪</h3>
+          <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
+            {characters.length}
+          </span>
+        </div>
+
+        <Button icon="user-plus" fullWidth onClick={onOpenAddCharModal} title="新建一张角色卡（玩家角色、NPC 或怪物）">
+          新建战役角色 / 怪物
+        </Button>
+
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="campfire"
+            style={{ flex: 1 }}
+            onClick={() => onOpenRestModal && onOpenRestModal('short')}
+            title="对选中的角色进行短休（恢复50%生命值，充能重置短休/回合资源）"
+          >
+            队伍短休
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="moon-stars"
+            style={{ flex: 1 }}
+            onClick={() => onOpenRestModal && onOpenRestModal('long')}
+            title="对选中的角色进行长休（恢复全部生命值/资源槽，重置移动力，且彻底清除负面状态）"
+          >
+            队伍长休
+          </Button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <TextInput
+            size="sm"
+            icon="folder-plus"
+            placeholder="新建分组名称 (如: 地牢伏兵)..."
+            value={newGroupName}
+            onChange={e => setNewGroupName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleCreateGroup(); }}
+          />
+          <Button size="sm" variant="secondary" icon="check" onClick={handleCreateGroup} title="创建新角色分组" />
+        </div>
       </div>
 
-      {/* 2. Characters Group List with drag drop zones and health bars */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {groups.map(group => {
           const groupChars = characters.filter(c => getCharGroupId(c) === group.id);
           const isCollapsed = collapsedGroups[group.id];
           const isDragOver = dragOverGroupId === group.id;
-
-          const groupColor = group.color || (group.id === 'group_pcs' ? 'var(--accent-blue)' : group.id === 'group_npcs' ? 'var(--accent-red)' : 'var(--text-secondary)');
+          const tone = groupTone(group);
+          const isEditing = editingGroupId === group.id;
 
           return (
-            <div 
-              key={group.id} 
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (dragOverGroupId !== group.id) setDragOverGroupId(group.id);
-              }}
-              onDragLeave={() => {
-                setDragOverGroupId(null);
-              }}
-              onDrop={(e) => {
-                setDragOverGroupId(null);
-                handleDropOnGroup(e, group.id);
-              }}
+            <div
+              key={group.id}
+              onDragOver={(e) => { e.preventDefault(); if (dragOverGroupId !== group.id) setDragOverGroupId(group.id); }}
+              onDragLeave={() => setDragOverGroupId(null)}
+              onDrop={(e) => { setDragOverGroupId(null); handleDropOnGroup(e, group.id); }}
               style={{
-                border: isDragOver ? '2px dashed var(--accent-purple)' : '1px solid rgba(255,255,255,0.03)',
-                borderLeft: `3px solid ${groupColor}`,
-                background: isDragOver ? 'rgba(192, 132, 252, 0.06)' : 'rgba(18, 20, 28, 0.25)',
-                boxShadow: isDragOver ? '0 0 15px rgba(192, 132, 252, 0.15)' : 'none',
-                borderRadius: '10px',
-                padding: '10px',
-                transition: 'all 0.2s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px'
+                background: isDragOver ? 'var(--accent-soft)' : 'transparent',
+                boxShadow: isDragOver ? 'inset 0 0 0 1px var(--accent-line)' : 'none',
+                transition: 'var(--motion-control)'
               }}
             >
-              {/* Group Header */}
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
+              <div
+                onClick={() => { if (!isEditing) toggleGroupCollapse(group.id); }}
+                style={{
+                  display: 'flex',
                   alignItems: 'center',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  paddingBottom: isCollapsed ? '0px' : '8px',
-                  borderBottom: isCollapsed ? 'none' : '1px dashed rgba(255,255,255,0.06)'
-                }}
-                onClick={() => {
-                  if (editingGroupId !== group.id) {
-                    toggleGroupCollapse(group.id);
-                  }
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-2) var(--space-4)',
+                  background: 'var(--surface-sunken)',
+                  boxShadow: `inset 2px 0 0 ${tone}`,
+                  borderTop: 'var(--border-hairline)',
+                  borderBottom: 'var(--border-hairline)',
+                  cursor: isEditing ? 'default' : 'pointer',
+                  userSelect: 'none'
                 }}
               >
-                {editingGroupId === group.id ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
-                    <Folder size={13} style={{ color: editingGroupColor, opacity: 0.7 }} />
-                    <input
-                      type="text"
-                      value={editingGroupName}
-                      onChange={(e) => setEditingGroupName(e.target.value)}
-                      className="input-text"
-                      style={{ padding: '2px 6px', fontSize: '11px', width: '100px', height: '22px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-light)', borderRadius: '4px' }}
-                      placeholder="分组名称"
-                      autoFocus
-                    />
+                {isEditing ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', width: '100%' }} onClick={e => e.stopPropagation()}>
+                    <TextInput size="sm" value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)} placeholder="分组名称" />
                     <input
                       type="color"
                       value={editingGroupColor}
-                      onChange={(e) => setEditingGroupColor(e.target.value)}
-                      style={{
-                        width: '20px',
-                        height: '20px',
-                        padding: 0,
-                        border: '1px solid var(--border-light)',
-                        borderRadius: '4px',
-                        background: 'none',
-                        cursor: 'pointer'
-                      }}
+                      onChange={e => setEditingGroupColor(e.target.value)}
                       title="修改分组颜色"
+                      style={{ width: 26, height: 26, padding: 0, background: 'none', border: '1px solid var(--line-hairline)', cursor: 'pointer', flexShrink: 0 }}
                     />
-                    <button
-                      onClick={() => handleSaveGroupEdit(group.id)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--accent-emerald)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center' }}
-                      title="保存修改"
-                    >
-                      ✔️
-                    </button>
-                    <button
-                      onClick={() => setEditingGroupId(null)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', marginLeft: '2px' }}
-                      title="取消"
-                    >
-                      ✕
-                    </button>
+                    <IconButton icon="check" size="sm" tone="accent" onClick={() => handleSaveGroupEdit(group.id)} title="保存修改" />
+                    <IconButton icon="x" size="sm" onClick={() => setEditingGroupId(null)} title="取消" />
                   </div>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', width: '12px', textAlign: 'center' }}>
-                        {isCollapsed ? '▶' : '▼'}
-                      </span>
-                      <span style={{ 
-                        fontWeight: '700', 
-                        fontSize: '12px', 
-                        color: groupColor,
-                        fontFamily: 'var(--font-heading)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        <Folder size={13} style={{ color: groupColor, opacity: 0.7 }} />
-                        {group.name}
-                      </span>
-                      <span style={{
-                        fontSize: '10px',
-                        background: 'rgba(255,255,255,0.06)',
-                        padding: '1px 5px',
-                        borderRadius: '8px',
-                        color: 'var(--text-muted)',
-                        fontWeight: 'bold'
-                      }}>
-                        {groupChars.length}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                      <button
-                        onClick={(e) => handleStartEditGroup(e, group)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          padding: '2px 4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          fontSize: '11px',
-                          opacity: 0.6,
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-                        onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
-                        title="更名与改色"
-                      >
-                        ✏️
-                      </button>
-                      {group.id !== 'group_pcs' && group.id !== 'group_npcs' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteGroup(group.id, group.name);
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            padding: '2px 4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            opacity: 0.6,
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseOver={(e) => {
-                            e.currentTarget.style.opacity = '1';
-                            e.currentTarget.style.color = 'var(--accent-red)';
-                          }}
-                          onMouseOut={(e) => {
-                            e.currentTarget.style.opacity = '0.6';
-                            e.currentTarget.style.color = 'var(--text-muted)';
-                          }}
-                          title="删除分组"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
-                    </div>
+                    <i className={`ph-fill ph-caret-${isCollapsed ? 'right' : 'down'}`} style={{ fontSize: 10, color: 'var(--text-faint)' }} aria-hidden="true" />
+                    <i className="ph-fill ph-folder" style={{ fontSize: 12, color: tone }} aria-hidden="true" />
+                    <span style={{ fontSize: 'var(--type-meta)', color: 'var(--text-body)', fontWeight: 'var(--weight-medium)' }}>{group.name}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>{groupChars.length}</span>
+                    <span style={{ flex: 1 }} />
+                    <IconButton icon="pencil-simple" size="sm" onClick={(e) => handleStartEditGroup(e, group)} title="更名与改色" />
+                    {group.id !== 'group_pcs' && group.id !== 'group_npcs' && (
+                      <IconButton
+                        icon="trash"
+                        size="sm"
+                        tone="danger"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id, group.name); }}
+                        title="删除分组"
+                      />
+                    )}
                   </>
                 )}
               </div>
 
-              {/* Group Characters List */}
               {!isCollapsed && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)' }}>
                   {groupChars.length === 0 ? (
-                    <div style={{ 
-                      padding: '16px 10px', 
-                      textAlign: 'center', 
-                      color: 'var(--text-muted)', 
-                      fontSize: '11px',
-                      fontStyle: 'italic',
-                      border: '1px dashed rgba(255,255,255,0.03)',
-                      borderRadius: '6px',
-                      background: 'rgba(0,0,0,0.1)'
-                    }}>
-                      拖动角色到此处以移动分组
-                    </div>
+                    <EmptyState compact icon="users-three" text="拖动角色到此处以移动分组" />
                   ) : (
                     groupChars.map(char => {
-                      const hpPercentage = (char.hp / char.maxHp) * 100;
                       const isExpanded = expandedCharId === char.id;
                       const isActiveChar = isInCombat && combatTurnOrder[currentTurnIndex]?.id === char.id;
+                      const conditionLabels = (char.conditions || []).map(c => c.name);
 
                       return (
-                        <div 
-                          key={char.id} 
-                          draggable={true}
+                        <div
+                          key={char.id}
+                          draggable
                           onDragStart={(e) => {
-                            // Prevent dragging if the user is clicking on interactive elements
-                            if (e.target.closest('input') || e.target.closest('select') || e.target.closest('button') || e.target.closest('textarea')) {
+                            // Interactive children must stay usable inside a draggable card.
+                            if (e.target.closest('input, select, button, textarea')) {
                               e.preventDefault();
                               return;
                             }
                             e.dataTransfer.setData('text/plain', char.id);
                           }}
-                          className={isActiveChar ? 'card-active-combat' : ''}
-                          style={{
-                            border: isActiveChar ? '1.5px solid var(--accent-purple)' : '1px solid var(--border-light)',
-                            borderRadius: '8px',
-                            background: isActiveChar ? 'rgba(168, 85, 247, 0.08)' : 'rgba(10, 11, 16, 0.25)',
-                            overflow: 'hidden',
-                            cursor: 'grab',
-                            boxShadow: isActiveChar ? '0 0 12px var(--accent-purple-glow)' : (isExpanded ? '0 0 10px rgba(192, 132, 252, 0.05)' : 'none')
-                          }}
+                          style={{ cursor: 'grab' }}
                         >
-                          {/* Header card view */}
-                          <div 
-                            onClick={() => toggleExpand(char.id)}
-                            style={{
-                              padding: '10px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '4px',
-                              background: isExpanded ? 'rgba(255, 255, 255, 0.03)' : 'transparent'
-                            }}
+                          <CharacterCard
+                            name={char.name}
+                            kind={char.type === 'PC' ? 'PC' : 'MONSTER'}
+                            level={char.level || 1}
+                            klass={char.class && char.class !== '无职业' ? char.class : undefined}
+                            hp={char.hp}
+                            maxHp={char.maxHp}
+                            tempHp={char.tempHp || 0}
+                            conditions={conditionLabels}
+                            speedRemaining={char.speed !== undefined ? char.speed : 30}
+                            activeTurn={isActiveChar}
+                            selected={isExpanded}
+                            onSelect={() => toggleExpand(char.id)}
+                            actions={<HpSteppers char={char} />}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px' }}>
-                                <strong style={{ color: char.type === 'PC' ? 'var(--accent-blue)' : 'var(--accent-red)', fontSize: '13px' }}>
-                                  {char.name}
-                                </strong>
-                                {isActiveChar && (
-                                  <span style={{ fontSize: '8px', background: 'var(--accent-amber)', color: '#000', padding: '1px 4px', borderRadius: '3px', fontWeight: '800', marginLeft: '4px', boxShadow: '0 0 8px rgba(251,191,36,0.3)' }}>
-                                    ACTIVE
-                                  </span>
-                                )}
-                                <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                                  ({char.type})
-                                </span>
-
-                                {/* Quick Action / Bonus Action triggers */}
-                                {(() => {
-                                  const actionRes = (char.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
-                                  const bonusRes = (char.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
-                                  return (
-                                    <div style={{ display: 'flex', gap: '3px', marginLeft: '6px' }} onClick={e => e.stopPropagation()}>
-                                      <div 
-                                        onClick={(e) => handleToggleQuickResource(char.id, '动作', e)}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          fontSize: '8px',
-                                          fontWeight: 'bold',
-                                          padding: '0px 3px',
-                                          height: '14px',
-                                          borderRadius: '3px',
-                                          cursor: 'pointer',
-                                          background: actionRes.value > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                          color: actionRes.value > 0 ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                                          border: `1px solid ${actionRes.value > 0 ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-light)'}`,
-                                          transition: 'all 0.2s',
-                                          userSelect: 'none'
-                                        }}
-                                        title={actionRes.value > 0 ? '点击消耗 [动作]' : '点击恢复 [动作]'}
-                                      >
-                                        ⚔️ {actionRes.value > 0 ? '可用动' : '已用动'}
-                                      </div>
-                                      <div 
-                                        onClick={(e) => handleToggleQuickResource(char.id, '附赠动作', e)}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          fontSize: '8px',
-                                          fontWeight: 'bold',
-                                          padding: '0px 3px',
-                                          height: '14px',
-                                          borderRadius: '3px',
-                                          cursor: 'pointer',
-                                          background: bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                          color: bonusRes.value > 0 ? 'var(--accent-purple)' : 'var(--text-muted)',
-                                          border: `1px solid ${bonusRes.value > 0 ? 'rgba(139, 92, 246, 0.3)' : 'var(--border-light)'}`,
-                                          transition: 'all 0.2s',
-                                          userSelect: 'none'
-                                        }}
-                                        title={bonusRes.value > 0 ? '点击消耗 [附赠动作]' : '点击恢复 [附赠动作]'}
-                                      >
-                                        ⚡ {bonusRes.value > 0 ? '可用附' : '已用附'}
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                              
-                              {/* Quick HP Adjustment */}
-                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-                                <button onClick={() => adjustHp(char.id, -1)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>-1</button>
-                                <button onClick={() => adjustHp(char.id, -5)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>-5</button>
-                                
-                                <span style={{ fontSize: '11px', minWidth: '46px', textAlign: 'center', fontWeight: 'bold' }}>
-                                  {char.hp}
-                                  {char.tempHp > 0 && (
-                                    <span style={{ color: 'var(--accent-purple)', fontSize: '10px', marginLeft: '1.5px', textShadow: '0 0 4px var(--accent-purple-glow)' }} title={`包含 ${char.tempHp} 点临时生命缓冲垫`}>
-                                      +{char.tempHp}
-                                    </span>
-                                  )}
-                                  /{char.maxHp}
-                                </span>
-                                
-                                <button onClick={() => adjustHp(char.id, 1)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>+1</button>
-                                <button onClick={() => adjustHp(char.id, 5)} className="btn btn-secondary" style={{ padding: '2px 5px', fontSize: '10px', height: '18px' }}>+5</button>
-                              </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                              <QuickActions char={char} />
+                              <span style={{ flex: 1 }} />
+                              <StatPill label="AC" value={char.ac !== undefined ? char.ac : 10} size="sm" style={{ flex: '0 0 auto' }} />
+                              <StatPill
+                                label="先攻"
+                                value={char.initiative !== undefined ? (char.initiative >= 0 ? `+${char.initiative}` : char.initiative) : '+0'}
+                                size="sm"
+                                style={{ flex: '0 0 auto' }}
+                              />
+                              <i
+                                className={`ph-fill ph-caret-${isExpanded ? 'up' : 'down'}`}
+                                style={{ fontSize: 11, color: 'var(--text-faint)' }}
+                                aria-hidden="true"
+                              />
                             </div>
-
-                            {/* Subtitle labels (Class, AC, Initiative, Speed badges) */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px', fontSize: '9px' }}>
-                              <span style={{ padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                🛡️ {char.ac !== undefined ? char.ac : 10}
-                              </span>
-                              <span style={{ padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                ⚡ {char.initiative !== undefined ? (char.initiative >= 0 ? `+${char.initiative}` : char.initiative) : '+0'}
-                              </span>
-                              <span style={{ padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                🏃 {char.speed !== undefined ? char.speed : 30}ft
-                              </span>
-                              {char.class && char.class !== '无职业' && (
-                                <span style={{ padding: '1px 5px', borderRadius: '4px', background: 'rgba(192,132,252,0.1)', color: 'var(--accent-purple)', fontWeight: 'bold' }}>
-                                  {char.class}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Custom Health Bar */}
-                          <div style={{ height: '3px', background: 'rgba(255, 255, 255, 0.05)', width: '100%' }}>
-                            <div 
-                              style={{ 
-                                height: '100%', 
-                                width: `${hpPercentage}%`, 
-                                background: hpPercentage > 50 ? 'var(--accent-emerald)' : hpPercentage > 20 ? 'var(--accent-amber)' : 'var(--accent-red)',
-                                transition: 'width 0.3s ease'
-                              }}
-                            />
-                          </div>
-
-                          {/* Expand details for customized attributes */}
-                          {isExpanded && (
-                            <div style={{ padding: '12px', borderTop: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.1)' }}>
-                              
-                              {/* Basic Info edit (Name, Class, Max HP, AC, Initiative, Speed) */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px' }}>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>角色/怪物名称</span>
-                                  <input 
-                                    type="text"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.name}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'name', e.target.value)}
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>职业 (Class)</span>
-                                  <input 
-                                    type="text"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.class || ''}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'class', e.target.value)}
-                                    placeholder="无职业"
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>最大生命 (Max HP)</span>
-                                  <input 
-                                    type="number"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.maxHp}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'maxHp', e.target.value)}
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>护甲值 (AC)</span>
-                                  <input 
-                                    type="number"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.ac !== undefined ? char.ac : 10}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'ac', parseInt(e.target.value, 10) || 0)}
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>先攻加成 (Initiative)</span>
-                                  <input 
-                                    type="number"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.initiative !== undefined ? char.initiative : 0}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'initiative', parseInt(e.target.value, 10) || 0)}
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>移动速度 (Speed ft)</span>
-                                  <input 
-                                    type="number"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.speed !== undefined ? char.speed : 30}
-                                    onChange={(e) => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)}
-                                  />
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>临时生命 (Temp HP)</span>
-                                  <input 
-                                    type="number"
-                                    className="input-text"
-                                    style={{ padding: '4px 8px', fontSize: '11px', marginTop: '2px', background: 'rgba(255,255,255,0.02)' }}
-                                    value={char.tempHp !== undefined ? char.tempHp : 0}
-                                    onChange={(e) => {
-                                      const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                      handleUpdateBasicInfo(char.id, 'tempHp', val);
-                                    }}
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Level & Hit Dice Upgrade Controls */}
-                              <div style={{ borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  🛡️ 等级与生命骰升级 (Level & Hit Dice Upgrades)
-                                </span>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', alignItems: 'center' }}>
-                                  {/* Level Control */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.02)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-light)', justifyContent: 'space-between' }}>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                      等级: <strong style={{ color: 'var(--accent-purple)', fontSize: '13px' }}>{char.level || 1}</strong>
-                                    </span>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleLevelChange(char, -1)}
-                                        style={{ border: 'none', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', width: '22px', height: '22px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}
-                                        title="降低等级并撤销生命提升 (防止误操作)"
-                                      >
-                                        -
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleLevelChange(char, 1)}
-                                        style={{ border: 'none', background: 'rgba(52, 211, 153, 0.15)', color: 'var(--accent-emerald)', width: '22px', height: '22px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}
-                                        title="升级并掷生命骰增加最大生命值"
-                                      >
-                                        +
-                                      </button>
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Hit Dice Dropdown */}
-                                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                                    <select
-                                      className="input-text"
-                                      style={{ height: '32px', padding: '0 6px', fontSize: '11px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)', width: '100%', outline: 'none' }}
-                                      value={char.hitDice || 'd8'}
-                                      onChange={(e) => handleUpdateBasicInfo(char.id, 'hitDice', e.target.value)}
-                                    >
-                                      <option value="d6">生命骰: d6</option>
-                                      <option value="d8">生命骰: d8</option>
-                                      <option value="d10">生命骰: d10</option>
-                                      <option value="d12">生命骰: d12</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Local Excel binding if exists */}
-                              {char.excelPath && (
-                                <div style={{ fontSize: '11px', color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <FileText size={10} />
-                                  <span>已同步 Excel: [ {char.excelPath} ]</span>
-                                </div>
-                              )}
-
-                              {/* 3. Skill Resources slots tracking */}
-                              <div style={{ borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px' }}>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                                  <Award size={10} style={{ color: 'var(--accent-purple)' }} /> 🔋 技能资源槽追踪 (Spell & Feature Slots)
-                                </span>
-                                
-                                {/* Resource list with quick adjustment steppers */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  {char.resources && char.resources.length > 0 ? (
-                                    char.resources.map((res, resIndex) => {
-                                      const percentage = (res.value / res.max) * 100;
-                                      return (
-                                        <div 
-                                          key={resIndex}
-                                          style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '4px',
-                                            background: 'rgba(255,255,255,0.02)',
-                                            padding: '8px 10px',
-                                            borderRadius: '6px',
-                                            border: '1px solid var(--border-light)'
-                                          }}
-                                        >
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--text-primary)' }}>{res.name}</span>
-                                              <span style={{ fontSize: '8px', padding: '1px 3px', borderRadius: '3px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontWeight: 'normal' }}>
-                                                {res.resetType === 'turn' ? '每回合' : res.resetType === 'short_rest' ? '短休' : '长休'}
-                                              </span>
-                                            </div>
-                                            
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                              <button 
-                                                onClick={() => handleAdjustResource(char.id, resIndex, -1)}
-                                                className="btn btn-secondary"
-                                                style={{ padding: '1px 5px', fontSize: '10px', height: '18px', width: '22px' }}
-                                                title="消耗 1 次"
-                                              >
-                                                -
-                                              </button>
-                                              
-                                              <span style={{ fontSize: '11px', fontWeight: 'bold', minWidth: '40px', textAlign: 'center' }}>
-                                                {res.value} / {res.max}
-                                              </span>
-
-                                              <button 
-                                                onClick={() => handleAdjustResource(char.id, resIndex, 1)}
-                                                className="btn btn-secondary"
-                                                style={{ padding: '1px 5px', fontSize: '10px', height: '18px', width: '22px' }}
-                                                title="恢复 1 次"
-                                              >
-                                                +
-                                              </button>
-                                              
-                                              <button 
-                                                onClick={() => handleDeleteResource(char.id, resIndex, res.name)}
-                                                style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px', marginLeft: '4px' }}
-                                                title="删除此资源槽"
-                                              >
-                                                ✕
-                                              </button>
-                                            </div>
-                                          </div>
-
-                                          {/* Tiny progress bar */}
-                                          <div style={{ height: '3px', background: 'rgba(255,255,255,0.05)', width: '100%', borderRadius: '2px', overflow: 'hidden' }}>
-                                            <div style={{
-                                              height: '100%',
-                                              width: `${percentage}%`,
-                                              background: 'var(--accent-purple)',
-                                              boxShadow: '0 0 5px var(--accent-purple-glow)',
-                                              transition: 'width 0.2s ease'
-                                            }} />
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  ) : (
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px' }}>
-                                      暂无任何资源追踪槽。可通过下方添加。
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Add Resource to existing character form */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr auto', gap: '6px', alignItems: 'center', marginTop: '10px', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                                  <input 
-                                    type="text" 
-                                    placeholder="新增槽名 (如: 法术位)"
-                                    className="input-text"
-                                    style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(255,255,255,0.01)' }}
-                                    value={cardResName}
-                                    onChange={e => setCardResName(e.target.value)}
-                                  />
-                                  <input 
-                                    type="number" 
-                                    placeholder="上限"
-                                    className="input-text"
-                                    style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(255,255,255,0.01)' }}
-                                    value={cardResMax}
-                                    onChange={e => setCardResMax(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                  />
-                                  <select
-                                    className="input-text"
-                                    style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(255,255,255,0.01)', height: '24px', cursor: 'pointer' }}
-                                    value={cardResResetType}
-                                    onChange={e => setCardResResetType(e.target.value)}
-                                  >
-                                    <option value="turn">每回合</option>
-                                    <option value="short_rest">短休</option>
-                                    <option value="long_rest">长休</option>
-                                  </select>
-                                  <button 
-                                    onClick={() => handleAddResourceToCard(char.id)}
-                                    className="btn btn-secondary"
-                                    style={{ padding: '4px 8px', fontSize: '11px', height: '24px', margin: 0 }}
-                                  >
-                                    + 增设
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* 3.5 Conditions Status Management */}
-                              <div style={{ borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px' }}>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                                  <ShieldAlert size={10} style={{ color: 'var(--accent-red)' }} /> 🛡️ 特殊状态管理 (Active Conditions)
-                                </span>
-
-                                {/* Render current conditions */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
-                                  {char.conditions && char.conditions.map(cond => (
-                                    <span 
-                                      key={cond.id} 
-                                      style={{ 
-                                        fontSize: '10px', 
-                                        padding: '2px 6px', 
-                                        background: 'rgba(239, 68, 68, 0.15)', 
-                                        color: 'var(--accent-red)', 
-                                        borderRadius: '4px',
-                                        border: '1px solid rgba(239,68,68,0.3)',
-                                        fontWeight: 'bold',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '2px',
-                                        whiteSpace: 'nowrap'
-                                      }}
-                                    >
-                                      {cond.name}({cond.duration === 'permanent' ? '∞' : `${cond.duration}r`})
-                                      <button 
-                                        onClick={() => handleRemoveConditionCard(char.id, cond.id)}
-                                        style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontSize: '9px', fontWeight: 'bold', padding: 0 }}
-                                        title="清除状态"
-                                      >
-                                        ✕
-                                      </button>
-                                    </span>
-                                  ))}
-
-                                  {(!char.conditions || char.conditions.length === 0) && (
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>正常 (无负面/正面特殊状态)</span>
-                                  )}
-                                </div>
-
-                                {/* Preset condition quick buttons & custom hand-filled condition form */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.15)', padding: '6px', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {['眩晕', '倒地', '定身', '中毒', '致盲', '虚弱', '狂暴', '祝福'].map(condName => (
-                                      <button
-                                        key={condName}
-                                        type="button"
-                                        onClick={() => {
-                                          const rounds = prompt(`请输入 [${condName}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                                          if (rounds !== null) {
-                                            handleAddConditionCard(char.id, condName, rounds);
-                                          }
-                                        }}
-                                        className="btn btn-secondary"
-                                        style={{ fontSize: '9px', padding: '2px 4px', height: '18px', margin: 0, cursor: 'pointer' }}
-                                      >
-                                        {condName}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  
-                                  {/* Custom hand-fill condition input */}
-                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                    <input 
-                                      type="text" 
-                                      placeholder="手填其他自定义效果..."
-                                      id={`customCondCardInput_${char.id}`}
-                                      className="input-text"
-                                      style={{ fontSize: '10px', padding: '2px 6px', height: '22px', flex: 1, background: 'rgba(255,255,255,0.01)' }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && e.target.value.trim()) {
-                                          const name = e.target.value.trim();
-                                          const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                                          if (rounds !== null) {
-                                            handleAddConditionCard(char.id, name, rounds);
-                                          }
-                                          e.target.value = '';
-                                        }
-                                      }}
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const input = document.getElementById(`customCondCardInput_${char.id}`);
-                                        if (input && input.value.trim()) {
-                                          const name = input.value.trim();
-                                          const rounds = prompt(`请输入 [${name}] 持续回合数 (数字，或输入 permanent 为永久):`, '3');
-                                          if (rounds !== null) {
-                                            handleAddConditionCard(char.id, name, rounds);
-                                          }
-                                          input.value = '';
-                                        }
-                                      }}
-                                      className="btn btn-secondary"
-                                      style={{ fontSize: '10px', padding: '0 8px', height: '22px', margin: 0, cursor: 'pointer' }}
-                                    >
-                                      添加
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Attribute stats view / edit */}
-                              <div style={{ borderBottom: '1px dashed var(--border-light)', paddingBottom: '10px' }}>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                                  <Settings size={10} /> 修改自制 6维/非标属性
-                                </span>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                                  {Object.entries(char.stats || {}).map(([key, val]) => (
-                                    <div key={key} className="custom-stat-pill" style={{ padding: '4px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
-                                      <span className="stat-name" style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85px' }} title={customAttributeLabels[key] || key}>{customAttributeLabels[key] || key}</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        <button 
-                                          type="button" 
-                                          onClick={() => handleUpdateStat(char.id, key, val - 1)}
-                                          style={{ border: 'none', background: 'rgba(255,255,255,0.1)', color: 'var(--text-primary)', width: '16px', height: '16px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}
-                                        >
-                                          -
-                                        </button>
-                                        <input 
-                                          type="number"
-                                          value={val}
-                                          onChange={(e) => handleUpdateStat(char.id, key, e.target.value)}
-                                          style={{
-                                            width: '32px',
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '12px',
-                                            fontWeight: 'bold',
-                                            textAlign: 'center',
-                                            padding: 0
-                                          }}
-                                        />
-                                        <button 
-                                          type="button" 
-                                          onClick={() => handleUpdateStat(char.id, key, val + 1)}
-                                          style={{ border: 'none', background: 'rgba(255,255,255,0.1)', color: 'var(--text-primary)', width: '16px', height: '16px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* Feats and traits view & deletion */}
-                              <div>
-                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                                  <Award size={10} /> 专长与特质描述 (可增删技能)
-                                </span>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  {char.feats && Object.keys(char.feats).length > 0 ? (
-                                    Object.entries(char.feats).map(([k, v]) => (
-                                      <div 
-                                        key={k} 
-                                        style={{ 
-                                          background: 'rgba(0,0,0,0.2)', 
-                                          padding: '6px 8px', 
-                                          borderRadius: '4px', 
-                                          fontSize: '11px', 
-                                          color: 'var(--text-secondary)',
-                                          display: 'flex',
-                                          justifyContent: 'space-between',
-                                          alignItems: 'start',
-                                          gap: '8px'
-                                        }}
-                                      >
-                                        <div style={{ flex: 1 }}>
-                                          <strong style={{ color: 'var(--text-primary)' }}>{k}</strong>: {v}
-                                        </div>
-                                        <button 
-                                          type="button"
-                                          onClick={() => handleDeleteFeat(char.id, k)}
-                                          style={{
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: 'var(--accent-red)',
-                                            cursor: 'pointer',
-                                            padding: '0 2px',
-                                            fontSize: '12px',
-                                            fontWeight: 'bold'
-                                          }}
-                                          title="删除此特质/技能"
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '4px' }}>
-                                      当前没有任何专长或技能描述。
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Quick Add Feat Form */}
-                                <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '8px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 'bold' }}>+ 添加技能 / 专长特质</span>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: '6px', alignItems: 'center' }}>
-                                    <input 
-                                      type="text" 
-                                      placeholder="技能名称"
-                                      className="input-text" 
-                                      style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(255,255,255,0.02)' }}
-                                      value={newFeatName}
-                                      onChange={(e) => setNewFeatName(e.target.value)}
-                                    />
-                                    <input 
-                                      type="text" 
-                                      placeholder="效果描述"
-                                      className="input-text" 
-                                      style={{ padding: '4px 6px', fontSize: '11px', background: 'rgba(255,255,255,0.02)' }}
-                                      value={newFeatDesc}
-                                      onChange={(e) => setNewFeatDesc(e.target.value)}
-                                    />
-                                    <button 
-                                      type="button"
-                                      className="btn btn-secondary" 
-                                      style={{ padding: '4px 8px', fontSize: '11px' }}
-                                      onClick={() => handleAddFeat(char.id)}
-                                    >
-                                      添加
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {char.mapId && (
-                                <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: '10px', marginTop: '10px' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveFromMap(char.id, char.name)}
-                                    className="btn"
-                                    style={{
-                                      width: '100%',
-                                      padding: '6px 12px',
-                                      fontSize: '11px',
-                                      color: '#f87171',
-                                      background: 'rgba(248, 113, 113, 0.05)',
-                                      border: '1px solid rgba(248, 113, 113, 0.25)',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      gap: '4px',
-                                      transition: 'all 0.2s ease'
-                                    }}
-                                    onMouseOver={(e) => {
-                                      e.currentTarget.style.background = 'rgba(248, 113, 113, 0.15)';
-                                      e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.5)';
-                                      e.currentTarget.style.boxShadow = '0 0 8px rgba(248, 113, 113, 0.2)';
-                                    }}
-                                    onMouseOut={(e) => {
-                                      e.currentTarget.style.background = 'rgba(248, 113, 113, 0.05)';
-                                      e.currentTarget.style.borderColor = 'rgba(248, 113, 113, 0.25)';
-                                      e.currentTarget.style.boxShadow = 'none';
-                                    }}
-                                  >
-                                    📍 手动从地图移出
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Complete Delete, Edit & Duplicate buttons for this Character/NPC */}
-                              <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: '10px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
-                                <button 
-                                  type="button" 
-                                  onClick={() => onOpenEditCharModal(char)}
-                                  className="btn btn-secondary"
-                                  style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', border: '1px solid rgba(192, 132, 252, 0.3)', flex: 1, justifyContent: 'center' }}
-                                >
-                                  ⚙️ 详细编辑
-                                </button>
-                                <button 
-                                  type="button" 
-                                  onClick={() => onDuplicateChar(char)}
-                                  className="btn btn-secondary"
-                                  style={{ 
-                                    padding: '4px 8px', 
-                                    fontSize: '11px', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: '3px', 
-                                    cursor: 'pointer', 
-                                    border: '1px solid rgba(96, 165, 250, 0.3)', 
-                                    background: 'rgba(96, 165, 250, 0.05)',
-                                    flex: 1,
-                                    justifyContent: 'center'
-                                  }}
-                                  title="快速复制此角色及所有当前属性和技能资源槽"
-                                >
-                                  <span>👥 快速复制</span>
-                                </button>
-                                <button 
-                                  type="button" 
-                                  onClick={() => handleDeleteCharacter(char.id, char.name)}
-                                  className="btn btn-danger"
-                                  style={{ padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', background: 'rgba(239, 68, 68, 0.15)', flex: 1, justifyContent: 'center' }}
-                                >
-                                  <Trash2 size={11} /> 彻底删除
-                                </button>
-                              </div>
-
-                            </div>
-                          )}
+                            {isExpanded && <ExpandedSheet char={char} />}
+                          </CharacterCard>
                         </div>
                       );
                     })
@@ -1557,8 +1035,7 @@ function CharacterList({
           );
         })}
       </div>
-
-    </div>
+    </>
   );
 }
 
