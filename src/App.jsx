@@ -4,8 +4,14 @@ import DiceRoller from './components/DiceRoller';
 import CampaignWorkspace from './components/CampaignWorkspace';
 import ActionLog from './components/ActionLog';
 import FloatingNote from './components/FloatingNote';
-import { assertValidCampaign, MAX_CAMPAIGN_FILE_BYTES } from './utils/campaignValidation';
+import { CURRENT_SCHEMA_VERSION, MAX_CAMPAIGN_FILE_BYTES, prepareCampaign } from './utils/campaignValidation';
 import { resolveSyncToken } from './utils/syncToken';
+import { createLocalRecoveryPoint, describeStorageError, listLocalRecoveryPoints, loadCampaignSnapshot, restoreLocalRecoveryPoint, safeWriteSetting, saveCampaignSnapshot } from './utils/campaignSnapshotStore';
+import { createCampaignExport, openCampaignExport } from './utils/campaignExport';
+import { serializeJsonOffThread } from './utils/jsonSerialization';
+import { decideInitialSync, decidePollingSync } from './utils/syncDecision';
+import { buildPublicPresentationSnapshot, DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings, PRESENTATION_PROTOCOL } from './utils/presentation';
+import PresentationControls from './components/PresentationControls';
 import { Shield, UserPlus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // --- Helper to ensure all characters have default resources ---
@@ -255,11 +261,39 @@ export default function App() {
   const serverRevisionRef = React.useRef(null);
   const isServerUpdateInProgress = React.useRef(false);
   const isSyncInitialized = React.useRef(false);
+  const localDirtyRef = React.useRef(false);
+  const isPushInFlight = React.useRef(false);
   const [isSyncEnabled, setIsSyncEnabled] = useState(() => getSavedState('dmforge_isSyncEnabled', true));
   const [syncToken, setSyncToken] = useState(() => {
     return resolveSyncToken(window.location.hash, getSavedState('dmforge_syncToken', ''));
   });
   const [isSyncConnected, setIsSyncConnected] = useState(true);
+  const presentationSessionRef = React.useRef((() => {
+    try {
+      const existing = sessionStorage.getItem('dmforge_presentation_session');
+      if (existing) return existing;
+      const created = crypto.randomUUID();
+      sessionStorage.setItem('dmforge_presentation_session', created);
+      return created;
+    } catch { return crypto.randomUUID(); }
+  })());
+  const presenterWindowRef = React.useRef(null);
+  const presentationLastSeenRef = React.useRef(0);
+  const [presentationConnected, setPresentationConnected] = useState(false);
+  const [presentationWindowOpen, setPresentationWindowOpen] = useState(false);
+  const [presentationFallbackUrl, setPresentationFallbackUrl] = useState('');
+  const [presentationCamera, setPresentationCamera] = useState({ scale: 1, x: 0, y: 0 });
+  const [presentationInteraction, setPresentationInteraction] = useState(null);
+  const [presentationSettings, setPresentationSettings] = useState(() => normalizePresentationSettings(getSavedState(
+    'dmforge_presentationSettingsV2',
+    { ...getSavedState('dmforge_presentationSettings', DEFAULT_PRESENTATION_SETTINGS), showBlockedCells: true }
+  )));
+  const [storageReady, setStorageReady] = useState(false);
+  const [storageError, setStorageError] = useState('');
+  const [storageStatus, setStorageStatus] = useState('正在加载本地存档…');
+  const [localRecoveryPoints, setLocalRecoveryPoints] = useState([]);
+  const [syncConflict, setSyncConflict] = useState(null);
+  const [serverBackups, setServerBackups] = useState([]);
 
   const [currentTab, setCurrentTab] = useState('map'); // map, items, excel
   const [appRole, setAppRole] = useState(() => getSavedState('dmforge_appRole', 'DM'));
@@ -328,6 +362,39 @@ export default function App() {
     '智力 (Intellect)': '智力 (Intellect)',
     '神秘 (Arcane)': '神秘 (Arcane)'
   }));
+
+  useEffect(() => {
+    let active = true;
+    loadCampaignSnapshot().then(snapshot => {
+      if (!active || !snapshot) return;
+      const data = prepareCampaign(snapshot);
+      setCharacters(sanitizeCharacters(data.characters));
+      setItemPool(data.itemPool);
+      setItemTemplates(data.itemTemplates);
+      setLogs(data.logs);
+      setFloatingNotes(data.floatingNotes);
+      setMaps(data.maps);
+      setActiveMapId(data.activeMapId);
+      setExcelCards(data.excelCards);
+      setGroups(data.groups);
+      setIsInCombat(data.isInCombat);
+      setCombatRound(data.combatRound);
+      setCurrentTurnIndex(data.currentTurnIndex);
+      setCombatParticipants(data.combatParticipants);
+      setCombatTurnOrder(data.combatTurnOrder);
+      setCustomAttributeLabels(data.customAttributeLabels);
+      lastUpdatedRef.current = data.lastUpdated || 0;
+    }).catch(error => {
+      if (active) setStorageError(describeStorageError(error));
+    }).finally(() => {
+      if (active) {
+        setStorageReady(true);
+        setStorageStatus('本地存档已就绪');
+        listLocalRecoveryPoints().then(setLocalRecoveryPoints).catch(() => {});
+      }
+    });
+    return () => { active = false; };
+  }, []);
 
   const handleSetAppRole = (role) => {
     setAppRole(role);
@@ -529,6 +596,7 @@ export default function App() {
       maps,
       activeMapId,
       excelCards,
+      activeExcelCardId,
       groups,
       isInCombat,
       combatRound,
@@ -536,32 +604,141 @@ export default function App() {
       combatParticipants,
       combatTurnOrder,
       customAttributeLabels,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       lastUpdated: timestamp,
       clientId: clientId.current,
       version: '1.0.0'
     };
   };
 
+  const presentationHost = window.location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+  const presentationOrigin = `${window.location.protocol}//${presentationHost}${window.location.port ? `:${window.location.port}` : ''}`;
+  const presentationUrl = `${presentationOrigin}/presenter?session=${encodeURIComponent(presentationSessionRef.current)}`;
+  const presentationSnapshot = React.useMemo(() => buildPublicPresentationSnapshot(
+    getCampaignPayload(lastUpdatedRef.current || Date.now()), presentationSettings, presentationCamera, presentationInteraction
+  // getCampaignPayload captures the campaign fields listed in this dependency array.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels, presentationSettings, presentationCamera, presentationInteraction]);
+  const presentationChannelRef = React.useRef(null);
+  const presentationSnapshotRef = React.useRef(presentationSnapshot);
+  presentationSnapshotRef.current = presentationSnapshot;
+
+  const sendPresentationSnapshot = React.useCallback((targetWindow = presenterWindowRef.current) => {
+    const message = { protocol: PRESENTATION_PROTOCOL, sessionId: presentationSessionRef.current, type: 'SNAPSHOT', snapshot: presentationSnapshotRef.current };
+    try { if (targetWindow && !targetWindow.closed) targetWindow.postMessage(message, presentationOrigin); } catch { /* the window may be navigating */ }
+    presentationChannelRef.current?.postMessage(message);
+  }, [presentationOrigin]);
+
+  useEffect(() => {
+    safeWriteSetting('dmforge_presentationSettingsV2', normalizePresentationSettings(presentationSettings), setStorageError);
+  }, [presentationSettings]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return undefined;
+    const channel = new BroadcastChannel(`${PRESENTATION_PROTOCOL}:${presentationSessionRef.current}`);
+    presentationChannelRef.current = channel;
+    channel.onmessage = event => {
+      if (event.data?.protocol !== PRESENTATION_PROTOCOL || event.data.sessionId !== presentationSessionRef.current) return;
+      if (event.data.type === 'READY') { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); sendPresentationSnapshot(); }
+      if (event.data.type === 'PONG') { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); }
+    };
+    return () => { presentationChannelRef.current = null; channel.close(); };
+  }, [sendPresentationSnapshot]);
+
+  useEffect(() => {
+    const receive = event => {
+      const data = event.data;
+      if (event.origin !== presentationOrigin || data?.protocol !== PRESENTATION_PROTOCOL || data.sessionId !== presentationSessionRef.current) return;
+      if (data.type === 'READY') {
+        if (!presenterWindowRef.current || presenterWindowRef.current.closed) presenterWindowRef.current = event.source;
+        if (event.source !== presenterWindowRef.current) return;
+        presentationLastSeenRef.current = Date.now(); setPresentationWindowOpen(true); setPresentationConnected(true); sendPresentationSnapshot(event.source);
+      }
+      if (data.type === 'PONG' && event.source === presenterWindowRef.current) { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); }
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [presentationOrigin, sendPresentationSnapshot]);
+
+  useEffect(() => {
+    if (!presentationWindowOpen && !presentationConnected) return undefined;
+    const timer = setTimeout(() => sendPresentationSnapshot(), 120);
+    return () => clearTimeout(timer);
+  }, [presentationSnapshot, presentationWindowOpen, presentationConnected, sendPresentationSnapshot]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const target = presenterWindowRef.current;
+      if (!target || target.closed) {
+        presenterWindowRef.current = null;
+        if (presentationWindowOpen) setPresentationWindowOpen(false);
+        if (presentationLastSeenRef.current && Date.now() - presentationLastSeenRef.current > 5000) setPresentationConnected(false);
+        return;
+      }
+      setPresentationWindowOpen(true);
+      if (presentationLastSeenRef.current && Date.now() - presentationLastSeenRef.current > 5000) setPresentationConnected(false);
+      try { target.postMessage({ protocol: PRESENTATION_PROTOCOL, sessionId: presentationSessionRef.current, type: 'PING' }, presentationOrigin); }
+      catch { setPresentationConnected(false); }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [presentationOrigin, presentationWindowOpen]);
+
+  const openPresentationWindow = () => {
+    const target = window.open(presentationUrl, 'dmforge-presenter', 'popup,width=1600,height=900,resizable=yes');
+    setPresentationFallbackUrl(presentationUrl);
+    if (!target) { setPresentationWindowOpen(false); return; }
+    presenterWindowRef.current = target; setPresentationWindowOpen(true); setPresentationConnected(false); target.focus();
+  };
+  const openPresentationTab = () => {
+    const target = window.open(presentationUrl, 'dmforge-presenter');
+    if (!target) { setPresentationWindowOpen(false); return; }
+    presenterWindowRef.current = target; setPresentationWindowOpen(true); setPresentationConnected(false); target.focus();
+  };
+  const focusPresentationWindow = () => { try { presenterWindowRef.current?.focus(); } catch { /* cross-origin focus may be restricted */ } };
+  const closePresentationWindow = () => { try { presenterWindowRef.current?.close(); } catch { /* already closed */ } presenterWindowRef.current = null; setPresentationWindowOpen(false); setPresentationConnected(false); };
+  const requestPresentationFullscreen = () => setPresentationSettings(current => ({ ...current, fullscreenRequest: (current.fullscreenRequest || 0) + 1 }));
+  const handlePresentationCameraChange = React.useCallback(camera => {
+    setPresentationCamera(previous => Math.abs(previous.scale - camera.scale) < .002 && Math.abs(previous.x - camera.x) < .5 && Math.abs(previous.y - camera.y) < .5 ? previous : camera);
+  }, []);
+
   // Push state to server
-  const pushCampaignToServer = (timestamp) => {
+  const pushCampaignToServer = async (timestamp, expectedRevision = serverRevisionRef.current || '"empty"') => {
+    if (isPushInFlight.current) return;
+    isPushInFlight.current = true;
     const payload = getCampaignPayload(timestamp);
+    let body;
+    try {
+      body = await serializeJsonOffThread(payload);
+    } catch (error) {
+      setStorageError(`同步数据序列化失败：${error.message}`);
+      isPushInFlight.current = false;
+      return;
+    }
     fetch('/api/campaign', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
-        'If-Match': serverRevisionRef.current || '"empty"'
+        'If-Match': expectedRevision
       },
-      body: JSON.stringify(payload)
+      body
     })
-    .then(res => {
-      if (res.status === 409) throw new Error('SYNC_CONFLICT');
+    .then(async res => {
+      if (res.status === 409) {
+        const conflict = await res.json();
+        serverRevisionRef.current = conflict.revision || res.headers.get('ETag') || serverRevisionRef.current;
+        setSyncConflict({ local: payload, server: conflict.campaign, revision: serverRevisionRef.current });
+        setIsSyncConnected(true);
+        return null;
+      }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
       return res.json();
     })
     .then(data => {
+      if (!data) return;
       if (data.success) {
+        if (lastUpdatedRef.current === timestamp) localDirtyRef.current = false;
         setIsSyncConnected(true);
       } else {
         console.error('Server returned success: false', data);
@@ -570,12 +747,14 @@ export default function App() {
     .catch(err => {
       console.warn('Network sync error pushing to server:', err);
       setIsSyncConnected(false);
-    });
+    })
+    .finally(() => { isPushInFlight.current = false; });
   };
 
   // Helper to apply incoming server state
   const applyServerState = (data) => {
     isServerUpdateInProgress.current = true;
+    localDirtyRef.current = false;
     
     if (data.characters) setCharacters(sanitizeCharacters(data.characters));
     if (data.itemPool) setItemPool(data.itemPool);
@@ -585,6 +764,7 @@ export default function App() {
     if (data.maps) setMaps(data.maps);
     if (data.activeMapId) setActiveMapId(data.activeMapId);
     if (data.excelCards) setExcelCards(data.excelCards);
+    if (data.activeExcelCardId !== undefined) setActiveExcelCardId(data.activeExcelCardId);
     if (data.groups) setGroups(data.groups);
     if (data.isInCombat !== undefined) setIsInCombat(data.isInCombat);
     if (data.combatRound !== undefined) setCombatRound(data.combatRound);
@@ -594,24 +774,7 @@ export default function App() {
     if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
     
     lastUpdatedRef.current = data.lastUpdated;
-    localStorage.setItem('dmforge_lastUpdated', JSON.stringify(data.lastUpdated));
-
-    // Also update all localStorage keys immediately for consistency (excluding local UI states)
-    if (data.characters) localStorage.setItem('dmforge_characters', JSON.stringify(data.characters));
-    if (data.itemPool) localStorage.setItem('dmforge_itemPool', JSON.stringify(data.itemPool));
-    if (data.itemTemplates) localStorage.setItem('dmforge_itemTemplates', JSON.stringify(data.itemTemplates));
-    if (data.logs) localStorage.setItem('dmforge_logs', JSON.stringify(data.logs));
-    if (data.floatingNotes) localStorage.setItem('dmforge_floatingNotes', JSON.stringify(data.floatingNotes));
-    if (data.maps) localStorage.setItem('dmforge_maps', JSON.stringify(data.maps));
-    if (data.activeMapId) localStorage.setItem('dmforge_activeMapId', JSON.stringify(data.activeMapId));
-    if (data.excelCards) localStorage.setItem('dmforge_excelCards', JSON.stringify(data.excelCards));
-    if (data.groups) localStorage.setItem('dmforge_groups', JSON.stringify(data.groups));
-    if (data.isInCombat !== undefined) localStorage.setItem('dmforge_isInCombat', JSON.stringify(data.isInCombat));
-    if (data.combatRound !== undefined) localStorage.setItem('dmforge_combatRound', JSON.stringify(data.combatRound));
-    if (data.currentTurnIndex !== undefined) localStorage.setItem('dmforge_currentTurnIndex', JSON.stringify(data.currentTurnIndex));
-    if (data.combatParticipants) localStorage.setItem('dmforge_combatParticipants', JSON.stringify(data.combatParticipants));
-    if (data.combatTurnOrder) localStorage.setItem('dmforge_combatTurnOrder', JSON.stringify(data.combatTurnOrder));
-    if (data.customAttributeLabels) localStorage.setItem('dmforge_customAttributeLabels', JSON.stringify(data.customAttributeLabels));
+    safeWriteSetting('dmforge_lastUpdated', data.lastUpdated, setStorageError);
 
     setTimeout(() => {
       isServerUpdateInProgress.current = false;
@@ -625,7 +788,7 @@ export default function App() {
     }
     // DO NOT auto-push local changes until the initial handshake/alignment has finished successfully.
     // This prevents a newly opened device (e.g. tablet with empty/default state) from racing and overwriting the host's actual server data.
-    if (!isSyncEnabled || !isSyncInitialized.current) {
+    if (!isSyncEnabled || !isSyncInitialized.current || syncConflict) {
       return;
     }
 
@@ -638,8 +801,9 @@ export default function App() {
     }
 
     const now = Date.now();
+    localDirtyRef.current = true;
     lastUpdatedRef.current = now;
-    localStorage.setItem('dmforge_lastUpdated', JSON.stringify(now));
+    safeWriteSetting('dmforge_lastUpdated', now, setStorageError);
 
     const handler = setTimeout(() => {
       pushCampaignToServer(now);
@@ -650,11 +814,11 @@ export default function App() {
   // adding its changing identity would retrigger this debounce on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    characters, itemPool, logs, floatingNotes, maps, activeMapId,
-    excelCards, groups, isInCombat,
+    characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId,
+    excelCards, activeExcelCardId, groups, isInCombat,
     combatRound, currentTurnIndex, combatParticipants, combatTurnOrder,
     customAttributeLabels,
-    isSyncEnabled, appRole, syncToken
+    isSyncEnabled, appRole, syncToken, syncConflict
   ]);
 
   // Effect 2: Initial alignment on mount and Background polling (1500ms)
@@ -668,59 +832,30 @@ export default function App() {
 
     const alignAndSync = () => {
       fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
-        .then(res => {
+        .then(async res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
-          return res.json();
+          return { data: await res.json(), revision: res.headers.get('ETag') || '"empty"' };
         })
-        .then(data => {
+        .then(({ data, revision }) => {
           if (!active) return;
           setIsSyncConnected(true);
 
           if (data && data.lastUpdated !== undefined) {
-            // Server has state! Check if it is newer
             const localLU = getSavedState('dmforge_lastUpdated', 0);
-            if (appRole === 'PLAYER') {
-              if (data.lastUpdated !== localLU) {
-                console.log('LAN Sync (PLAYER): Aligning with server state (Server:', data.lastUpdated, 'Local:', localLU, ')');
-                applyServerState(data);
-              }
-              isSyncInitialized.current = true;
-            } else {
-              if (data.lastUpdated > localLU) {
-                // Server is newer, pull it!
-                console.log('LAN Sync: Pulling newer state from server (Server:', data.lastUpdated, 'Local:', localLU, ')');
-                applyServerState(data);
-                // Delay enabling auto-push until the pulled state is fully rendered and settled
-                setTimeout(() => {
-                  isSyncInitialized.current = true;
-                }, 500);
-              } else if (data.lastUpdated < localLU) {
-                // Local is newer, push it!
-                console.log('LAN Sync: Initial push of newer local state to server (Server:', data.lastUpdated, 'Local:', localLU, ')');
-                pushCampaignToServer(localLU);
-                setTimeout(() => {
-                  isSyncInitialized.current = true;
-                }, 500);
-              } else {
-                console.log('LAN Sync: Initial align matched. Device is in sync.');
-                isSyncInitialized.current = true;
-              }
-            }
+            const action = decideInitialSync({ role: appRole, serverHasState: true, serverTimestamp: data.lastUpdated, localTimestamp: localLU });
+            if (action === 'pull-server') applyServerState(data);
+            if (action === 'conflict') setSyncConflict({ local: getCampaignPayload(localLU || Date.now()), server: data, revision });
+            if (action === 'matched') localDirtyRef.current = false;
+            serverRevisionRef.current = revision;
+            isSyncInitialized.current = true;
           } else {
-            // Server is empty
-            if (appRole === 'PLAYER') {
-              console.log('LAN Sync (PLAYER): Server is empty, nothing to pull.');
-              isSyncInitialized.current = true;
-            } else {
-              // Server is empty, initialize server with local state
-              console.log('LAN Sync: Server is empty. Initializing server with local state.');
+            const action = decideInitialSync({ role: appRole, serverHasState: false, serverTimestamp: 0, localTimestamp: getSavedState('dmforge_lastUpdated', 0) });
+            if (action === 'initialize-server') {
               const localLU = getSavedState('dmforge_lastUpdated', 0) || Date.now();
-              pushCampaignToServer(localLU);
-              setTimeout(() => {
-                isSyncInitialized.current = true;
-              }, 500);
+              serverRevisionRef.current = revision;
+              pushCampaignToServer(localLU, revision);
             }
+            isSyncInitialized.current = true;
           }
         })
         .catch(err => {
@@ -751,27 +886,24 @@ export default function App() {
       }
 
       fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
-        .then(res => {
+        .then(async res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          serverRevisionRef.current = res.headers.get('ETag') || serverRevisionRef.current;
-          return res.json();
+          return { data: await res.json(), revision: res.headers.get('ETag') || '"empty"' };
         })
-        .then(data => {
+        .then(({ data, revision }) => {
           if (!active) return;
           setIsSyncConnected(true);
 
           if (data && data.lastUpdated !== undefined) {
-            const localLU = getSavedState('dmforge_lastUpdated', 0);
-            if (appRole === 'PLAYER') {
-              if (data.lastUpdated !== localLU) {
-                console.log('LAN Sync (PLAYER): Polled server state changed. Syncing.');
-                applyServerState(data);
-              }
-            } else {
-              if (data.clientId !== clientId.current && data.lastUpdated > localLU) {
-                console.log('LAN Sync: Polling found newer state from another device. Syncing.');
-                applyServerState(data);
-              }
+            const action = decidePollingSync({ role: appRole, revisionChanged: revision !== serverRevisionRef.current, localDirty: localDirtyRef.current, conflictOpen: Boolean(syncConflict) });
+            if (action === 'retry-push') pushCampaignToServer(lastUpdatedRef.current || Date.now(), revision);
+            if (action === 'pull-server') {
+              applyServerState(data);
+              serverRevisionRef.current = revision;
+            }
+            if (action === 'conflict') {
+              setSyncConflict({ local: getCampaignPayload(lastUpdatedRef.current || Date.now()), server: data, revision });
+              serverRevisionRef.current = revision;
             }
           }
         })
@@ -789,106 +921,62 @@ export default function App() {
   // Recreate polling only when its operating mode changes. The helper reads the
   // current campaign snapshot used during this effect's alignment lifecycle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSyncEnabled, appRole, syncToken]);
+  }, [isSyncEnabled, appRole, syncToken, syncConflict]);
 
   // --- Auto-Save Effects ---
   useEffect(() => {
-    localStorage.setItem('dmforge_isSyncEnabled', JSON.stringify(isSyncEnabled));
+    safeWriteSetting('dmforge_isSyncEnabled', isSyncEnabled, setStorageError);
   }, [isSyncEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_syncToken', JSON.stringify(syncToken));
+    safeWriteSetting('dmforge_syncToken', syncToken, setStorageError);
     if (new URLSearchParams(window.location.hash.slice(1)).has('syncToken')) {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
   }, [syncToken]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_leftSidebarWidth', JSON.stringify(leftSidebarWidth));
+    safeWriteSetting('dmforge_leftSidebarWidth', leftSidebarWidth, setStorageError);
   }, [leftSidebarWidth]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_rightSidebarWidth', JSON.stringify(rightSidebarWidth));
+    safeWriteSetting('dmforge_rightSidebarWidth', rightSidebarWidth, setStorageError);
   }, [rightSidebarWidth]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_isLeftSidebarCollapsed', JSON.stringify(isLeftSidebarCollapsed));
+    safeWriteSetting('dmforge_isLeftSidebarCollapsed', isLeftSidebarCollapsed, setStorageError);
   }, [isLeftSidebarCollapsed]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_isRightSidebarCollapsed', JSON.stringify(isRightSidebarCollapsed));
+    safeWriteSetting('dmforge_isRightSidebarCollapsed', isRightSidebarCollapsed, setStorageError);
   }, [isRightSidebarCollapsed]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_appRole', JSON.stringify(appRole));
+    safeWriteSetting('dmforge_appRole', appRole, setStorageError);
   }, [appRole]);
 
   useEffect(() => {
-    localStorage.setItem('dmforge_characters', JSON.stringify(characters));
-  }, [characters]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_itemPool', JSON.stringify(itemPool));
-  }, [itemPool]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_itemTemplates', JSON.stringify(itemTemplates));
-  }, [itemTemplates]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_logs', JSON.stringify(logs));
-  }, [logs]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_floatingNotes', JSON.stringify(floatingNotes));
-  }, [floatingNotes]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_maps', JSON.stringify(maps));
-  }, [maps]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_activeMapId', JSON.stringify(activeMapId));
-  }, [activeMapId]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_excelCards', JSON.stringify(excelCards));
-  }, [excelCards]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_activeExcelCardId', JSON.stringify(activeExcelCardId));
-  }, [activeExcelCardId]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_groups', JSON.stringify(groups));
-  }, [groups]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_isInCombat', JSON.stringify(isInCombat));
-  }, [isInCombat]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_combatRound', JSON.stringify(combatRound));
-  }, [combatRound]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_currentTurnIndex', JSON.stringify(currentTurnIndex));
-  }, [currentTurnIndex]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_combatParticipants', JSON.stringify(combatParticipants));
-  }, [combatParticipants]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_combatTurnOrder', JSON.stringify(combatTurnOrder));
-  }, [combatTurnOrder]);
-
-  useEffect(() => {
-    localStorage.setItem('dmforge_customAttributeLabels', JSON.stringify(customAttributeLabels));
-  }, [customAttributeLabels]);
+    if (!storageReady) return;
+    setStorageStatus('正在保存…');
+    const timestamp = lastUpdatedRef.current || Date.now();
+    const campaign = getCampaignPayload(timestamp);
+    campaign.activeExcelCardId = activeExcelCardId;
+    const timer = setTimeout(() => {
+      saveCampaignSnapshot(campaign).then(() => {
+        setStorageError('');
+        setStorageStatus(`已保存 ${new Date().toLocaleTimeString()}`);
+      }).catch(error => {
+        setStorageError(describeStorageError(error));
+        setStorageStatus('保存失败');
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  // getCampaignPayload captures precisely the campaign fields listed below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageReady, characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels]);
 
   // --- Campaign Import / Export / Reset Functions ---
-  const handleExportCampaign = () => {
+  const handleExportCampaign = async () => {
     const campaignData = {
       characters,
       itemPool,
@@ -909,16 +997,26 @@ export default function App() {
       combatParticipants,
       combatTurnOrder,
       customAttributeLabels,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       version: '1.0.0',
       timestamp: Date.now()
     };
 
-    const blob = new Blob([JSON.stringify(campaignData, null, 2)], { type: 'application/json' });
+    const password = window.prompt('可选：输入密码以使用 AES-256-GCM 加密备份；直接确定则导出普通 JSON。', '') ?? '';
+    let exportPackage;
+    try {
+      exportPackage = await createCampaignExport(campaignData, password);
+    } catch (error) {
+      alert(`导出失败：${error.message}`);
+      return;
+    }
+    const exportText = await serializeJsonOffThread(exportPackage, true);
+    const blob = new Blob([exportText], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
     a.href = url;
-    a.download = `dmforge_campaign_backup_${dateStr}.json`;
+    a.download = `dmforge_campaign_${dateStr}_${exportPackage.revision.slice(0, 12)}${password ? '_encrypted' : ''}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -941,9 +1039,12 @@ export default function App() {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
-        const data = assertValidCampaign(JSON.parse(event.target.result));
+        const parsed = JSON.parse(event.target.result);
+        const password = parsed?.encrypted ? (window.prompt('该存档已加密，请输入导出密码：', '') ?? '') : '';
+        const data = prepareCampaign(await openCampaignExport(parsed, password));
+        await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '导入前自动恢复点');
 
         setCharacters(sanitizeCharacters(data.characters));
         setItemPool(data.itemPool || []);
@@ -970,7 +1071,9 @@ export default function App() {
         if (data.isPlayerViewMode !== undefined) handleSetAppRole(data.isPlayerViewMode ? 'PLAYER' : 'DM');
         if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
 
-        alert('战役存档导入成功！所有角色、地图、笔记以及 Excel 角色卡均已复原。');
+        await saveCampaignSnapshot(data);
+        setLocalRecoveryPoints(await listLocalRecoveryPoints());
+        alert('战役存档导入成功！导入前状态已自动保存为恢复点。');
 
         addLog({
           type: 'SYSTEM',
@@ -980,16 +1083,117 @@ export default function App() {
 
       } catch (err) {
         console.error(err);
-        alert('解析存档文件失败，请确保您上传的是正确的 JSON 存档包。');
+        alert(`存档导入失败：${err.message || '文件不是有效的 DMForge 存档'}`);
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  const handleResetCampaign = () => {
-    if (window.confirm('🚨 危险警告 🚨\n确定要清空本地当前的推演进度并恢复“出厂设置”吗？\n该操作会彻底抹除您当前自己绘制的所有地形、角色 Excel 看板、血量数值与日志，且不可撤销！')) {
+  const refreshRecoveryPoints = async () => {
+    try {
+      setLocalRecoveryPoints(await listLocalRecoveryPoints());
+    } catch (error) {
+      setStorageError(describeStorageError(error));
+    }
+  };
+
+  const handleCreateManualBackup = async () => {
+    try {
+      const timestamp = lastUpdatedRef.current || Date.now();
+      await createLocalRecoveryPoint(getCampaignPayload(timestamp), '手动备份');
+      setLocalRecoveryPoints(await listLocalRecoveryPoints());
+      let serverMessage = '';
+      if (isSyncConnected && appRole !== 'PLAYER' && serverRevisionRef.current) {
+        const response = await fetch('/api/backups', {
+          method: 'POST',
+          headers: { ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}), 'If-Match': serverRevisionRef.current }
+        });
+        const data = await response.json();
+        if (response.status === 409) {
+          serverRevisionRef.current = data.revision || response.headers.get('ETag') || serverRevisionRef.current;
+          setSyncConflict({ local: getCampaignPayload(timestamp), server: data.campaign, revision: serverRevisionRef.current });
+          serverMessage = '；服务器版本已变化，请先处理同步冲突';
+        } else if (!response.ok) {
+          serverMessage = `；服务器备份失败：${data.error || `HTTP ${response.status}`}`;
+        } else {
+          serverRevisionRef.current = response.headers.get('ETag') || serverRevisionRef.current;
+          serverMessage = `；服务器备份 ${data.backup} 已创建`;
+          await refreshServerBackups();
+        }
+      } else if (!isSyncConnected) {
+        serverMessage = '；当前为单机状态，仅创建本机备份';
+      }
+      alert(`手动备份完成：本机恢复点已创建${serverMessage}`);
+    } catch (error) {
+      alert(`手动备份失败：${error.message}`);
+    }
+  };
+
+  const handleRestoreLocal = async key => {
+    if (!window.confirm('恢复该本地版本？当前版本会先自动创建一个恢复点。')) return;
+    try {
+      await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '恢复操作前版本');
+      await restoreLocalRecoveryPoint(key);
+      window.location.reload();
+    } catch (error) {
+      alert(`恢复失败：${error.message}`);
+    }
+  };
+
+  const refreshServerBackups = async () => {
+    try {
+      const response = await fetch('/api/backups', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} });
+      if (!response.ok) throw new Error(`服务器返回 HTTP ${response.status}`);
+      const data = await response.json();
+      setServerBackups(data.backups || []);
+    } catch (error) {
+      alert(`读取服务器备份失败：${error.message}`);
+    }
+  };
+
+  const handleRestoreServer = async name => {
+    if (!window.confirm(`恢复服务器备份 ${name}？服务器会先保存当前版本。`)) return;
+    try {
+      const response = await fetch('/api/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}), 'If-Match': serverRevisionRef.current || '"missing"' },
+        body: JSON.stringify({ name })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      serverRevisionRef.current = response.headers.get('ETag') || serverRevisionRef.current;
+      applyServerState(prepareCampaign(data.campaign));
+      setSyncConflict(null);
+      await refreshServerBackups();
+    } catch (error) {
+      alert(`服务器恢复失败：${error.message}`);
+    }
+  };
+
+  const resolveConflictWithServer = () => {
+    if (!syncConflict?.server) return;
+    applyServerState(prepareCampaign(syncConflict.server));
+    setSyncConflict(null);
+  };
+
+  const resolveConflictWithLocal = () => {
+    if (!syncConflict) return;
+    const timestamp = Date.now();
+    lastUpdatedRef.current = timestamp;
+    pushCampaignToServer(timestamp, syncConflict.revision);
+    setSyncConflict(null);
+  };
+
+  const handleResetCampaign = async () => {
+    if (window.confirm('🚨 危险警告 🚨\n确定要将当前推演进度恢复为“出厂设置”吗？\n当前内容会先保存为本机恢复点，随后重置地图、角色、Excel 看板和日志。')) {
       if (window.confirm('⚠️ 第二重防手误安全确认 ⚠️\n您真的确定要恢复初始的战役模版吗？')) {
+        try {
+          await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '恢复出厂设置前版本');
+        } catch (error) {
+          alert(`无法创建重置前恢复点，已取消重置：${error.message}`);
+          return;
+        }
         localStorage.removeItem('dmforge_characters');
         localStorage.removeItem('dmforge_itemPool');
         localStorage.removeItem('dmforge_itemTemplates');
@@ -1041,7 +1245,8 @@ export default function App() {
           '神秘 (Arcane)': '神秘 (Arcane)'
         });
 
-        alert('出厂战役重置成功！已重新装载村口酒馆与地牢初始模版，并清空所有 Excel 角色卡。');
+        setLocalRecoveryPoints(await listLocalRecoveryPoints());
+        alert('出厂战役重置成功！重置前内容已保留在本机恢复点中。');
       }
     }
   };
@@ -1218,12 +1423,12 @@ export default function App() {
 
           {/* LAN Sync Status Indicator Pill */}
           <button 
-            onClick={() => setIsSyncEnabled(!isSyncEnabled)}
+            onClick={() => syncConflict ? setIsSettingsModalOpen(true) : setIsSyncEnabled(!isSyncEnabled)}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 
               gap: '6px', 
-              background: !isSyncEnabled 
+              background: syncConflict ? 'rgba(239,68,68,0.16)' : !isSyncEnabled
                 ? 'rgba(255, 255, 255, 0.05)' 
                 : isSyncConnected 
                   ? 'rgba(52, 211, 153, 0.12)' 
@@ -1244,7 +1449,7 @@ export default function App() {
               outline: 'none'
             }}
             title={
-              !isSyncEnabled 
+              syncConflict ? '需要处理同步冲突；点击打开设置选择保留版本。' : !isSyncEnabled
                 ? "局域网实时数据同步已关闭（单机离线模式，完全无网络请求消耗）。点击开启局域网同步" 
                 : isSyncConnected 
                   ? "局域网实时数据同步开启中，其他设备更改会秒级在此拉取。点击关闭局域网同步" 
@@ -1257,7 +1462,7 @@ export default function App() {
                 width: '6px', 
                 height: '6px', 
                 borderRadius: '50%', 
-                background: !isSyncEnabled 
+                background: syncConflict ? '#f87171' : !isSyncEnabled
                   ? '#9ca3af' 
                   : isSyncConnected 
                     ? '#34d399' 
@@ -1276,13 +1481,25 @@ export default function App() {
               fontFamily: 'var(--font-heading)',
               userSelect: 'none'
             }}>
-              {!isSyncEnabled 
+              {syncConflict ? '⚠️ 同步冲突待处理' : !isSyncEnabled
                 ? '📡 同步已关闭' 
                 : isSyncConnected 
                   ? '📡 局域网同步中' 
                   : '💾 自动单机使用'}
             </span>
           </button>
+
+          {!isPlayerViewMode && (
+            <button
+              type="button"
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="btn"
+              style={{ height: '28px', padding: '3px 9px', fontSize: '10px', border: `1px solid ${presentationConnected ? 'rgba(52,211,153,.45)' : 'var(--border-light)'}`, background: presentationConnected ? 'rgba(52,211,153,.1)' : 'rgba(255,255,255,.04)', color: presentationConnected ? '#6ee7b7' : 'var(--text-secondary)' }}
+              title="打开直播展示控制面板"
+            >
+              📺 {presentationConnected ? '直播展示中' : '直播展示'}
+            </button>
+          )}
 
           {/* Sidebar Collapse Controls (Hidden in Player View Mode) */}
           {!isPlayerViewMode && (
@@ -1401,7 +1618,8 @@ export default function App() {
           combatTurnOrder, setCombatTurnOrder, itemPool, setItemPool, itemTemplates,
           setItemTemplates, groups, excelCards, setExcelCards, activeExcelCardId,
           setActiveExcelCardId, floatingNotes, setFloatingNotes, updateFloatingNote,
-          deleteFloatingNote
+          deleteFloatingNote, onPresentationCameraChange: handlePresentationCameraChange,
+          onPresentationInteractionChange: setPresentationInteraction
         }} />
 
         {/* Drag handle for resizing right sidebar */}
@@ -2195,10 +2413,49 @@ export default function App() {
               />
             </div>
 
+            <PresentationControls
+              settings={presentationSettings}
+              setSettings={setPresentationSettings}
+              characters={characters}
+              connected={presentationConnected}
+              windowOpen={presentationWindowOpen}
+              fallbackUrl={presentationFallbackUrl}
+              onOpen={openPresentationWindow}
+              onOpenTab={openPresentationTab}
+              onFocus={focusPresentationWindow}
+              onClose={closePresentationWindow}
+              onRequestFullscreen={requestPresentationFullscreen}
+            />
+
             {/* Section 3: Campaign Save Database File */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
               <label style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>💾 战役物理存档数据管理 (Campaign File Database)</label>
+              <div style={{ fontSize: '10px', color: storageError ? '#f87171' : 'var(--text-secondary)', padding: '6px 8px', borderRadius: '6px', background: storageError ? 'rgba(239,68,68,0.12)' : 'rgba(52,211,153,0.08)' }}>
+                {storageError || `✓ ${storageStatus}（事务存档，自动保留上一版本）`}
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                自动备份：每次内容变化后约 250ms 自动保存，本机保留上一版本；服务器保留近期 20 份、7 天每小时和 30 天每日版本。
+              </div>
+              {syncConflict && (
+                <div style={{ padding: '8px', border: '1px solid #f59e0b', borderRadius: '6px', background: 'rgba(245,158,11,0.12)', fontSize: '10px' }}>
+                  <strong>检测到同步冲突，自动上传已暂停。</strong>
+                  <p>服务器和本机都发生了修改，请明确选择保留哪个版本。选择前不会覆盖任何一方。</p>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary" onClick={resolveConflictWithServer}>使用服务器版本</button>
+                    <button className="btn btn-secondary" onClick={resolveConflictWithLocal}>使用本机版本</button>
+                    <button className="btn btn-secondary" onClick={handleExportCampaign}>先导出本机版本</button>
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleCreateManualBackup}
+                  className="btn btn-secondary"
+                  style={{ flex: '1 1 100%', fontSize: '11px', padding: '8px 12px', height: '32px' }}
+                  title="立即创建本机恢复点；同步可用时同时创建服务器备份"
+                >
+                  <span>💾 立即手动备份</span>
+                </button>
                 <button
                   onClick={() => {
                     setIsSettingsModalOpen(false);
@@ -2240,6 +2497,31 @@ export default function App() {
                   <span>🔄 恢复出厂设置 (还原预设初始数据)</span>
                 </button>
               </div>
+              <details onToggle={event => event.currentTarget.open && refreshRecoveryPoints()} style={{ fontSize: '10px' }}>
+                <summary style={{ cursor: 'pointer' }}>本机恢复点（{localRecoveryPoints.length}）</summary>
+                <div style={{ maxHeight: '130px', overflow: 'auto', marginTop: '6px' }}>
+                  {localRecoveryPoints.length === 0 && <div>暂无恢复点</div>}
+                  {localRecoveryPoints.map(point => (
+                    <div key={point.key} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 0' }}>
+                      <span>{point.label || point.key} · {point.savedAt ? new Date(point.savedAt).toLocaleString() : '旧版'}</span>
+                      <button className="btn btn-secondary" onClick={() => handleRestoreLocal(point.key)}>恢复</button>
+                    </div>
+                  ))}
+                </div>
+              </details>
+              {isSyncConnected && (
+                <details onToggle={event => event.currentTarget.open && refreshServerBackups()} style={{ fontSize: '10px' }}>
+                  <summary style={{ cursor: 'pointer' }}>服务器滚动备份（{serverBackups.length}）</summary>
+                  <div style={{ maxHeight: '150px', overflow: 'auto', marginTop: '6px' }}>
+                    {serverBackups.map(backup => (
+                      <div key={backup.name} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '4px 0', color: backup.valid ? 'inherit' : '#f87171' }}>
+                        <span>{backup.name} · {backup.valid ? new Date(backup.modifiedAt).toLocaleString() : '损坏'}</span>
+                        {backup.valid && appRole !== 'PLAYER' && <button className="btn btn-secondary" onClick={() => handleRestoreServer(backup.name)}>恢复</button>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
 
             {/* Footer info */}

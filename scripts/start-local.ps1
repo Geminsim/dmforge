@@ -9,6 +9,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $portableNode = Join-Path $projectRoot 'runtime\node.exe'
 $nodeCommand = if (Test-Path -LiteralPath $portableNode) { $portableNode } else { (Get-Command node -ErrorAction Stop).Source }
 $tokenFile = Join-Path $projectRoot '.dmforge-sync-token'
+$readTokenFile = Join-Path $projectRoot '.dmforge-read-token'
 $distIndex = Join-Path $projectRoot 'dist\index.html'
 
 if (-not (Test-Path -LiteralPath $tokenFile)) {
@@ -24,6 +25,17 @@ if (-not (Test-Path -LiteralPath $tokenFile)) {
 if ($token.Length -lt 32) {
   throw 'Invalid .dmforge-sync-token: the token must contain at least 32 characters.'
 }
+
+if (-not (Test-Path -LiteralPath $readTokenFile)) {
+  $readBytes = New-Object byte[] 32
+  $readGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $readGenerator.GetBytes($readBytes) } finally { $readGenerator.Dispose() }
+  $readToken = ([BitConverter]::ToString($readBytes) -replace '-', '').ToLowerInvariant()
+  [System.IO.File]::WriteAllText($readTokenFile, $readToken, [System.Text.UTF8Encoding]::new($false))
+} else {
+  $readToken = (Get-Content -LiteralPath $readTokenFile -Raw).Trim()
+}
+if ($readToken.Length -lt 32 -or $readToken -eq $token) { throw 'Invalid .dmforge-read-token: it must be a distinct token with at least 32 characters.' }
 
 $isPortable = Test-Path -LiteralPath $portableNode
 $needsBuild = -not (Test-Path -LiteralPath $distIndex)
@@ -51,6 +63,7 @@ if ($needsBuild) {
 $env:DMFORGE_PORT = $Port.ToString()
 $env:DMFORGE_HOST = '0.0.0.0'
 $env:DMFORGE_SYNC_TOKEN = $token
+$env:DMFORGE_READ_TOKEN = $readToken
 $localUrl = "http://127.0.0.1:$Port"
 $launchUrl = "$localUrl/#syncToken=$token"
 
@@ -58,10 +71,12 @@ Write-Host ''
 Write-Host 'DMForge is ready to start.' -ForegroundColor Green
 Write-Host "Local URL: $localUrl"
 Write-Host 'LAN access is enabled by default. If synchronization is unavailable, the app continues with local storage.' -ForegroundColor Yellow
-Write-Host "Sync token: $token" -ForegroundColor Yellow
+Write-Host "DM write token: $token" -ForegroundColor Yellow
+Write-Host "Player read-only token: $readToken" -ForegroundColor Cyan
 $lanAddresses = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' }
 foreach ($address in $lanAddresses) {
-  Write-Host "Paired LAN URL: http://$($address.IPAddressToString):$Port/#syncToken=$token"
+  Write-Host "DM paired LAN URL: http://$($address.IPAddressToString):$Port/#syncToken=$token"
+  Write-Host "Player read-only URL: http://$($address.IPAddressToString):$Port/#syncToken=$readToken"
 }
 Write-Host 'Close this window or press Ctrl+C to stop the server.'
 Write-Host ''

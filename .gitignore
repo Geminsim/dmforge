@@ -12,6 +12,7 @@ dist
 dist-ssr
 release
 .dmforge-sync-token
+.dmforge-read-token
 campaign_state.tmp.json
 *.local
 

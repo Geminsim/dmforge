@@ -25,7 +25,12 @@ export default function MapSystem({
   setCurrentTurnIndex,
   setCombatParticipants,
   combatTurnOrder = [],
-  setCombatTurnOrder
+  setCombatTurnOrder,
+  onPresentationCameraChange,
+  onPresentationInteractionChange,
+  presentationInteraction,
+  presentationCamera,
+  presentationCameraMode = 'independent'
 }) {
   const [gridSize] = useState(20); // 20px represents 1ft
   
@@ -69,6 +74,7 @@ export default function MapSystem({
   const [scale, setScale] = useState(1);
   const containerRef = useRef(null);
   const blockedCanvasRef = useRef(null);
+  const transformRef = useRef(null);
 
   // Undo history states & refs
   const [canUndo, setCanUndo] = useState(false);
@@ -186,6 +192,49 @@ export default function MapSystem({
   const [isForcedMoveMode, setIsForcedMoveMode] = useState(false);
   const [dragIsShiftPressed, setDragIsShiftPressed] = useState(false);
 
+  useEffect(() => {
+    if (appRole !== 'PLAYER') return;
+    setDraggedToken(presentationInteraction?.draggedToken || null);
+    setDragHoverCoords(presentationInteraction?.dragHoverCoords || null);
+    setDragIsShiftPressed(Boolean(presentationInteraction?.isForced));
+  }, [appRole, presentationInteraction]);
+
+  useEffect(() => {
+    if (appRole === 'PLAYER') return;
+    onPresentationInteractionChange?.({
+      draggedToken,
+      dragHoverCoords,
+      isForced: Boolean(isForcedMoveMode || dragIsShiftPressed)
+    });
+  }, [appRole, draggedToken, dragHoverCoords, isForcedMoveMode, dragIsShiftPressed, onPresentationInteractionChange]);
+
+  useEffect(() => {
+    if (appRole !== 'PLAYER' || presentationCameraMode !== 'follow-dm' || !presentationCamera) return;
+    transformRef.current?.setTransform(
+      presentationCamera.x || 0,
+      presentationCamera.y || 0,
+      presentationCamera.scale || 1,
+      120,
+      'easeOut'
+    );
+  }, [appRole, presentationCamera, presentationCameraMode]);
+
+  useEffect(() => {
+    if (appRole !== 'PLAYER' || presentationCameraMode !== 'follow-active') return;
+    const activeId = combatTurnOrder[currentTurnIndex]?.id;
+    const activeCharacter = characters.find(character => character.id === activeId && character.mapId === activeMapId);
+    const viewport = containerRef.current?.parentElement?.getBoundingClientRect();
+    if (!activeCharacter || !viewport) return;
+    const targetScale = Math.min(1.4, Math.max(.65, Math.min(viewport.width / (mapWidth * gridSize), viewport.height / (mapHeight * gridSize)) * 1.8));
+    transformRef.current?.setTransform(
+      viewport.width / 2 - ((Number(activeCharacter.gridX) || 0) + .5) * gridSize * targetScale,
+      viewport.height / 2 - ((Number(activeCharacter.gridY) || 0) + .5) * gridSize * targetScale,
+      targetScale,
+      180,
+      'easeOut'
+    );
+  }, [appRole, presentationCameraMode, combatTurnOrder, currentTurnIndex, characters, activeMapId, mapWidth, mapHeight, gridSize]);
+
   // Filter character tokens to render only those placed on the active map
   const activeTokens = characters.filter(char => char.mapId === activeMapId);
 
@@ -250,6 +299,7 @@ export default function MapSystem({
 
   const handleTransform = (ref) => {
     setScale(ref.state.scale);
+    onPresentationCameraChange?.({ scale: ref.state.scale, x: ref.state.positionX || 0, y: ref.state.positionY || 0 });
   };
 
   const handleDrop = (e) => {
@@ -1916,21 +1966,21 @@ export default function MapSystem({
       {isInCombat && (
         <div 
           style={{ 
-            height: '76px', 
-            minHeight: '76px', 
             background: 'var(--bg-glass)', 
             backdropFilter: 'blur(16px)', 
             borderBottom: '1px solid var(--border-light)',
             display: 'flex',
-            alignItems: 'center',
-            padding: '0 16px',
-            gap: '12px',
-            overflow: 'visible',
+            flexDirection: 'column',
+            flexShrink: 0,
+            padding: 0,
+            overflow: 'hidden',
             zIndex: 100,
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
             position: 'relative'
           }}
         >
+          {/* Row 1: initiative only. Explicit height prevents cyclic percentage sizing. */}
+          <div style={{ width: '100%', height: '76px', minHeight: '76px', display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px', boxSizing: 'border-box' }}>
           {/* Round Indicator */}
           <div 
             style={{ 
@@ -1940,7 +1990,7 @@ export default function MapSystem({
               justifyContent: 'center',
               borderRight: '1px solid var(--border-light)',
               paddingRight: '16px',
-              height: '80%',
+              height: '52px',
               minWidth: '70px'
             }}
           >
@@ -2034,12 +2084,13 @@ export default function MapSystem({
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', color: 'var(--text-secondary)' }}>
                       <span>先攻: <strong>{participant.total}</strong></span>
-                      <span>🏃 <strong>{char.combatSpeedRemaining !== undefined ? char.combatSpeedRemaining.toFixed(0) : (char.speed || 30)}</strong>/{char.speed || 30}ft</span>
+                      <span>顺位 {index + 1}</span>
                     </div>
                   </div>
                 </div>
               );
             })}
+          </div>
           </div>
 
           {/* Active Unit Fast Dashboard (Highlighting Resources, Conditions, and turn controls) */}
@@ -2055,24 +2106,49 @@ export default function MapSystem({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    borderLeft: '1px solid var(--border-light)',
-                    paddingLeft: '16px',
-                    height: '80%',
-                    marginLeft: 'auto'
+                    width: '100%',
+                    borderTop: '1px solid var(--border-light)',
+                    padding: '10px 16px',
+                    height: '118px',
+                    minHeight: '118px',
+                    maxHeight: '118px',
+                    boxSizing: 'border-box',
+                    overflowX: 'auto'
                   }}
                 >
+                  {/* Active character summary, deliberately separated from initiative order */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '190px', paddingRight: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: '#fff', maxWidth: '125px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeChar.name}</strong>
+                      <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '999px', background: 'rgba(245,158,11,.18)', color: 'var(--accent-amber)', border: '1px solid rgba(245,158,11,.35)' }}>当前行动</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
+                      <div title="当前生命值" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'rgba(239,68,68,.1)', color: '#fca5a5' }}>❤️ {activeChar.hp}/{activeChar.maxHp}</div>
+                      <div title="护甲等级" style={{ fontSize: '10px', padding: '4px 6px', borderRadius: '5px', background: 'rgba(59,130,246,.1)', color: '#93c5fd' }}>🛡️ AC {activeChar.ac ?? 10}</div>
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                        <span>🏃 移动力</span>
+                        <strong>{Math.round(activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30)}/{activeChar.speed || 30}ft</strong>
+                      </div>
+                      <div style={{ height: '5px', borderRadius: '999px', background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, ((activeChar.combatSpeedRemaining ?? activeChar.speed ?? 30) / (activeChar.speed || 30)) * 100))}%`, background: 'linear-gradient(90deg,#10b981,#34d399)', transition: 'width .25s ease' }} />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Current conditions listing & Add Condition popover */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>状态:</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', position: 'relative', minWidth: '150px', maxWidth: '240px', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🏷️ 状态效果</span>
                     
-                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', overflowX: 'auto', maxWidth: '120px' }}>
+                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', overflowY: 'auto', maxHeight: '42px' }}>
                       {activeChar.conditions && activeChar.conditions.map(cond => (
                         <span 
                           key={cond.id} 
                           style={{ 
                             fontSize: '10px', 
-                            padding: '2px 6px', 
-                            background: 'rgba(239, 68, 68, 0.15)', 
+                            padding: '3px 7px', 
+                            background: 'linear-gradient(135deg,rgba(239,68,68,.2),rgba(127,29,29,.14))', 
                             color: 'var(--accent-red)', 
                             borderRadius: '4px',
                             border: '1px solid rgba(239,68,68,0.3)',
@@ -2097,31 +2173,45 @@ export default function MapSystem({
                         <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>正常</span>
                       )}
                     </div>
-
-
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        const name = prompt('输入要添加的状态名称（如：眩晕、祝福、中毒）：', '眩晕');
+                        if (!name?.trim()) return;
+                        const rounds = prompt(`请输入 [${name.trim()}] 持续回合数（数字，或 permanent 为永久）：`, '3');
+                        if (rounds !== null) handleAddCondition(activeChar.id, name.trim(), rounds);
+                      }}
+                      style={{ fontSize: '9px', height: '22px', padding: '2px 7px', alignSelf: 'flex-start' }}
+                    >
+                      ＋ 添加状态
+                    </button>
                   </div>
 
                   {/* Active Unit Resources trackers (Spell slots, actions, etc) */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '1px solid var(--border-light)', paddingLeft: '12px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>资源槽:</span>
-                    <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', maxWidth: '200px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '6px', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px', flex: 1, minWidth: '280px' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 'bold' }}>🔋 动作、法术与角色资源</span>
+                    <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '2px' }}>
                       {activeChar.resources && activeChar.resources.map((res, resIdx) => (
                         <div 
                           key={resIdx}
                           style={{
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            border: '1px solid var(--border-light)',
+                            background: res.value <= 0 ? 'rgba(239,68,68,.08)' : 'rgba(139,92,246,.1)',
+                            border: `1px solid ${res.value <= 0 ? 'rgba(239,68,68,.3)' : 'rgba(192,132,252,.32)'}`,
                             borderRadius: '8px',
-                            padding: '2px 6px',
-                            display: 'flex',
+                            padding: '5px 7px',
+                            display: 'grid',
+                            gridTemplateColumns: 'auto auto',
                             alignItems: 'center',
-                            gap: '4px',
-                            height: '28px',
+                            gap: '4px 7px',
+                            minHeight: '46px',
+                            minWidth: '105px',
                             whiteSpace: 'nowrap',
-                            boxShadow: '0 0 8px rgba(192, 132, 252, 0.1)'
+                            boxShadow: res.value > 0 ? '0 0 8px rgba(192,132,252,.08)' : 'none'
                           }}
                         >
-                          <span style={{ fontSize: '9px', color: 'var(--text-secondary)' }}>{res.name}</span>
+                          <span style={{ fontSize: '10px', color: res.value <= 0 ? '#fca5a5' : 'var(--text-primary)', fontWeight: 'bold' }}>{res.name === '动作' ? '⚔️ ' : res.name === '附赠动作' ? '⚡ ' : /法术|魔法/.test(res.name) ? '🔮 ' : '◆ '}{res.name}</span>
+                          <span style={{ fontSize: '9px', color: res.value <= 0 ? '#f87171' : '#c4b5fd', justifySelf: 'end' }}>{res.value <= 0 ? '已耗尽' : `${res.value}/${res.max}`}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                             <button 
                               onClick={() => {
@@ -2134,11 +2224,15 @@ export default function MapSystem({
                                   return c;
                                 }));
                               }}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '14px', height: '14px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}
+                              disabled={res.value <= 0}
+                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value <= 0 ? 'not-allowed' : 'pointer', opacity: res.value <= 0 ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
                             >
                               -
                             </button>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-purple)' }}>{res.value}</span>
+                            <div style={{ display: 'flex', gap: '2px', minWidth: '35px', justifyContent: 'center' }} title={`${res.value}/${res.max}`}>
+                              {Array.from({ length: Math.min(res.max || 0, 8) }, (_, slot) => <span key={slot} style={{ width: '4px', height: '12px', borderRadius: '2px', background: slot < res.value ? '#a78bfa' : 'rgba(255,255,255,.1)' }} />)}
+                              {(res.max || 0) > 8 && <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>×{res.max}</span>}
+                            </div>
                             <button 
                               onClick={() => {
                                 setCharacters(prev => prev.map(c => {
@@ -2150,7 +2244,8 @@ export default function MapSystem({
                                   return c;
                                 }));
                               }}
-                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '14px', height: '14px', borderRadius: '3px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}
+                              disabled={res.value >= res.max}
+                              style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '18px', height: '18px', borderRadius: '3px', cursor: res.value >= res.max ? 'not-allowed' : 'pointer', opacity: res.value >= res.max ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px' }}
                             >
                               +
                             </button>
@@ -2165,7 +2260,7 @@ export default function MapSystem({
                   </div>
 
                   {/* Turn Controls */}
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', borderLeft: '1px solid var(--border-light)', paddingLeft: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch', borderLeft: '1px solid var(--border-light)', paddingLeft: '14px', minWidth: '112px' }}>
                     <button 
                       onClick={() => handleResetTurnMovement(activeChar.id)}
                       className="btn btn-secondary"
@@ -2194,7 +2289,7 @@ export default function MapSystem({
 
       {/* Map Content Box */}
       <div 
-        style={{ flex: 1, position: 'relative', background: '#07080c', display: 'flex', overflow: 'hidden' }}
+        style={{ flex: 1, minHeight: 0, position: 'relative', background: '#07080c', display: 'flex', overflow: 'hidden' }}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
@@ -2215,6 +2310,7 @@ export default function MapSystem({
         )}
 
         <TransformWrapper
+          ref={transformRef}
           initialScale={1}
           initialPositionX={0}
           initialPositionY={0}

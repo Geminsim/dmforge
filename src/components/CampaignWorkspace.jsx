@@ -17,7 +17,8 @@ export default function CampaignWorkspace({
   combatTurnOrder, setCombatTurnOrder, itemPool, setItemPool,
   itemTemplates, setItemTemplates, groups, excelCards, setExcelCards,
   activeExcelCardId, setActiveExcelCardId, floatingNotes, setFloatingNotes,
-  updateFloatingNote, deleteFloatingNote
+  updateFloatingNote, deleteFloatingNote, onPresentationCameraChange, onPresentationInteractionChange,
+  presentationInteraction, presentationCamera, presentationCameraMode
 }) {
   return (
     <main className="center-area">
@@ -36,7 +37,8 @@ export default function CampaignWorkspace({
               setActiveMapId, addMap, deleteMap, updateMap, isPlayerViewMode, appRole,
               isInCombat, setIsInCombat, combatRound, setCombatRound, currentTurnIndex,
               setCurrentTurnIndex, combatParticipants, setCombatParticipants,
-              combatTurnOrder, setCombatTurnOrder
+              combatTurnOrder, setCombatTurnOrder, onPresentationCameraChange,
+              onPresentationInteractionChange, presentationInteraction, presentationCamera, presentationCameraMode
             }} />
           )}
           {currentTab === 'items' && !isPlayerViewMode && (
