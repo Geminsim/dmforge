@@ -68,3 +68,13 @@ test('publishes map collections and only public token drag previews', () => {
   assert.equal(secretDrag.interaction, null);
   assert.equal(JSON.stringify(secretDrag).includes('Hidden monster'), false);
 });
+
+test('presentation reflects burnout AC and preserves SF6 resource reset types', () => {
+  const snapshot = buildPublicPresentationSnapshot({
+    maps: [{ id: 'map', name: 'Map', width: 10, height: 10 }], activeMapId: 'map',
+    characters: [{ id: 'pc', name: 'PC', type: 'PC', ac: 14, resources: [{ name: '斗气', value: 0, max: 6, resetType: 'short_rest' }], conditions: [{ id: 'burnout', name: '斗气枯竭', duration: 'permanent' }] }],
+    combatTurnOrder: []
+  }, {});
+  assert.equal(snapshot.campaign.characters[0].ac, 11);
+  assert.equal(snapshot.campaign.characters[0].resources[0].resetType, 'short_rest');
+});

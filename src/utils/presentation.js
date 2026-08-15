@@ -30,7 +30,7 @@ function publicResource(resource) {
     name: text(resource?.name, '资源'),
     value: Math.max(0, number(resource?.value)),
     max: Math.max(0, number(resource?.max)),
-    resetType: ['turn', 'shortRest', 'longRest', 'manual'].includes(resource?.resetType) ? resource.resetType : 'manual'
+    resetType: ['turn', 'short_rest', 'long_rest', 'shortRest', 'longRest', 'manual', 'none'].includes(resource?.resetType) ? resource.resetType : 'manual'
   };
 }
 
@@ -44,10 +44,11 @@ function publicCondition(condition) {
 }
 
 function publicCharacter(character) {
+  const burnout = Array.isArray(character.conditions) && character.conditions.some(condition => condition?.id === 'burnout' || condition?.name === '斗气枯竭');
   return {
     id: text(character.id), name: text(character.name, '未命名角色'), type: character.type === 'PC' ? 'PC' : 'NPC',
     hp: number(character.hp), maxHp: Math.max(1, number(character.maxHp, 1)), tempHp: Math.max(0, number(character.tempHp)),
-    ac: number(character.ac, 10), speed: Math.max(0, number(character.speed, 30)),
+    ac: number(character.ac, 10) - (burnout ? 3 : 0), speed: Math.max(0, number(character.speed, 30)),
     combatSpeedRemaining: Math.max(0, number(character.combatSpeedRemaining, number(character.speed, 30))),
     combatStartGridX: number(character.combatStartGridX, number(character.gridX)),
     combatStartGridY: number(character.combatStartGridY, number(character.gridY)),

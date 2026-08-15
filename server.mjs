@@ -17,7 +17,21 @@ const tlsCertPath = process.env.DMFORGE_TLS_CERT || '';
 const tlsKeyPath = process.env.DMFORGE_TLS_KEY || '';
 const dataDirectory = path.resolve(process.env.DMFORGE_DATA_DIR || rootDirectory);
 fs.mkdirSync(dataDirectory, { recursive: true });
-const store = new CampaignStore(dataDirectory);
+const stores = new Map();
+const storeFor = request => {
+  const campaignId = new URL(request.url, `http://${request.headers.host || 'localhost'}`).searchParams.get('campaignId') || '';
+  if (!campaignId) {
+    if (!stores.has('legacy')) stores.set('legacy', new CampaignStore(dataDirectory));
+    return stores.get('legacy');
+  }
+  if (!/^[\p{L}\p{N}_.:-]{1,160}$/u.test(campaignId)) throw new Error('Invalid campaign id');
+  if (!stores.has(campaignId)) {
+    const campaignDirectory = path.join(dataDirectory, 'campaigns', campaignId);
+    fs.mkdirSync(campaignDirectory, { recursive: true });
+    stores.set(campaignId, new CampaignStore(campaignDirectory));
+  }
+  return stores.get(campaignId);
+};
 
 if (host !== '127.0.0.1' && host !== 'localhost' && !syncToken) {
   throw new Error('DMFORGE_SYNC_TOKEN is required when listening beyond localhost.');
@@ -44,6 +58,7 @@ function authorizationRole(request) {
 }
 
 async function handleCampaign(request, response) {
+  const store = storeFor(request);
   const role = authorizationRole(request);
   if (!role) return json(response, 401, { error: 'Unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
   if (request.method === 'GET') {
@@ -93,6 +108,7 @@ async function readJsonBody(request, response) {
 }
 
 async function handleBackups(request, response, pathname) {
+  const store = storeFor(request);
   const role = authorizationRole(request);
   if (!role) return json(response, 401, { error: 'Unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
   if (pathname === '/api/backups' && request.method === 'GET') {

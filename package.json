@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "node --test",
     "verify": "npm run lint && npm test && npm run build",
+    "import:sf6": "node scripts/import-sf6-workbook.mjs",
     "start": "node server.mjs",
     "preview": "node server.mjs"
   },

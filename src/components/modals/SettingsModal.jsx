@@ -95,6 +95,7 @@ export default function SettingsModal({
   onImportCampaign,
   onResetCampaign,
   clientId,
+  campaignShareUrl,
   presentationProps
 }) {
   if (!open) return null;
@@ -189,6 +190,10 @@ export default function SettingsModal({
           placeholder="局域网同步令牌（与服务器 DMFORGE_SYNC_TOKEN 一致）"
           hint="请勿分享给不受信任的人；令牌无效时应用自动降级为单机模式。"
         />
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+          <TextInput label="当前战役局域网加入链接" mono readOnly value={campaignShareUrl} hint="同一局域网中的玩家打开该链接后会加入当前战役；若服务监听地址显示为 127.0.0.1，请将其替换为主机局域网 IP。" />
+          <Button variant="secondary" icon="copy" onClick={() => navigator.clipboard?.writeText(campaignShareUrl)} title="复制当前战役加入链接">复制</Button>
+        </div>
       </section>
 
       <PresentationControls {...presentationProps} />
@@ -290,7 +295,7 @@ export default function SettingsModal({
             variant="danger"
             icon="warning"
             onClick={() => { onClose(); onResetCampaign(); }}
-            title="清空本地缓存，恢复酒馆/地底初始战术模板"
+            title="清空当前进度，并按当前战役模板重新创建干净存档"
           >
             恢复出厂设置
           </Button>

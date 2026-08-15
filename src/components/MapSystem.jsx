@@ -5,7 +5,7 @@ import {
   ResourceSlot, MapToken, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState, Modal
 } from '../ds';
 import { findShortestPath } from '../utils/pathfinding';
-import { advanceCombatTurn, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
+import { advanceCombatTurn, processTurnEndConditions, processTurnStartConditions, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
 
 /** 45° survey hatch for terrain fills — the grammar's alternative to flat tints. */
 const TERRAIN_HATCH = (tone) => {
@@ -1071,6 +1071,9 @@ export default function MapSystem({
 
     const { nextIndex, nextRound, wrapped } = advanceCombatTurn(currentTurnIndex, combatRound, combatTurnOrder.length);
 
+    const endingActiveId = combatTurnOrder[currentTurnIndex]?.id;
+    if (endingActiveId) setCharacters(previous => previous.map(character => character.id === endingActiveId ? processTurnEndConditions(character).character : character));
+
     if (wrapped) {
       setCombatRound(nextRound);
       setCharacters(previous => {
@@ -1092,7 +1095,9 @@ export default function MapSystem({
     // 2. Refresh next active character's movement points & start grid anchors, and reset turn resources
     setCharacters(prev => prev.map(c => {
       if (c.id === nextActiveId) {
-        return resetTurnResources(c);
+        const started = processTurnStartConditions(c).character;
+        const reset = resetTurnResources(started);
+        return { ...reset, combatSpeedRemaining: started.combatSpeedRemaining };
       }
       return c;
     }));
@@ -1793,18 +1798,19 @@ export default function MapSystem({
                 className="no-scrollbar"
                 style={{
                   display: 'flex',
+                  flexWrap: 'wrap',
                   alignItems: 'stretch',
                   gap: 'var(--space-4)',
                   width: '100%',
-                  height: 118,
                   minHeight: 118,
+                  maxHeight: 252,
                   boxSizing: 'border-box',
                   padding: 'var(--space-3) var(--space-5)',
                   borderTop: 'var(--border-hairline)',
-                  overflowX: 'auto'
+                  overflowY: 'auto'
                 }}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 200, paddingRight: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '1 1 200px', minWidth: 180, paddingRight: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <strong style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {activeChar.name}
@@ -1819,7 +1825,7 @@ export default function MapSystem({
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 160, maxWidth: 260, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '1 1 160px', minWidth: 150, maxWidth: 260, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
                   <ToolbarLabel>状态效果</ToolbarLabel>
                   <div className="no-scrollbar" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', overflowY: 'auto', maxHeight: 44 }}>
                     {activeChar.conditions && activeChar.conditions.length > 0 ? (
@@ -1848,7 +1854,7 @@ export default function MapSystem({
                   </Button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: 1, minWidth: 300, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '2 1 300px', minWidth: 260, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
                   <ToolbarLabel>动作、法术与角色资源</ToolbarLabel>
                   <div className="no-scrollbar" style={{ display: 'flex', gap: 'var(--space-2)', overflowX: 'auto' }}>
                     {activeChar.resources && activeChar.resources.length > 0 ? (
@@ -1880,7 +1886,7 @@ export default function MapSystem({
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 'var(--space-2)', minWidth: 130, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 'var(--space-2)', flex: '0 1 130px', minWidth: 118, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -2547,7 +2553,11 @@ export default function MapSystem({
                 });
                 return { ...r, value: newVal };
               });
-              return { ...c, resources: updated };
+              const drive = updated.find(resource => resource.name === '斗气');
+              let conditions = c.conditions || [];
+              if (drive?.value === 0 && !conditions.some(condition => condition.id === 'burnout' || condition.name === '斗气枯竭')) conditions = [...conditions, { id: 'burnout', name: '斗气枯竭', duration: 'permanent', source: 'resource' }];
+              if (drive?.value > 0) conditions = conditions.filter(condition => condition.id !== 'burnout' && condition.name !== '斗气枯竭');
+              return { ...c, resources: updated, conditions };
             }));
           };
 
@@ -2566,7 +2576,11 @@ export default function MapSystem({
                 }
                 return { ...r, value: newVal };
               });
-              return { ...c, resources: updated };
+              const drive = updated.find(resource => resource.name === '斗气');
+              let conditions = c.conditions || [];
+              if (drive?.value === 0 && !conditions.some(condition => condition.id === 'burnout' || condition.name === '斗气枯竭')) conditions = [...conditions, { id: 'burnout', name: '斗气枯竭', duration: 'permanent', source: 'resource' }];
+              if (drive?.value > 0) conditions = conditions.filter(condition => condition.id !== 'burnout' && condition.name !== '斗气枯竭');
+              return { ...c, resources: updated, conditions };
             }));
           };
 

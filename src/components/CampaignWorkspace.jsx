@@ -4,6 +4,7 @@ import { Tabs, EmptyState } from '../ds';
 
 const MapSystem = lazy(() => import('./MapSystem'));
 const ExcelImporter = lazy(() => import('./ExcelImporter'));
+const RulesCompendium = lazy(() => import('./RulesCompendium'));
 
 /**
  * The centre column — the only region that changes with the active tab.
@@ -16,7 +17,8 @@ const ExcelImporter = lazy(() => import('./ExcelImporter'));
 const WORKSPACES = [
   { id: 'map', label: '1ft 战术地图', icon: 'map-trifold' },
   { id: 'items', label: '物品流转中心', icon: 'backpack' },
-  { id: 'excel', label: '玩家卡与规则书导入', icon: 'table' }
+  { id: 'excel', label: '玩家卡与规则书导入', icon: 'table' },
+  { id: 'rules', label: '规则资料库', icon: 'books' }
 ];
 
 function ModuleFallback() {
@@ -33,7 +35,7 @@ export default function CampaignWorkspace({
   itemTemplates, setItemTemplates, groups, excelCards, setExcelCards,
   activeExcelCardId, setActiveExcelCardId, floatingNotes, setFloatingNotes,
   updateFloatingNote, deleteFloatingNote, onPresentationCameraChange, onPresentationInteractionChange,
-  presentationInteraction, presentationCamera, presentationCameraMode
+  presentationInteraction, presentationCamera, presentationCameraMode, ruleset
 }) {
   return (
     <main
@@ -69,9 +71,11 @@ export default function CampaignWorkspace({
           {currentTab === 'excel' && !isPlayerViewMode && (
             <ExcelImporter {...{
               excelCards, setExcelCards, activeExcelCardId, setActiveExcelCardId,
-              addLog, floatingNotes, setFloatingNotes, updateFloatingNote, deleteFloatingNote
+              addLog, floatingNotes, setFloatingNotes, updateFloatingNote, deleteFloatingNote,
+              characters, setCharacters, activeMapId, ruleset
             }} />
           )}
+          {currentTab === 'rules' && !isPlayerViewMode && <RulesCompendium ruleset={ruleset} />}
         </div>
       </Suspense>
     </main>

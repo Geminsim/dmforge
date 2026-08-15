@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   Button, IconButton, TextInput, Tabs, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState
 } from '../ds';
+import { extractCharacterSheet, mergeImportedCharacter } from '../utils/characterSheetImport';
+import { calculateSf6Character, createSf6SheetData, sf6CharacterFeatureMap } from '../utils/sf6CharacterSheet';
 
 const MAX_EXCEL_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_WORKBOOK_SHEETS = 50;
@@ -370,7 +372,7 @@ function SideKey({ code, title, count, tone = 'accent' }) {
 }
 
 /** File-picker styled as a secondary button; <input type=file> needs a label. */
-function UploadLabel({ accept, onChange, icon, children, title }) {
+function UploadLabel({ accept, onChange, icon, children, title, multiple = false }) {
   return (
   <label
     title={title}
@@ -391,12 +393,12 @@ function UploadLabel({ accept, onChange, icon, children, title }) {
   >
     <i className={`ph-fill ph-${icon}`} style={{ fontSize: 13 }} aria-hidden="true" />
     {children}
-    <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
+      <input type="file" accept={accept} multiple={multiple} onChange={onChange} style={{ display: 'none' }} />
   </label>
   );
 }
 
-function Dropzone({ id, accept, onChange, icon, title, body, note }) {
+function Dropzone({ id, accept, onChange, icon, title, body, note, multiple = false }) {
   return (
   <label
     htmlFor={id}
@@ -414,7 +416,7 @@ function Dropzone({ id, accept, onChange, icon, title, body, note }) {
       transition: 'var(--motion-control)'
     }}
   >
-    <input type="file" accept={accept} onChange={onChange} id={id} style={{ display: 'none' }} />
+    <input type="file" accept={accept} multiple={multiple} onChange={onChange} id={id} style={{ display: 'none' }} />
     <i className={`ph-fill ph-${icon}`} style={{ fontSize: 26, color: 'var(--accent)' }} aria-hidden="true" />
     <div>
       <h3 style={{ fontSize: 'var(--type-display-sm)', marginBottom: 'var(--space-2)' }}>{title}</h3>
@@ -434,7 +436,11 @@ export default function ExcelImporter({
   floatingNotes = [],
   setFloatingNotes,
   updateFloatingNote,
-  deleteFloatingNote
+  deleteFloatingNote,
+  characters = [],
+  setCharacters,
+  activeMapId,
+  ruleset
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSheetName, setActiveSheetName] = useState('');
@@ -448,6 +454,7 @@ export default function ExcelImporter({
   const [fontSize, setFontSize] = useState(14);
   const [isEditMode, setIsEditMode] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [importingCount, setImportingCount] = useState(0);
 
   const isRulebookActive = activeExcelCardId && activeExcelCardId.startsWith('note_');
   const selectedCard = !isRulebookActive ? excelCards.find(c => c.id === activeExcelCardId) : null;
@@ -509,64 +516,108 @@ export default function ExcelImporter({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeExcelCardId, excelCards]);
 
-  // Read Excel spreadsheet and convert to lightweight base64 string using native, high-speed readAsDataURL
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('浏览器无法读取该文件。'));
+    reader.onload = event => {
+      const base64 = String(event.target.result || '').split(',')[1];
+      if (base64) resolve(base64);
+      else reject(new Error('文件转换为 Base64 编码时发生空白异常。'));
+    };
+    reader.readAsDataURL(file);
+  });
 
-    // Safety limit of 2MB to protect LocalStorage quota limits
+  const validateCharacterCardFile = (file) => {
     const extension = file.name.split('.').pop()?.toLowerCase();
     if (!extension || !ALLOWED_EXCEL_EXTENSIONS.has(extension)) {
-      alert('上传失败\n仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
-      e.target.value = '';
-      return;
+      throw new Error('仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
     }
-
     if (file.size > MAX_EXCEL_FILE_BYTES) {
-      alert('上传失败\n为了保证本地存盘性能与浏览器流畅度，角色卡文件大小不能超过 2MB。请裁剪或精简您的 Excel 表格。');
-      e.target.value = '';
-      return;
+      throw new Error('角色卡文件大小不能超过 2MB，请裁剪或精简 Excel 表格。');
     }
+  };
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const dataUrl = evt.target.result;
-        // Extract raw base64 string from data URL
-        const base64 = dataUrl.split(',')[1];
-        if (!base64) {
-          throw new Error('文件转换为 Base64 编码时发生空白异常。');
-        }
+  const makeId = (prefix) => `${prefix}_${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;
 
-        // Pre-read workbook quickly to verify index integrity and extract sheet names
-        try {
-          const tempWb = await parseWorkbookInWorker(base64);
-          validateWorkbook(tempWb);
-          const newCard = {
-            id: 'excel_' + Date.now(),
-            filename: file.name,
-            fileData: base64,
-            sheetNames: tempWb.SheetNames,
-            uploadTime: new Date().toLocaleString(),
-            sizeBytes: file.size
-          };
-          setExcelCards(prev => [...prev, newCard]);
-          setActiveExcelCardId(newCard.id);
-          addLog?.({
-            type: 'SYSTEM',
-            content: `**成功载入 Excel 角色卡**: [${file.name}]，包含 ${tempWb.SheetNames.length} 个工作表。已在隔离进程中解析。`,
-            timestamp: new Date().toLocaleTimeString()
-          });
-        } catch (readErr) {
-          throw new Error('无法安全解析该工作簿，请确保文件未损坏。详情: ' + (readErr.message || String(readErr)), { cause: readErr });
-        }
-      } catch (err) {
-        console.error('Import failed:', err);
-        alert(`导入角色卡失败:\n${err.message ||'未知文件读取错误'}`);
+  const importCharacterCard = async (file, replaceCard = null) => {
+    validateCharacterCardFile(file);
+    const base64 = await readFileAsBase64(file);
+    const workbook = await parseWorkbookInWorker(base64);
+    validateWorkbook(workbook);
+    const extracted = extractCharacterSheet(workbook, file.name);
+    if (ruleset?.id === 'sf6-v0.9') {
+      const selectedFeatNames = extracted.character.sheet?.selectedFeatNames || [];
+      const selectedFeats = selectedFeatNames.map(name => ruleset.feats.find(feat => feat.name === name)?.id || '');
+      extracted.character.sheet = createSf6SheetData({ ...extracted.character.sheet, selectedFeats });
+      extracted.character = calculateSf6Character(extracted.character, ruleset);
+      extracted.character.feats = sf6CharacterFeatureMap(extracted.character, ruleset);
+    }
+    const cardId = replaceCard?.id || makeId('excel');
+    const linked = characters.find(character => character.sourceExcelCardId === cardId)
+      || (replaceCard?.characterId ? characters.find(character => character.id === replaceCard.characterId) : null);
+    const characterId = linked?.id || makeId('char');
+    const importedCharacter = mergeImportedCharacter(linked ? { ...linked } : { id: characterId }, extracted.character, {
+      cardId,
+      mapId: activeMapId
+    });
+
+    setCharacters?.(previous => {
+      const index = previous.findIndex(character => character.id === characterId || character.sourceExcelCardId === cardId);
+      if (index < 0) return [...previous, importedCharacter];
+      const current = previous[index];
+      const updated = mergeImportedCharacter(current, extracted.character, { cardId, mapId: activeMapId });
+      return previous.map((character, characterIndex) => characterIndex === index ? updated : character);
+    });
+
+    const now = new Date();
+    const card = {
+      ...(replaceCard || {}),
+      id: cardId,
+      filename: file.name,
+      fileData: base64,
+      sheetNames: workbook.SheetNames,
+      uploadTime: now.toLocaleString(),
+      lastImportedAt: now.toISOString(),
+      sizeBytes: file.size,
+      characterId,
+      characterName: extracted.character.name,
+      autoImport: {
+        found: extracted.found,
+        warnings: extracted.warnings,
+        sheetCount: extracted.sheetCount
       }
     };
-    reader.readAsDataURL(file); // Native, extremely fast base64 reader
-    e.target.value = ''; // Reset uploader
+
+    setExcelCards(previous => replaceCard
+      ? previous.map(existing => existing.id === replaceCard.id ? card : existing)
+      : [...previous, card]);
+    setActiveExcelCardId(card.id);
+    addLog?.({
+      type: 'SYSTEM',
+      content: `**${replaceCard ? '更新' : '导入'} Excel 角色卡**: [${file.name}] → **${extracted.character.name}**。自动识别 ${extracted.found.length} 项字段，${replaceCard ? '已同步更新关联角色并保留地图位置与战斗状态' : '已创建关联角色'}。`,
+      timestamp: now.toLocaleTimeString()
+    });
+    return card;
+  };
+
+  // Each selected workbook is parsed independently and creates one linked character.
+  const handleFileChange = async (e, replaceCard = null) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length) return;
+    setImportingCount(files.length);
+    const failures = [];
+    for (const file of files) {
+      try {
+        await importCharacterCard(file, replaceCard);
+      } catch (error) {
+        console.error('Character card import failed:', error);
+        failures.push(`${file.name}: ${error.message || '未知文件读取错误'}`);
+      } finally {
+        setImportingCount(count => Math.max(0, count - 1));
+      }
+    }
+    if (failures.length) alert(`以下角色卡导入失败：\n${failures.join('\n')}`);
   };
 
   const handleRulebookFileChange = (e) => {
@@ -747,7 +798,7 @@ export default function ExcelImporter({
 
   const handleDeleteCard = (e, id, name) => {
     e.stopPropagation(); // Avoid activating the card upon deletion click
-    if (window.confirm(`删除确认\n确定要永久从战役中删除已导入的玩家 Excel 角色卡 [${name}] 吗？`)) {
+    if (window.confirm(`删除确认\n确定要从战役中删除 Excel 角色卡 [${name}] 吗？关联角色会保留，但不再自动同步。`)) {
       setExcelCards(prev => {
         const remaining = prev.filter(c => c.id !== id);
         if (activeExcelCardId === id) {
@@ -755,11 +806,14 @@ export default function ExcelImporter({
         }
         return remaining;
       });
+      setCharacters?.(previous => previous.map(character => character.sourceExcelCardId === id
+        ? { ...character, sourceExcelCardId: undefined, sourceExcelImportedAt: undefined }
+        : character));
 
       if (addLog) {
         addLog({
           type: 'SYSTEM',
-          content: `**已移除 Excel 角色卡**: [${name}]。`,
+          content: `**已移除 Excel 角色卡**: [${name}]。关联角色已保留并解除自动同步。`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -784,12 +838,13 @@ export default function ExcelImporter({
         <SideKey code="Sheets" title= "已导入角色卡" count={excelCards.length} />
         <div style={{ padding: 'var(--space-3)' }}>
           <UploadLabel
-            accept=".xlsx, .xls"
+            accept=".xlsx,.xls,.xlsm,.xlsb"
             onChange={handleFileChange}
             icon="file-xls"
-            title= "导入 .xlsx / .xls 玩家角色卡（单文件最大 2MB，最多 50 个工作表）"
+            title="可一次选择多张角色卡；每个文件自动建立一个关联角色（单文件最大 2MB，最多 50 个工作表）"
+            multiple
           >
-            导入 Excel 角色卡
+            {importingCount ? `正在导入 ${importingCount} 张…` : '导入 Excel 角色卡'}
           </UploadLabel>
         </div>
 
@@ -822,9 +877,30 @@ export default function ExcelImporter({
                   </span>
                   <span style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
                     <span>{card.sizeBytes ? formatBytes(card.sizeBytes) : '未知大小'}</span>
-                    <span>{card.uploadTime ? card.uploadTime.split(' ')[0].split('/').slice(1).join('/') : ''}</span>
+                    <span>{card.characterName ? `→ ${card.characterName}` : (card.uploadTime ? card.uploadTime.split(' ')[0].split('/').slice(1).join('/') : '')}</span>
                   </span>
-                  <span className="dmf-row-actions" style={{ position: 'absolute', right: 4, top: 4 }}>
+                  {card.autoImport ? (
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: card.autoImport.warnings?.length ? 'var(--text-muted)' : 'var(--accent)' }}>
+                      自动识别 {card.autoImport.found?.length || 0} 项{card.autoImport.warnings?.length ? ` · ${card.autoImport.warnings.length} 条提示` : ' · 已关联'}
+                    </span>
+                  ) : null}
+                  <span className="dmf-row-actions" style={{ position: 'absolute', right: 4, top: 4, display: 'flex', gap: 2 }}>
+                    <input
+                      id={`replace-${card.id}`}
+                      type="file"
+                      accept=".xlsx,.xls,.xlsm,.xlsb"
+                      onChange={event => handleFileChange(event, card)}
+                      style={{ display: 'none' }}
+                    />
+                    <IconButton
+                      icon="arrows-clockwise"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        document.getElementById(`replace-${card.id}`)?.click();
+                      }}
+                      title="重新选择文件并自动更新关联角色（保留地图位置、资源和状态）"
+                    />
                     <IconButton
                       icon="trash"
                       size="sm"
@@ -923,12 +999,13 @@ export default function ExcelImporter({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)', width: '100%', maxWidth: 840 }}>
               <Dropzone
                 id="main-excel-uploader"
-                accept=".xlsx, .xls"
+                accept=".xlsx,.xls,.xlsm,.xlsb"
                 onChange={handleFileChange}
                 icon="file-xls"
-                title= "导入 Excel 玩家角色卡"
-                body="一键还原并复刻玩家的 .xlsx 电子表格，支持合并单元格与多工作表 Sheets 快速检索。"
-                note="支持标准 Excel 格式，单文件最大 2MB"
+                title="批量导入 Excel 玩家角色卡"
+                body="每个工作簿自动建立一个关联角色，并继续保留原表格、合并单元格和多工作表查看。"
+                note="支持 XLSX / XLS / XLSM / XLSB，单文件最大 2MB"
+                multiple
               />
               <Dropzone
                 id="main-rulebook-uploader"
@@ -940,6 +1017,17 @@ export default function ExcelImporter({
                 note="支持 TXT / MD / JSON / XLSX"
               />
             </div>
+            {ruleset?.characterSheetTemplate && (
+              <a
+                href={ruleset.characterSheetTemplate}
+                download="DMForge-SF6-v0.9-角色卡.xlsx"
+                className="dmf-btn dmf-btn-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none' }}
+              >
+                <i className="ph-fill ph-download-simple" aria-hidden="true" />
+                下载 SF6 默认角色卡
+              </a>
+            )}
             <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-faint)', textAlign: 'center', lineHeight: 'var(--type-body-lh)', maxWidth: '60ch' }}>
               规则悬浮窗自适应加宽与增高，完美呈现长篇段落；电子表格规则表自动转换为高可读性管道文本表格。
             </p>
@@ -1063,6 +1151,14 @@ export default function ExcelImporter({
                 {selectedCard.filename}
               </span>
               <span style={{ flex: 1 }} />
+              {selectedCard.autoImport ? (
+                <span
+                  title={selectedCard.autoImport.warnings?.join('；') || `已识别：${selectedCard.autoImport.found?.join('、')}`}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: selectedCard.autoImport.warnings?.length ? 'var(--text-muted)' : 'var(--accent)', whiteSpace: 'nowrap' }}
+                >
+                  关联角色：{selectedCard.characterName || '未命名'} · 识别 {selectedCard.autoImport.found?.length || 0} 项
+                </span>
+              ) : null}
               <span style={{ width: 260 }}>
                 <TextInput
                   size="sm"

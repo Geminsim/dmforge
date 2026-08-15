@@ -10,6 +10,61 @@ export function resetTurnResources(character) {
   };
 }
 
+export function resetResourcesForRest(character, restType) {
+  const allowed = restType === 'long' ? new Set(['turn', 'short_rest', 'long_rest']) : new Set(['turn', 'short_rest']);
+  const resources = (character.resources || []).map(resource => allowed.has(resource.resetType) ? { ...resource, value: resource.max } : resource);
+  const drive = resources.find(resource => resource.name === '斗气');
+  return { ...character, resources, conditions: (character.conditions || []).filter(condition => !(condition.id === 'burnout' && (!drive || drive.value > 0))) };
+}
+
+export function spendResource(character, resourceName, amount = 1) {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('资源消耗必须是非负数');
+  const resources = (character.resources || []).map(resource => {
+    if (resource.name !== resourceName) return resource;
+    if (resource.value < amount) throw new Error(`${resourceName}不足`);
+    return { ...resource, value: resource.value - amount };
+  });
+  if (!resources.some(resource => resource.name === resourceName)) throw new Error(`未找到资源：${resourceName}`);
+  const drive = resources.find(resource => resource.name === '斗气');
+  let conditions = [...(character.conditions || [])];
+  if (resourceName === '斗气' && drive?.value === 0 && !conditions.some(condition => condition.id === 'burnout')) conditions.push({ id: 'burnout', name: '斗气枯竭', duration: 'permanent', source: 'resource' });
+  return { ...character, resources, conditions };
+}
+
+export function effectiveArmorClass(character) {
+  return (character.ac ?? 10) - ((character.conditions || []).some(condition => condition.id === 'burnout' || condition.name === '斗气枯竭') ? 3 : 0);
+}
+
+const conditionMatches = (condition, ids, names) => ids.includes(condition.id) || names.includes(condition.name);
+
+export function processTurnStartConditions(character) {
+  const removed = [];
+  let movementMultiplier = 1;
+  const conditions = (character.conditions || []).filter(condition => {
+    if (conditionMatches(condition, ['knockdown'], ['倒地'])) { removed.push(condition); return false; }
+    if (conditionMatches(condition, ['hard-knockdown'], ['强制倒地'])) { removed.push(condition); movementMultiplier = 0.5; return false; }
+    return true;
+  });
+  const speed = character.speed ?? 30;
+  return { character: { ...character, conditions, combatSpeedRemaining: Math.floor(speed * movementMultiplier), combatStartGridX: character.gridX ?? 2, combatStartGridY: character.gridY ?? 2 }, removed, movementMultiplier };
+}
+
+export function processTurnEndConditions(character) {
+  const removed = [];
+  const added = [];
+  const transientIds = ['wall-bounce', 'crumple', 'counter-hit', 'punish-counter'];
+  const transientNames = ['弹墙', '跪倒', '打康', '确反康'];
+  const conditions = [];
+  for (const condition of character.conditions || []) {
+    if (conditionMatches(condition, ['ground-bounce'], ['弹地'])) {
+      removed.push(condition);
+      added.push({ id: 'hard-knockdown', name: '强制倒地', duration: 'permanent', source: 'ground-bounce' });
+    } else if (conditionMatches(condition, transientIds, transientNames)) removed.push(condition);
+    else conditions.push(condition);
+  }
+  return { character: { ...character, conditions: [...conditions, ...added] }, removed, added };
+}
+
 export function tickRoundConditions(characters) {
   const expired = [];
   const updatedCharacters = characters.map(character => {
@@ -46,8 +101,8 @@ export function rollInitiative(characters, participantIds, random = Math.random)
     if (b.total !== a.total) return b.total - a.total;
     const characterA = characters.find(character => character.id === a.id);
     const characterB = characters.find(character => character.id === b.id);
-    const agilityA = characterA?.stats?.['敏捷 (Agility)'] ?? 10;
-    const agilityB = characterB?.stats?.['敏捷 (Agility)'] ?? 10;
+    const agilityA = characterA?.stats?.速度 ?? characterA?.stats?.['敏捷 (Agility)'] ?? 10;
+    const agilityB = characterB?.stats?.速度 ?? characterB?.stats?.['敏捷 (Agility)'] ?? 10;
     if (agilityB !== agilityA) return agilityB - agilityA;
     return Number(characterB?.type === 'PC') - Number(characterA?.type === 'PC');
   });

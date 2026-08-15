@@ -65,7 +65,9 @@ release/DMForge-portable/
 release/DMForge-portable-windows-x64.zip
 ```
 
-把 ZIP 解压到普通可写目录后，用户可直接双击 `run.bat`，不需要选择模式，也不需要安装 Node.js、npm 或 Docker。便携包内含构建机器当前使用的 Windows x64 `node.exe`。
+把 ZIP 解压到普通可写目录后，用户可直接双击 `DMForge.exe`，不需要选择模式，也不需要安装 Node.js、npm 或 Docker。它会静默启动本地服务、等待就绪并打开浏览器；重复点击只会再次打开应用，不会重复启动服务。便携包内含构建机器当前使用的 Windows x64 `node.exe`。
+
+要加入 Windows 开始菜单，双击 `install-start-menu.bat`。随后在开始菜单搜索“DMForge”，右键即可选择“固定到开始”或“固定到任务栏”。应用目录移动后应重新运行安装脚本；可用 `uninstall-start-menu.bat` 移除入口。`run.bat` 继续保留为启动故障排查入口。
 
 便携版的战役状态、滚动备份和令牌都保存在解压后的应用目录中。升级时应先备份以下文件：
 

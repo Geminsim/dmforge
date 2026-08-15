@@ -73,3 +73,16 @@ test('creates a named manual backup without changing the campaign revision', t =
   assert.equal(store.read().data.lastUpdated, 1);
   assert.throws(() => store.createManualBackup('"stale"'), CampaignConflictError);
 });
+
+test('separate campaign directories do not share state or backups', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dmforge-multi-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const first = new CampaignStore(path.join(root, 'campaigns', 'first'));
+  const second = new CampaignStore(path.join(root, 'campaigns', 'second'));
+  first.write({ ...campaign(1), maps: [{ id: 'first-map', name: 'First', width: 10, height: 10 }], activeMapId: 'first-map' }, '"empty"');
+  second.write({ ...campaign(2), maps: [{ id: 'second-map', name: 'Second', width: 10, height: 10 }], activeMapId: 'second-map' }, '"empty"');
+  assert.equal(first.read().data.activeMapId, 'first-map');
+  assert.equal(second.read().data.activeMapId, 'second-map');
+  first.createManualBackup(first.read().revision);
+  assert.equal(first.listBackups().length > second.listBackups().length, true);
+});

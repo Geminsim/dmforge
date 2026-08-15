@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, Button, IconButton, TextInput, Select, Badge, EmptyState } from '../../ds';
+import Sf6CharacterSheetEditor from './Sf6CharacterSheetEditor';
 
 /**
  * Create / edit a character, monster or NPC.
@@ -95,6 +96,7 @@ export default function CharacterEditorModal({
   newChar,
   setNewChar,
   customAttributeLabels,
+  ruleset,
   onClose,
   onSave
 }) {
@@ -104,7 +106,29 @@ export default function CharacterEditorModal({
 
   if (!open) return null;
 
+  if (ruleset?.id === 'sf6-v0.9') return (
+    <Modal
+      open
+      onClose={onClose}
+      icon="identification-card"
+      width={1180}
+      title={editingCharId ? '编辑 SF6 角色卡' : '创建 SF6 角色卡'}
+      footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button icon="check" onClick={onSave}>{editingCharId ? '保存角色卡' : '创建角色'}</Button></>}
+    >
+      <Sf6CharacterSheetEditor draft={newChar} setDraft={setNewChar} ruleset={ruleset} />
+    </Modal>
+  );
+
   const patch = fields => setNewChar({ ...newChar, ...fields });
+  const classOptions = ruleset?.classes?.map(item => ({ value: item.name, label: item.name })) || [];
+  const selectedClass = ruleset?.classes?.find(item => item.name === newChar.class);
+  const chooseClass = value => {
+    const definition = ruleset?.classes?.find(item => item.name === value);
+    if (!definition) return patch({ class: value });
+    const stats = Object.fromEntries(definition.attributeOrder.map((key, index) => [ruleset.attributes[key], definition.stats[index]]));
+    const speedModifier = Math.floor(((stats.速度 ?? 10) - 10) / 2);
+    patch({ class: value, subclass: '', stats, hitDice: definition.hitDice, ac: definition.ac + speedModifier, speed: definition.speed, initiative: speedModifier, resources: ruleset.resources.map(resource => ({ ...resource, value: resource.max })) });
+  };
 
   const addResource = () => {
     if (!resName.trim()) return;
@@ -144,12 +168,7 @@ export default function CharacterEditorModal({
           <Select label="类型" value={newChar.type} onChange={e => patch({ type: e.target.value })} options={TYPE_OPTIONS} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-          <TextInput
-            label="职业"
-            placeholder="职业 (如: 法师 / 战士)"
-            value={newChar.class}
-            onChange={e => patch({ class: e.target.value })}
-          />
+          {classOptions.length ? <Select label="职业" value={newChar.class} onChange={e => chooseClass(e.target.value)} options={[{ value: '', label: '选择职业' }, ...classOptions]} /> : <TextInput label="职业" placeholder="职业" value={newChar.class} onChange={e => patch({ class: e.target.value })} />}
           <TextInput
             label="初始生命 (Max HP)"
             mono
@@ -158,6 +177,7 @@ export default function CharacterEditorModal({
             onChange={e => patch({ maxHp: Math.max(1, parseInt(e.target.value, 10) || 10) })}
           />
         </div>
+        {selectedClass && <Select label="子职业" value={newChar.subclass || ''} onChange={e => patch({ subclass: e.target.value })} options={[{ value: '', label: newChar.level >= 6 ? '选择子职业' : '6 级解锁（可预选）' }, ...selectedClass.subclasses.map(value => ({ value, label: value }))]} />}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
           <TextInput
             label="初始/当前等级 (Level)"

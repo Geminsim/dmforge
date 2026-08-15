@@ -12,11 +12,32 @@ import { ResizeHandle } from './ds';
 import { applyTheme, readStoredTheme } from './ds/theme';
 import { CURRENT_SCHEMA_VERSION, MAX_CAMPAIGN_FILE_BYTES, prepareCampaign } from './utils/campaignValidation';
 import { resolveSyncToken } from './utils/syncToken';
-import { createLocalRecoveryPoint, describeStorageError, listLocalRecoveryPoints, loadCampaignSnapshot, restoreLocalRecoveryPoint, safeWriteSetting, saveCampaignSnapshot } from './utils/campaignSnapshotStore';
+import { createLocalRecoveryPoint, describeStorageError, getActiveCampaignId, listLocalRecoveryPoints, loadActiveCampaignSnapshot, restoreLocalRecoveryPoint, safeWriteSetting, saveCampaignSnapshot } from './utils/campaignSnapshotStore';
 import { createCampaignExport, openCampaignExport } from './utils/campaignExport';
 import { serializeJsonOffThread } from './utils/jsonSerialization';
 import { decideInitialSync, decidePollingSync } from './utils/syncDecision';
 import { buildPublicPresentationSnapshot, DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings, PRESENTATION_PROTOCOL } from './utils/presentation';
+import { resetResourcesForRest } from './utils/combatRules';
+import { SF6_RULESET } from './data/sf6Ruleset';
+import { createBlankCampaign, createSf6Campaign } from './data/campaignTemplates';
+import { calculateSf6Character, createSf6SheetData, sf6CharacterFeatureMap } from './utils/sf6CharacterSheet';
+
+const isSf6Campaign = data => data?.rulesetId === SF6_RULESET.id || data?.ruleset?.id === SF6_RULESET.id || data?.metadata?.templateId === SF6_RULESET.id;
+const upgradeSf6Notes = (notes, data) => {
+  if (!isSf6Campaign(data)) return notes || [];
+  const content = SF6_RULESET.rulings.map(item => `• ${item.text}`).join('\n');
+  return (notes || []).map(note => note.id === 'note_dm_rulings' ? { ...note, title: 'DM：v0.9 规则裁定', content } : note);
+};
+const upgradeSf6Characters = (characters, data) => {
+  const sanitized = sanitizeCharacters(characters || []);
+  if (!isSf6Campaign(data)) return sanitized;
+  return sanitized.map(character => ({
+    ...character,
+    resources: character.resources.map(resource => resource.name === '超级必杀槽'
+      ? { ...resource, max: 1, value: Math.min(1, resource.value ?? 1), resetType: 'long_rest' }
+      : resource)
+  }));
+};
 
 
 // --- Helper to ensure all characters have default resources ---
@@ -46,6 +67,8 @@ const sanitizeCharacters = (chars) => {
       resources = resources.map(r => r.name === '附赠动作' ? { ...r, resetType: 'turn', max: 1 } : r);
     }
 
+    if (!resources.some(r => r.name === '反应')) resources.push({ name: '反应', max: 1, value: 1, resetType: 'turn' });
+
     // Ensure all resources have a resetType, defaulting to 'long_rest'
     resources = resources.map(r => ({
       ...r,
@@ -63,83 +86,17 @@ const sanitizeCharacters = (chars) => {
   });
 };
 
+const featureLevel = feature => Number.parseInt(String(feature?.name || '').match(/\d+/)?.[0] || '1', 10);
+const buildRulesetFeatures = (classDefinition, subclass, level) => {
+  if (!classDefinition) return { '特质': '新录入的角色' };
+  const available = [
+    ...(classDefinition.features || []),
+    ...((classDefinition.subclassFeatures || {})[subclass] || [])
+  ].filter(feature => featureLevel(feature) <= level);
+  return Object.fromEntries(available.map(feature => [feature.name, feature.description]));
+};
+
 // --- Campaign Initial Fallback Templates (Out of the Box) ---
-const INITIAL_CHARACTERS = [
-  {
-    id: 'char_player_a',
-    name: '奥利奥 (战士)',
-    type: 'PC',
-    hp: 45,
-    maxHp: 55,
-    gridX: 5,
-    gridY: 5,
-    mapId: 'map_initial_1',
-    stats: {
-      '力量 (Physical)': 16,
-      '敏捷 (Agility)': 12,
-      '体质 (Fortitude)': 14,
-      '感知 (Perception)': 10,
-      '智力 (Intellect)': 8,
-      '神秘 (Arcane)': 6
-    },
-    feats: { '重甲防护': '受到物理伤害减少3点', '横扫攻击': '一次攻击同时打击两个紧挨着的目标' },
-    excelPath: ''
-  },
-  {
-    id: 'char_goblin_squad',
-    name: '哥布林斥候 x3',
-    type: 'NPC',
-    hp: 15,
-    maxHp: 15,
-    gridX: 12,
-    gridY: 10,
-    mapId: 'map_initial_1',
-    stats: {
-      '力量 (Physical)': 8,
-      '敏捷 (Agility)': 14,
-      '体质 (Fortitude)': 10,
-      '感知 (Perception)': 12,
-      '智力 (Intellect)': 6,
-      '神秘 (Arcane)': 2
-    },
-    feats: { '潜伏优势': '在草丛/阴影处具有伏击优势加成。' },
-    excelPath: ''
-  }
-];
-
-const INITIAL_ITEM_TEMPLATES = [
-  { name: '远古圣水', category: '消耗品', description: '饮用后回复20点生命，并对不死生物产生5d6的真实灼烧伤害。' },
-  { name: '魔岩大剑', category: '武器', description: '需要力量15以上。攻击伤害为 2d8+3 物理碎甲伤害。' },
-  { name: '初级治疗药水', category: '消耗品', description: '饮用回复1d8+2点生命值。' }
-];
-
-const INITIAL_ITEM_POOL = [
-  {
-    id: 'item_initial_1',
-    name: '远古圣水',
-    category: '消耗品',
-    quantity: 3,
-    description: '饮用后回复20点生命，并对不死生物产生5d6的真实灼烧伤害。',
-    ownerId: 'WORLD'
-  },
-  {
-    id: 'item_initial_2',
-    name: '魔岩大剑',
-    category: '武器',
-    quantity: 1,
-    description: '需要力量15以上。攻击伤害为 2d8+3 物理碎甲伤害。',
-    ownerId: 'WORLD'
-  },
-  {
-    id: 'item_initial_3',
-    name: '初级治疗药水',
-    category: '消耗品',
-    quantity: 2,
-    description: '饮用回复1d8+2点生命值。',
-    ownerId: 'char_player_a'
-  }
-];
-
 const INITIAL_LOGS = [
   {
     type: 'SYSTEM',
@@ -153,98 +110,11 @@ const INITIAL_GROUPS = [
   { id: 'group_npcs', name: '怪物与NPC' }
 ];
 
-const INITIAL_FLOATING_NOTES = [
-  {
-    id: 'note_initial_1',
-    title: '酒馆传闻与秘密',
-    content: '听酒馆老板娘提起，北山废弃矿井深处，每到月圆之夜就会传出低沉的龙吼声。另外，村口的独眼老汉似乎藏有一张旧矿图...',
-    x: 100,
-    y: 120,
-    color: 'purple',
-    isMinimized: false,
-    isOpen: true
-  },
-  {
-    id: 'note_initial_2',
-    title: '地牢隐藏陷阱提示',
-    content: '注意：第三通道的转角处，第4块和第7块地砖下装有重力压敏机关，踏入会触发两侧墙壁的飞矢陷阱，伤害为 2d6 穿刺。',
-    x: 350,
-    y: 200,
-    color: 'red',
-    isMinimized: true,
-    isOpen: true
-  }
-];
-
-const INITIAL_MAPS = [
-  {
-    id: 'map_initial_1',
-    name: '村口酒馆大厅 (地上)',
-    width: 60,
-    height: 40,
-    bgUrl: '',
-    blockedCells: {
-      '8_7': true, '8_8': true, '8_9': true,
-      '9_7': true, '9_9': true
-    },
-    terrainAreas: [
-      {
-        id: 'terrain_initial_1',
-        name: '烈焰熔岩深渊',
-        type: 'rect',
-        color: 'red',
-        gridX: 15,
-        gridY: 8,
-        width: 8,
-        height: 4,
-        isSecret: false
-      },
-      {
-        id: 'terrain_initial_2',
-        name: '剧毒腐蚀气溶胶',
-        type: 'circle',
-        color: 'emerald',
-        gridX: 28,
-        gridY: 12,
-        radius: 5,
-        isSecret: false
-      },
-      {
-        id: 'terrain_initial_3',
-        name: '隐藏针刺陷阱',
-        type: 'rect',
-        color: 'amber',
-        gridX: 5,
-        gridY: 14,
-        width: 2,
-        height: 2,
-        isSecret: true
-      }
-    ]
-  },
-  {
-    id: 'map_initial_2',
-    name: '地底秘境遗迹 (地下)',
-    width: 50,
-    height: 35,
-    bgUrl: '',
-    blockedCells: {
-      '15_15': true, '15_16': true, '15_17': true
-    },
-    terrainAreas: [
-      {
-        id: 'terrain_initial_4',
-        name: '寒冰深水潭',
-        type: 'circle',
-        color: 'blue',
-        gridX: 20,
-        gridY: 20,
-        radius: 4,
-        isSecret: false
-      }
-    ]
-  }
-];
+const INITIAL_CHARACTERS = [];
+const INITIAL_ITEM_TEMPLATES = [];
+const INITIAL_ITEM_POOL = [];
+const INITIAL_FLOATING_NOTES = [];
+const INITIAL_MAPS = [{ id: 'map_blank_1', name: '未命名地图', width: 60, height: 40, bgUrl: '', blockedCells: {}, terrainAreas: [] }];
 
 // --- Helper for loading from LocalStorage ---
 const getSavedState = (key, fallback) => {
@@ -259,10 +129,11 @@ const getSavedState = (key, fallback) => {
   return fallback;
 };
 
-export default function App() {
+export default function App({ onExitToCampaigns }) {
+  const apiPath = React.useCallback(path => `${path}?campaignId=${encodeURIComponent(getActiveCampaignId() || 'legacy-current')}`, []);
   // --- LAN Sync System States ---
   const clientId = React.useRef(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
-  const lastUpdatedRef = React.useRef(getSavedState('dmforge_lastUpdated', 0));
+  const lastUpdatedRef = React.useRef(0);
   const serverRevisionRef = React.useRef(null);
   const isServerUpdateInProgress = React.useRef(false);
   const isSyncInitialized = React.useRef(false);
@@ -302,6 +173,8 @@ export default function App() {
   const [localRecoveryPoints, setLocalRecoveryPoints] = useState([]);
   const [syncConflict, setSyncConflict] = useState(null);
   const [serverBackups, setServerBackups] = useState([]);
+  const [campaignMetadata, setCampaignMetadata] = useState({ name: '未命名战役', templateId: 'blank', templateVersion: '1' });
+  const [ruleset, setRuleset] = useState(null);
 
   const [currentTab, setCurrentTab] = useState('map'); // map, items, excel
   const [appRole, setAppRole] = useState(() => getSavedState('dmforge_appRole', 'DM'));
@@ -330,7 +203,7 @@ export default function App() {
 
   // Core Campaign states initialized from LocalStorage
   const [characters, setCharacters] = useState(() => {
-    const rawChars = getSavedState('dmforge_characters', INITIAL_CHARACTERS);
+    const rawChars = INITIAL_CHARACTERS;
     const sanitized = rawChars.map(c => ({
       ...c,
       conditions: c.conditions || [],
@@ -340,47 +213,47 @@ export default function App() {
     }));
     return sanitizeCharacters(sanitized);
   });
-  const [itemPool, setItemPool] = useState(() => getSavedState('dmforge_itemPool', INITIAL_ITEM_POOL));
-  const [itemTemplates, setItemTemplates] = useState(() => getSavedState('dmforge_itemTemplates', INITIAL_ITEM_TEMPLATES));
-  const [logs, setLogs] = useState(() => getSavedState('dmforge_logs', INITIAL_LOGS));
-  const [floatingNotes, setFloatingNotes] = useState(() => getSavedState('dmforge_floatingNotes', INITIAL_FLOATING_NOTES));
-  const [maps, setMaps] = useState(() => getSavedState('dmforge_maps', INITIAL_MAPS));
-  const [activeMapId, setActiveMapId] = useState(() => getSavedState('dmforge_activeMapId', 'map_initial_1'));
+  const [itemPool, setItemPool] = useState(INITIAL_ITEM_POOL);
+  const [itemTemplates, setItemTemplates] = useState(INITIAL_ITEM_TEMPLATES);
+  const [logs, setLogs] = useState(INITIAL_LOGS);
+  const [floatingNotes, setFloatingNotes] = useState(INITIAL_FLOATING_NOTES);
+  const [maps, setMaps] = useState(INITIAL_MAPS);
+  const [activeMapId, setActiveMapId] = useState('map_blank_1');
   
   // Global turn-based combat states
-  const [isInCombat, setIsInCombat] = useState(() => getSavedState('dmforge_isInCombat', false));
-  const [combatRound, setCombatRound] = useState(() => getSavedState('dmforge_combatRound', 1));
-  const [currentTurnIndex, setCurrentTurnIndex] = useState(() => getSavedState('dmforge_currentTurnIndex', 0));
-  const [combatParticipants, setCombatParticipants] = useState(() => getSavedState('dmforge_combatParticipants', []));
-  const [combatTurnOrder, setCombatTurnOrder] = useState(() => getSavedState('dmforge_combatTurnOrder', []));
+  const [isInCombat, setIsInCombat] = useState(false);
+  const [combatRound, setCombatRound] = useState(1);
+  const [currentTurnIndex, setCurrentTurnIndex] = useState(0);
+  const [combatParticipants, setCombatParticipants] = useState([]);
+  const [combatTurnOrder, setCombatTurnOrder] = useState([]);
   
   // High-fidelity Excel Spreadsheets database
-  const [excelCards, setExcelCards] = useState(() => getSavedState('dmforge_excelCards', []));
-  const [activeExcelCardId, setActiveExcelCardId] = useState(() => getSavedState('dmforge_activeExcelCardId', ''));
+  const [excelCards, setExcelCards] = useState([]);
+  const [activeExcelCardId, setActiveExcelCardId] = useState('');
 
   // Custom Groups state
-  const [groups, setGroups] = useState(() => getSavedState('dmforge_groups', INITIAL_GROUPS));
+  const [groups, setGroups] = useState(INITIAL_GROUPS);
 
   // Custom Core Attribute display labels state
-  const [customAttributeLabels, setCustomAttributeLabels] = useState(() => getSavedState('dmforge_customAttributeLabels', {
+  const [customAttributeLabels, setCustomAttributeLabels] = useState({
     '力量 (Physical)': '力量 (Physical)',
     '敏捷 (Agility)': '敏捷 (Agility)',
     '体质 (Fortitude)': '体质 (Fortitude)',
     '感知 (Perception)': '感知 (Perception)',
     '智力 (Intellect)': '智力 (Intellect)',
     '神秘 (Arcane)': '神秘 (Arcane)'
-  }));
+  });
 
   useEffect(() => {
     let active = true;
-    loadCampaignSnapshot().then(snapshot => {
+    loadActiveCampaignSnapshot().then(snapshot => {
       if (!active || !snapshot) return;
       const data = prepareCampaign(snapshot);
-      setCharacters(sanitizeCharacters(data.characters));
+      setCharacters(upgradeSf6Characters(data.characters, data));
       setItemPool(data.itemPool);
       setItemTemplates(data.itemTemplates);
       setLogs(data.logs);
-      setFloatingNotes(data.floatingNotes);
+      setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
       setMaps(data.maps);
       setActiveMapId(data.activeMapId);
       setExcelCards(data.excelCards);
@@ -391,6 +264,8 @@ export default function App() {
       setCombatParticipants(data.combatParticipants);
       setCombatTurnOrder(data.combatTurnOrder);
       setCustomAttributeLabels(data.customAttributeLabels);
+      setCampaignMetadata(data.metadata || { name: '未命名战役', templateId: 'legacy', templateVersion: '1' });
+      setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
       lastUpdatedRef.current = data.lastUpdated || 0;
     }).catch(error => {
       if (active) setStorageError(describeStorageError(error));
@@ -445,11 +320,12 @@ export default function App() {
 
   const handleOpenAddCharModal = React.useCallback(() => {
     setEditingCharId(null);
-    setNewChar({
+    const emptyDraft = {
       name: '',
-      type: 'NPC',
+      type: ruleset?.id === SF6_RULESET.id ? 'PC' : 'NPC',
       class: '',
       maxHp: 30,
+      hp: 30,
       ac: 10,
       initiative: 0,
       speed: 30,
@@ -463,15 +339,17 @@ export default function App() {
       },
       resources: [],
       conditions: [],
-      level: 1,
+      level: ruleset?.id === SF6_RULESET.id ? 3 : 1,
       hitDice: 'd8',
       levelHpIncreases: [],
-      tempHp: 0
-    });
+      tempHp: 0,
+      sheet: ruleset?.id === SF6_RULESET.id ? createSf6SheetData() : undefined
+    };
+    setNewChar(ruleset?.id === SF6_RULESET.id ? calculateSf6Character(emptyDraft, ruleset) : emptyDraft);
     // The resource sub-form lives in CharacterEditorModal and unmounts with it,
     // so it resets itself every time the modal opens.
     setIsAddCharModalOpen(true);
-  }, []);
+  }, [ruleset]);
 
   const handleOpenRestModal = React.useCallback((type) => {
     setRestModalType(type);
@@ -497,17 +375,9 @@ export default function App() {
           const newHp = Math.min(c.maxHp, c.hp + hpRecovery);
           
           // 2. Reset resources with resetType === 'short_rest' or 'turn'
-          const updatedResources = (c.resources || []).map(res => {
-            if (res.resetType === 'short_rest' || res.resetType === 'turn') {
-              return { ...res, value: res.max };
-            }
-            return res;
-          });
-
           return {
-            ...c,
+            ...resetResourcesForRest(c, 'short'),
             hp: newHp,
-            resources: updatedResources
           };
         }
         return c;
@@ -531,14 +401,9 @@ export default function App() {
           
           // 1. Recover 100% max HP
           // 2. Reset ALL resources to max
-          const updatedResources = (c.resources || []).map(res => {
-            return { ...res, value: res.max };
-          });
-
           return {
-            ...c,
+            ...resetResourcesForRest(c, 'long'),
             hp: c.maxHp,
-            resources: updatedResources,
             conditions: [], // clear all conditions
             combatSpeedRemaining: c.speed !== undefined ? c.speed : 30 // recover speed
           };
@@ -561,6 +426,7 @@ export default function App() {
       name: char.name || '',
       type: char.type || 'NPC',
       class: char.class || '',
+      subclass: char.subclass || '',
       maxHp: char.maxHp || 30,
       ac: char.ac !== undefined ? char.ac : 10,
       initiative: char.initiative !== undefined ? char.initiative : 0,
@@ -579,11 +445,12 @@ export default function App() {
       hitDice: char.hitDice !== undefined ? char.hitDice : 'd8',
       levelHpIncreases: char.levelHpIncreases ? [...char.levelHpIncreases] : [],
       tempHp: char.tempHp !== undefined ? char.tempHp : 0
+      ,sheet: char.sheet ? createSf6SheetData(char.sheet) : (ruleset?.id === SF6_RULESET.id ? createSf6SheetData() : undefined)
     });
     // The resource sub-form lives in CharacterEditorModal and unmounts with it,
     // so it resets itself every time the modal opens.
     setIsAddCharModalOpen(true);
-  }, []);
+  }, [ruleset]);
 
 
   // --- LAN Sync Engine ---
@@ -591,6 +458,9 @@ export default function App() {
   // Pack current campaign state to JSON payload
   const getCampaignPayload = (timestamp) => {
     return {
+      metadata: campaignMetadata,
+      rulesetId: ruleset?.id || null,
+      ruleset,
       characters,
       itemPool,
       itemTemplates,
@@ -718,7 +588,7 @@ export default function App() {
       isPushInFlight.current = false;
       return;
     }
-    fetch('/api/campaign', {
+    fetch(apiPath('/api/campaign'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -760,11 +630,11 @@ export default function App() {
     isServerUpdateInProgress.current = true;
     localDirtyRef.current = false;
     
-    if (data.characters) setCharacters(sanitizeCharacters(data.characters));
+    if (data.characters) setCharacters(upgradeSf6Characters(data.characters, data));
     if (data.itemPool) setItemPool(data.itemPool);
     if (data.itemTemplates) setItemTemplates(data.itemTemplates);
     if (data.logs) setLogs(data.logs);
-    if (data.floatingNotes) setFloatingNotes(data.floatingNotes);
+    if (data.floatingNotes) setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
     if (data.maps) setMaps(data.maps);
     if (data.activeMapId) setActiveMapId(data.activeMapId);
     if (data.excelCards) setExcelCards(data.excelCards);
@@ -776,6 +646,8 @@ export default function App() {
     if (data.combatParticipants) setCombatParticipants(data.combatParticipants);
     if (data.combatTurnOrder) setCombatTurnOrder(data.combatTurnOrder);
     if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
+    if (data.metadata) setCampaignMetadata(data.metadata);
+    setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
     
     lastUpdatedRef.current = data.lastUpdated;
     safeWriteSetting('dmforge_lastUpdated', data.lastUpdated, setStorageError);
@@ -835,7 +707,7 @@ export default function App() {
     let active = true;
 
     const alignAndSync = () => {
-      fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
+      fetch(apiPath('/api/campaign'), { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
         .then(async res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return { data: await res.json(), revision: res.headers.get('ETag') || '"empty"' };
@@ -889,7 +761,7 @@ export default function App() {
         return;
       }
 
-      fetch('/api/campaign', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
+      fetch(apiPath('/api/campaign'), { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} })
         .then(async res => {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return { data: await res.json(), revision: res.headers.get('ETag') || '"empty"' };
@@ -977,11 +849,14 @@ export default function App() {
     return () => clearTimeout(timer);
   // getCampaignPayload captures precisely the campaign fields listed below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageReady, characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels]);
+  }, [storageReady, campaignMetadata, ruleset, characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels]);
 
   // --- Campaign Import / Export / Reset Functions ---
   const handleExportCampaign = async () => {
     const campaignData = {
+      metadata: campaignMetadata,
+      rulesetId: ruleset?.id || null,
+      ruleset,
       characters,
       itemPool,
       itemTemplates,
@@ -1050,11 +925,11 @@ export default function App() {
         const data = prepareCampaign(await openCampaignExport(parsed, password));
         await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '导入前自动恢复点');
 
-        setCharacters(sanitizeCharacters(data.characters));
+        setCharacters(upgradeSf6Characters(data.characters, data));
         setItemPool(data.itemPool || []);
         setItemTemplates(data.itemTemplates || INITIAL_ITEM_TEMPLATES);
         setLogs(data.logs || []);
-        setFloatingNotes(data.floatingNotes || []);
+        setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
         setMaps(data.maps);
         setActiveMapId(data.activeMapId || data.maps[0].id);
         setExcelCards(data.excelCards || []);
@@ -1074,6 +949,8 @@ export default function App() {
         if (data.rightSidebarWidth) setRightSidebarWidth(data.rightSidebarWidth);
         if (data.isPlayerViewMode !== undefined) handleSetAppRole(data.isPlayerViewMode ? 'PLAYER' : 'DM');
         if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
+        setCampaignMetadata(data.metadata || { name: '导入的战役', templateId: 'imported', templateVersion: '1' });
+        setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
 
         await saveCampaignSnapshot(data);
         setLocalRecoveryPoints(await listLocalRecoveryPoints());
@@ -1109,7 +986,7 @@ export default function App() {
       setLocalRecoveryPoints(await listLocalRecoveryPoints());
       let serverMessage = '';
       if (isSyncConnected && appRole !== 'PLAYER' && serverRevisionRef.current) {
-        const response = await fetch('/api/backups', {
+        const response = await fetch(apiPath('/api/backups'), {
           method: 'POST',
           headers: { ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}), 'If-Match': serverRevisionRef.current }
         });
@@ -1147,7 +1024,7 @@ export default function App() {
 
   const refreshServerBackups = async () => {
     try {
-      const response = await fetch('/api/backups', { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} });
+      const response = await fetch(apiPath('/api/backups'), { headers: syncToken ? { Authorization: `Bearer ${syncToken}` } : {} });
       if (!response.ok) throw new Error(`服务器返回 HTTP ${response.status}`);
       const data = await response.json();
       setServerBackups(data.backups || []);
@@ -1159,7 +1036,7 @@ export default function App() {
   const handleRestoreServer = async name => {
     if (!window.confirm(`恢复服务器备份 ${name}？服务器会先保存当前版本。`)) return;
     try {
-      const response = await fetch('/api/backups/restore', {
+      const response = await fetch(apiPath('/api/backups/restore'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}), 'If-Match': serverRevisionRef.current || '"missing"' },
         body: JSON.stringify({ name })
@@ -1220,13 +1097,14 @@ export default function App() {
         localStorage.removeItem('dmforge_combatTurnOrder');
         localStorage.removeItem('dmforge_customAttributeLabels');
 
-        setCharacters(sanitizeCharacters(INITIAL_CHARACTERS));
-        setItemPool(INITIAL_ITEM_POOL);
-        setItemTemplates(INITIAL_ITEM_TEMPLATES);
-        setLogs(INITIAL_LOGS);
-        setFloatingNotes(INITIAL_FLOATING_NOTES);
-        setMaps(INITIAL_MAPS);
-        setActiveMapId('map_initial_1');
+        const resetData = campaignMetadata.templateId === SF6_RULESET.id ? createSf6Campaign(campaignMetadata.name) : createBlankCampaign(campaignMetadata.name);
+        setCharacters([]);
+        setItemPool(resetData.itemPool);
+        setItemTemplates(resetData.itemTemplates);
+        setLogs(resetData.logs);
+        setFloatingNotes(resetData.floatingNotes);
+        setMaps(resetData.maps);
+        setActiveMapId(resetData.activeMapId);
         setLeftSidebarWidth(320);
         setRightSidebarWidth(320);
         setAppRole('DM');
@@ -1234,20 +1112,15 @@ export default function App() {
         setIsRightSidebarCollapsed(false);
         setExcelCards([]);
         setActiveExcelCardId('');
-        setGroups(INITIAL_GROUPS);
+        setGroups(resetData.groups);
         setIsInCombat(false);
         setCombatRound(1);
         setCurrentTurnIndex(0);
         setCombatParticipants([]);
         setCombatTurnOrder([]);
-        setCustomAttributeLabels({
-          '力量 (Physical)': '力量 (Physical)',
-          '敏捷 (Agility)': '敏捷 (Agility)',
-          '体质 (Fortitude)': '体质 (Fortitude)',
-          '感知 (Perception)': '感知 (Perception)',
-          '智力 (Intellect)': '智力 (Intellect)',
-          '神秘 (Arcane)': '神秘 (Arcane)'
-        });
+        setCustomAttributeLabels(resetData.customAttributeLabels);
+        setCampaignMetadata(resetData.metadata);
+        setRuleset(resetData.ruleset);
 
         setLocalRecoveryPoints(await listLocalRecoveryPoints());
         alert('出厂战役重置成功！重置前内容已保留在本机恢复点中。');
@@ -1324,6 +1197,7 @@ export default function App() {
       },
       feats: char.feats ? { ...char.feats } : {},
       resources: char.resources ? char.resources.map(r => ({ ...r })) : [],
+      sheet: char.sheet ? createSf6SheetData(structuredClone(char.sheet)) : undefined,
       groupId: char.groupId || (char.type === 'PC' ? 'group_pcs' : 'group_npcs')
     };
 
@@ -1424,32 +1298,41 @@ export default function App() {
     : null;
 
   const handleSaveCharacter = () => {
-    if (!newChar.name.trim()) {
+    const saveDraft = ruleset?.id === SF6_RULESET.id ? calculateSf6Character(newChar, ruleset) : newChar;
+    if (!saveDraft.name.trim()) {
       alert('请输入角色/怪物名称！');
       return;
     }
     const timestamp = new Date().toLocaleTimeString();
 
     if (editingCharId) {
+      const selectedClass = ruleset?.classes?.find(entry => entry.name === saveDraft.class.trim());
       setCharacters(prev => sanitizeCharacters(prev.map(c => {
         if (c.id !== editingCharId) return c;
         return {
           ...c,
-          name: newChar.name.trim(),
-          type: newChar.type,
-          class: newChar.class.trim() || '无职业',
-          maxHp: newChar.maxHp,
-          hp: Math.min(c.hp, newChar.maxHp), // keep current HP inside the new ceiling
-          ac: newChar.ac,
-          initiative: newChar.initiative,
-          speed: newChar.speed,
-          stats: newChar.stats,
-          resources: newChar.resources,
+          name: saveDraft.name.trim(),
+          type: saveDraft.type,
+          class: saveDraft.class.trim() || '无职业',
+          subclass: saveDraft.subclass || '',
+          maxHp: saveDraft.maxHp,
+          hp: Math.min(saveDraft.hp ?? c.hp, saveDraft.maxHp),
+          ac: saveDraft.ac,
+          initiative: saveDraft.initiative,
+          speed: saveDraft.speed,
+          stats: saveDraft.stats,
+          savingThrows: saveDraft.savingThrows,
+          skillTotals: saveDraft.skillTotals,
+          passivePerception: saveDraft.passivePerception,
+          proficiencyBonus: saveDraft.proficiencyBonus,
+          feats: ruleset?.id === SF6_RULESET.id ? sf6CharacterFeatureMap(saveDraft, ruleset) : selectedClass ? buildRulesetFeatures(selectedClass, saveDraft.subclass, saveDraft.level || 1) : c.feats,
+          resources: saveDraft.resources,
+          sheet: saveDraft.sheet,
           conditions: c.conditions || [],
-          level: newChar.level !== undefined ? newChar.level : (c.level || 1),
-          hitDice: newChar.hitDice !== undefined ? newChar.hitDice : (c.hitDice || 'd8'),
-          levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : (c.levelHpIncreases || []),
-          tempHp: newChar.tempHp !== undefined ? newChar.tempHp : (c.tempHp || 0)
+          level: saveDraft.level !== undefined ? saveDraft.level : (c.level || 1),
+          hitDice: saveDraft.hitDice !== undefined ? saveDraft.hitDice : (c.hitDice || 'd8'),
+          levelHpIncreases: saveDraft.levelHpIncreases ? [...saveDraft.levelHpIncreases] : (c.levelHpIncreases || []),
+          tempHp: saveDraft.tempHp !== undefined ? saveDraft.tempHp : (c.tempHp || 0)
         };
       })));
 
@@ -1457,43 +1340,52 @@ export default function App() {
       setEditingCharId(null);
       addLog?.({
         type: 'COMBAT',
-        content: `**修改角色属性**: [${newChar.type}] **${newChar.name}** (职业: ${newChar.class || '无职业'}, HP上限: ${newChar.maxHp}, AC: ${newChar.ac})`,
+        content: `**修改角色属性**: [${saveDraft.type}] **${saveDraft.name}** (职业: ${saveDraft.class || '无职业'}, HP上限: ${saveDraft.maxHp}, AC: ${saveDraft.ac})`,
         timestamp
       });
       return;
     }
 
+    const selectedClass = ruleset?.classes?.find(entry => entry.name === saveDraft.class.trim());
+    const defaultResources = ruleset?.resources?.map(resource => ({ ...resource, value: resource.max })) || [];
     const created = {
       id: 'char_' + Date.now(),
-      name: newChar.name.trim(),
-      type: newChar.type,
-      class: newChar.class.trim() || '无职业',
-      hp: newChar.maxHp,
-      maxHp: newChar.maxHp,
-      ac: newChar.ac,
-      initiative: newChar.initiative,
-      speed: newChar.speed,
+      name: saveDraft.name.trim(),
+      type: saveDraft.type,
+      class: saveDraft.class.trim() || '无职业',
+      hp: Math.min(saveDraft.hp ?? saveDraft.maxHp, saveDraft.maxHp),
+      maxHp: saveDraft.maxHp,
+      ac: saveDraft.ac,
+      initiative: saveDraft.initiative,
+      speed: saveDraft.speed,
       gridX: 2,
       gridY: 2,
-      stats: newChar.stats,
-      feats: { '特质': '新录入的角色' },
-      resources: newChar.resources,
-      groupId: newChar.type === 'PC' ? 'group_pcs' : 'group_npcs',
+      stats: saveDraft.stats,
+      savingThrows: saveDraft.savingThrows,
+      skillTotals: saveDraft.skillTotals,
+      passivePerception: saveDraft.passivePerception,
+      proficiencyBonus: saveDraft.proficiencyBonus,
+      feats: ruleset?.id === SF6_RULESET.id ? sf6CharacterFeatureMap(saveDraft, ruleset) : buildRulesetFeatures(selectedClass, saveDraft.subclass, saveDraft.level || 1),
+      resources: saveDraft.resources.length ? saveDraft.resources : defaultResources,
+      sheet: saveDraft.sheet,
+      subclass: saveDraft.subclass || '',
+      rulesetClassId: selectedClass?.id,
+      groupId: saveDraft.type === 'PC' ? 'group_pcs' : 'group_npcs',
       conditions: [],
-      combatSpeedRemaining: newChar.speed !== undefined ? newChar.speed : 30,
+      combatSpeedRemaining: saveDraft.speed !== undefined ? saveDraft.speed : 30,
       combatStartGridX: 2,
       combatStartGridY: 2,
-      level: newChar.level !== undefined ? newChar.level : 1,
-      hitDice: newChar.hitDice !== undefined ? newChar.hitDice : 'd8',
-      levelHpIncreases: newChar.levelHpIncreases ? [...newChar.levelHpIncreases] : [],
-      tempHp: newChar.tempHp !== undefined ? newChar.tempHp : 0
+      level: saveDraft.level !== undefined ? saveDraft.level : 1,
+      hitDice: saveDraft.hitDice !== undefined ? saveDraft.hitDice : 'd8',
+      levelHpIncreases: saveDraft.levelHpIncreases ? [...saveDraft.levelHpIncreases] : [],
+      tempHp: saveDraft.tempHp !== undefined ? saveDraft.tempHp : 0
     };
 
     setCharacters(prev => [...prev, sanitizeCharacters([created])[0]]);
     setIsAddCharModalOpen(false);
     addLog?.({
       type: 'COMBAT',
-      content: `**新增角色/怪物**: [${newChar.type}] **${newChar.name}** (职业: ${created.class}, HP: ${newChar.maxHp}, AC: ${newChar.ac})`,
+      content: `**新增角色/怪物**: [${saveDraft.type}] **${saveDraft.name}** (职业: ${created.class}, HP: ${saveDraft.maxHp}, AC: ${saveDraft.ac})`,
       timestamp
     });
   };
@@ -1516,14 +1408,20 @@ export default function App() {
     }
   };
 
+  const exitToCampaignChooser = async () => {
+    try { await saveCampaignSnapshot(getCampaignPayload(Date.now())); }
+    catch (error) { setStorageError(describeStorageError(error)); return; }
+    onExitToCampaigns?.();
+  };
+
   const showLeftSidebar = !isPlayerViewMode && !isLeftSidebarCollapsed;
   const showRightRail = !isPlayerViewMode && !isRightSidebarCollapsed;
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface-app)', overflow: 'hidden' }}>
       <AppHeader
-        campaignName={activeMap?.name || '未命名战役'}
-        chapter={`${maps.length} 张地图 · ${characters.length} 名角色`}
+        campaignName={campaignMetadata.name || '未命名战役'}
+        chapter={`${activeMap?.name || '未命名地图'} · ${maps.length} 张地图 · ${characters.length} 名角色`}
         theme={theme}
         onTheme={handleTheme}
         isPlayerViewMode={isPlayerViewMode}
@@ -1538,6 +1436,7 @@ export default function App() {
         isRightSidebarCollapsed={isRightSidebarCollapsed}
         onToggleRightSidebar={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenCampaigns={exitToCampaignChooser}
       />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative', overflow: 'hidden' }}>
@@ -1583,7 +1482,7 @@ export default function App() {
           setItemTemplates, groups, excelCards, setExcelCards, activeExcelCardId,
           setActiveExcelCardId, floatingNotes, setFloatingNotes, updateFloatingNote,
           deleteFloatingNote, onPresentationCameraChange: handlePresentationCameraChange,
-          onPresentationInteractionChange: setPresentationInteraction
+          onPresentationInteractionChange: setPresentationInteraction, ruleset
         }} />
 
         {showRightRail && <ResizeHandle onMouseDown={handleRightMouseDown} title= "拖拽调整右侧栏宽度" />}
@@ -1643,6 +1542,7 @@ export default function App() {
         newChar={newChar}
         setNewChar={setNewChar}
         customAttributeLabels={customAttributeLabels}
+        ruleset={ruleset}
         onClose={() => { setIsAddCharModalOpen(false); setEditingCharId(null); }}
         onSave={handleSaveCharacter}
       />
@@ -1689,6 +1589,7 @@ export default function App() {
         onImportCampaign={handleImportCampaign}
         onResetCampaign={handleResetCampaign}
         clientId={clientId.current}
+        campaignShareUrl={`${window.location.origin}/#campaignId=${encodeURIComponent(getActiveCampaignId())}${syncToken ? `&syncToken=${encodeURIComponent(syncToken)}` : ''}`}
         presentationProps={{
           settings: presentationSettings,
           setSettings: setPresentationSettings,

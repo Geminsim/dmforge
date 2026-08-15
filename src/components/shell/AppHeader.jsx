@@ -55,7 +55,8 @@ export default function AppHeader({
   onToggleLeftSidebar,
   isRightSidebarCollapsed,
   onToggleRightSidebar,
-  onOpenSettings
+  onOpenSettings,
+  onOpenCampaigns
 }) {
   const sync = syncStatus({ syncConflict, isSyncEnabled, isSyncConnected });
 
@@ -148,6 +149,7 @@ export default function AppHeader({
       <ThemeSwitcher value={theme} onChange={onTheme} compact />
 
       <span style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0 }}>
+        {!isPlayerViewMode ? <IconButton icon="folder-open" onClick={onOpenCampaigns} title="保存并返回战役选择" /> : null}
         {!isPlayerViewMode ? (
           <IconButton
             icon="monitor-play"
