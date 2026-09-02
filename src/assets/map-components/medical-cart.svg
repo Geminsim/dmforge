@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Medical cart</title>
+  <path d="M8 15h48v36H8z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M13 20h38v11H13zM13 35h38v11H13z" fill="#171311" stroke="#704080" stroke-width="1.5"/>
+  <path d="M32 22v7M28.5 25.5h7M18 38h12M18 42h8" stroke="#b8aa9a" stroke-width="1"/>
+  <path d="M5 11h54M13 54v4M51 54v4" stroke="#b8aa9a" stroke-width="1.5"/>
+  <circle cx="46" cy="41" r="2.5" fill="#c58a00"/>
+</svg>

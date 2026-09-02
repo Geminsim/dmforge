@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Sink</title>
+  <path d="M7 9h50v46H7z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M14 19h36v28H14z" fill="#171311" stroke="#8d8190" stroke-width="1.5"/>
+  <ellipse cx="32" cy="33" rx="13" ry="9" fill="#5f5660" fill-opacity=".38" stroke="#b8aa9a" stroke-width="1.5"/>
+  <circle cx="32" cy="33" r="2" fill="#171311" stroke="#c58a00" stroke-width="1"/>
+  <path d="M25 15h14M32 15v7M27 20h10" stroke="#704080" stroke-width="2"/>
+</svg>

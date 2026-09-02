@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { SegmentedControl, Select, Slider, Checkbox, TextInput, Button, StatusDot, MapToken } from '../ds';
+import DmforgeIcon from './DmforgeIcon';
 
 /**
  * DM-side control block for the /presenter live-stream surface. Lives inside
@@ -14,8 +16,8 @@ const SCENES = [
 ];
 
 const CAMERA_OPTIONS = [
-  { value: 'follow-active', label: '跟随当前行动角色' },
   { value: 'follow-dm', label: '跟随 DM 地图镜头' },
+  { value: 'follow-active', label: '跟随当前行动角色' },
   { value: 'independent', label: '展示页独立镜头' }
 ];
 
@@ -23,6 +25,7 @@ export default function PresentationControls({
   settings,
   setSettings,
   characters = [],
+  maps = [],
   connected,
   windowOpen,
   fallbackUrl,
@@ -30,6 +33,7 @@ export default function PresentationControls({
   onOpenTab,
   onFocus,
   onClose,
+  onRefresh,
   onRequestFullscreen
 }) {
   const update = patch => setSettings(current => ({ ...current, ...patch }));
@@ -69,6 +73,14 @@ export default function PresentationControls({
         onChange={scene => update({ scene })}
         size="md"
         items={SCENES}
+      />
+
+      <Select
+        label="直播画面地图"
+        size="sm"
+        value={settings.mapId || ''}
+        onChange={e => update({ mapId: e.target.value })}
+        options={[{ value: '', label: '跟随 DM 当前地图' }, ...maps.map(map => ({ value: map.id, label: map.name }))]}
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
@@ -180,12 +192,14 @@ export default function PresentationControls({
           <>
             <Button variant="secondary" icon="crosshair" onClick={onFocus} title="把已打开的展示窗口带到最前">定位展示窗口</Button>
             <Button variant="secondary" icon="corners-out" onClick={onRequestFullscreen} title="请求展示窗口进入全屏">请求全屏</Button>
+            <Button variant="secondary" icon="arrow-clockwise" onClick={onRefresh} title="重新载入并检测直播展示端">刷新直播端</Button>
             <Button variant="danger" icon="x" onClick={onClose} title="关闭直播展示窗口">关闭</Button>
           </>
         ) : (
           <>
             <Button variant="secondary" icon="check" disabled>展示标签页已连接</Button>
             <Button variant="secondary" icon="corners-out" onClick={onRequestFullscreen} title="请求展示窗口进入全屏">请求全屏</Button>
+            <Button variant="secondary" icon="arrow-clockwise" onClick={onRefresh} title="重新载入并检测直播展示端">刷新直播端</Button>
           </>
         )}
       </div>
@@ -211,4 +225,55 @@ export default function PresentationControls({
       )}
     </section>
   );
+}
+
+/** Left-rail controls for the actions a DM needs while actively streaming. */
+export function CompactPresentationControls({
+  settings, setSettings, maps = [], cutscenes = [], activeCutsceneId,
+  connected, windowOpen, onOpen, onFocus, onRequestFullscreen, onSelectCutscene
+  ,onRefresh
+}) {
+  const resumeScene = useRef(settings.scene === 'pause' ? 'battle' : settings.scene);
+  const update = patch => setSettings(current => ({ ...current, ...patch }));
+  const selectScene = scene => {
+    if (scene !== 'pause') resumeScene.current = scene;
+    update({ scene });
+  };
+  const togglePause = () => {
+    if (settings.scene === 'pause') update({ scene: resumeScene.current || 'battle' });
+    else {
+      resumeScene.current = settings.scene;
+      update({ scene: 'pause' });
+    }
+  };
+
+  return <section className="stream-quick-panel" aria-label="直播快速控制">
+    <header>
+      <span><DmforgeIcon name="broadcast" size={15} /> 直播导播</span>
+      <StatusDot state={connected ? 'synced' : windowOpen ? 'local' : 'idle'} label={connected ? '已连接' : windowOpen ? '连接中' : '未打开'} />
+    </header>
+    <div className="stream-quick-scenes">
+      <button type="button" className={settings.scene === 'map' ? 'active' : ''} onClick={() => selectScene('map')}><DmforgeIcon name="map" size={15} />地图</button>
+      <button type="button" className={settings.scene === 'battle' ? 'active' : ''} onClick={() => selectScene('battle')}><DmforgeIcon name="sword" size={15} />战斗</button>
+      <button type="button" className={settings.scene === 'story' ? 'active' : ''} onClick={() => selectScene('story')}><DmforgeIcon name="film-strip" size={15} />过场</button>
+      <button type="button" className={settings.scene === 'pause' ? 'paused' : ''} onClick={togglePause}><DmforgeIcon name={settings.scene === 'pause' ? 'play' : 'pause'} size={15} />{settings.scene === 'pause' ? '继续' : '暂停'}</button>
+    </div>
+    <label>直播地图
+      <select value={settings.mapId || ''} onChange={event => update({ mapId: event.target.value })}>
+        <option value="">跟随 DM 当前地图</option>
+        {maps.map(map => <option key={map.id} value={map.id}>{map.name}</option>)}
+      </select>
+    </label>
+    <label>过场画面
+      <select value={activeCutsceneId || ''} onChange={event => { onSelectCutscene?.(event.target.value); if (event.target.value) selectScene('story'); }}>
+        <option value="">选择过场…</option>
+        {cutscenes.map(scene => <option key={scene.id} value={scene.id}>{scene.name}</option>)}
+      </select>
+    </label>
+    <div className="stream-quick-actions">
+      {!windowOpen && !connected
+        ? <><Button size="sm" icon="monitor-play" onClick={onOpen}>打开直播窗口</Button><Button size="sm" variant="secondary" icon="arrow-clockwise" onClick={onRefresh}>重新检测</Button></>
+        : <>{windowOpen && <Button size="sm" variant="secondary" icon="crosshair" onClick={onFocus}>定位</Button>}<Button size="sm" variant="secondary" icon="arrow-clockwise" onClick={onRefresh}>刷新</Button><Button size="sm" variant="secondary" icon="corners-out" onClick={onRequestFullscreen}>全屏</Button></>}
+    </div>
+  </section>;
 }

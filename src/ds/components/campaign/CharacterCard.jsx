@@ -1,10 +1,11 @@
 import React from 'react';
+import DmforgeIcon from '../../../components/DmforgeIcon';
 import { Meter } from '../data/Meter.jsx';
 import { Badge } from '../data/Badge.jsx';
 
 const KIND = { PC: ['woad', 'PC'], NPC: ['verdigris', 'NPC'], MONSTER: ['madder', '怪物'] };
 
-export function CharacterCard({ name, kind = 'PC', level, klass, hp = 0, maxHp = 1, tempHp = 0, conditions = [], speedRemaining, activeTurn = false, selected = false, onSelect, actions, children, style }) {
+export function CharacterCard({ name, avatar = '', kind = 'PC', level, klass, hp = 0, maxHp = 1, tempHp = 0, conditions = [], speedRemaining, activeTurn = false, selected = false, onSelect, actions, children, style }) {
   const [hover, setHover] = React.useState(false);
   const [tone, kindLabel] = KIND[kind] || KIND.PC;
   return (
@@ -20,6 +21,7 @@ export function CharacterCard({ name, kind = 'PC', level, klass, hp = 0, maxHp =
       }}
     >
       <header style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+        {avatar ? <img src={avatar} alt="" style={{ width: 30, height: 30, flexShrink: 0, objectFit: 'cover', borderRadius: '50%', boxShadow: '0 0 0 1px var(--line-strong)' }} /> : <DmforgeIcon name="character-card" size={26} style={{ color: 'var(--accent)' }} />}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <h4 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-display-sm)', letterSpacing: 'var(--display-tracking)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</h4>
           <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>

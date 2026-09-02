@@ -1,16 +1,162 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import {
   Button, IconButton, TextInput, Select, Checkbox, Badge, StatPill, Meter,
-  ResourceSlot, MapToken, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState, Modal
+  ResourceSlot, MapToken, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState, Modal, SegmentedControl
 } from '../ds';
-import { findShortestPath } from '../utils/pathfinding';
-import { advanceCombatTurn, processTurnEndConditions, processTurnStartConditions, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
+import { findShortestPathCached } from '../utils/pathfinding';
+import { advanceCombatTurn, prepareCharacterForCombat, processTurnEndConditions, processTurnStartConditions, removeCombatantFromState, resetTurnResources, rollInitiative, tickRoundConditions } from '../utils/combatRules';
+import {
+  cellInArea, computeVisibility, mergeCellRecords, mergeExploredCells, normalizeMapVision,
+  removeCellRecords, revealRectCells, visionSelectionCells
+} from '../utils/visibility';
+import { capturePresentationCamera, projectPresentationCamera, samePresentationCamera } from '../utils/presentationCamera';
+import { compactCharacterName } from '../utils/characterNames';
+import {
+  CHARACTER_SIZE_OPTIONS, characterFootprintCells, clampCharacterCenterToMap,
+  footprintCoveredCells, sizeCategoryForFootprint
+} from '../utils/characterGeometry';
+import {
+  DOOR_STATE_OPTIONS, TERRAIN_COVER_OPTIONS, TERRAIN_FEATURE_OPTIONS, TERRAIN_HAZARDS, TERRAIN_MOVEMENT_OPTIONS, TERRAIN_VISION_OPTIONS,
+  canTraverseTerrainStep, changeTerrainShape, createTerrainFeature, getTerrainSpatialIndex, isDifficultTerrain, safeTerrainColor,
+  terrainBlocksMovement, terrainCoverLevel, terrainHazard, terrainIsDestroyed, terrainMovementMode, terrainVisionMode,
+  TERRAIN_FEATURE_DESCRIPTIONS,
+  setDoorState, terrainAreasAtCell, terrainFeatureStateOptions, terrainTouchesCells, terrainTriggerDetails, toggleDoorState, updateExploredTerrainStates
+} from '../utils/terrainRules';
+import DmforgeIcon from './DmforgeIcon';
+import MapComponentArt from './MapComponentArt';
+import { characterAvatar } from '../utils/characterImages';
+import { characterOwnsFlashlight } from '../utils/inventoryRules';
 
 /** 45° survey hatch for terrain fills — the grammar's alternative to flat tints. */
 const TERRAIN_HATCH = (tone) => {
   const soft = tone === 'accent' ? 'var(--accent-soft)' : `var(--pigment-${tone}-soft)`;
   return `repeating-linear-gradient(45deg, ${soft} 0 3px, transparent 3px 7px)`;
+};
+const TEMP_MAP = { id: 'temp_map', name: '临时战役地图', width: 60, height: 40, bgUrl: '', blockedCells: {}, terrainAreas: [] };
+const TERRAIN_SELECTION_COLOR = '#9a6caf';
+const TERRAIN_SELECTION_HANDLE = '#c58a00';
+const DM_VISION_PREVIEW_ITEMS = [
+  { id: 'bright', label: '全亮', title: 'DM 本地显示完整地图；不会影响直播画面' },
+  { id: 'dark', label: '全暗', title: 'DM 本地将地图完全遮黑；不会影响直播画面' },
+  { id: 'player', label: '玩家视角', title: 'DM 本地模拟玩家当前视野与探索记忆；不会影响直播画面' }
+];
+const PUBLIC_VISION_MODE_ITEMS = [
+  { id: 'player', label: '玩家视角', title: '按角色视线、光照与遮挡同步到玩家端和直播端' },
+  { id: 'bright', label: '全亮', title: '让玩家端和直播端临时看见整张地图' },
+  { id: 'dark', label: '全暗', title: '让玩家端和直播端临时看不见地图；仍可框选强制显示区域' }
+];
+const VISION_SELECTION_ITEMS = [
+  { id: 'pan', label: '漫游', title: '拖拽移动地图，不编辑视野' },
+  { id: 'cell', label: '单格', title: '点击一个地格作为视野选区' },
+  { id: 'rect', label: '矩形', title: '拖拽一个矩形视野选区' },
+  { id: 'circle', label: '圆形', title: '从圆心向外拖拽半径' },
+  { id: 'cone', label: '锥形', title: '从起点向目标方向拖拽锥形视野' }
+];
+const boundedNumber = (value, fallback, min, max) => {
+  const parsed = Number(value);
+  return Math.max(min, Math.min(max, Number.isFinite(parsed) ? parsed : fallback));
+};
+
+function TerrainSelectionFrame({ edge = false, orientation = 'horizontal', round = false, showHandles = false }) {
+  const handleBase = {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    background: TERRAIN_SELECTION_HANDLE,
+    border: '2px solid rgba(18, 14, 24, 0.95)',
+    borderRadius: round ? '50%' : 1,
+    boxSizing: 'border-box',
+    boxShadow: '0 0 0 1px rgba(197, 138, 0, 0.28)'
+  };
+  const handles = edge
+    ? orientation === 'vertical'
+      ? [{ left: '50%', top: -5, transform: 'translateX(-50%)' }, { left: '50%', bottom: -5, transform: 'translateX(-50%)' }]
+      : [{ left: -5, top: '50%', transform: 'translateY(-50%)' }, { right: -5, top: '50%', transform: 'translateY(-50%)' }]
+    : round
+      ? [{ right: -5, top: '50%', transform: 'translateY(-50%)' }]
+      : [{ left: -5, top: -5 }, { right: -5, top: -5 }, { left: -5, bottom: -5 }, { right: -5, bottom: -5 }];
+
+  return <div
+    aria-hidden="true"
+    data-testid="terrain-selection-frame"
+    style={{
+      position: 'absolute',
+      inset: edge ? -4 : -3,
+      border: `2px solid ${TERRAIN_SELECTION_COLOR}`,
+      borderRadius: round ? '50%' : 1,
+      boxShadow: `0 0 6px rgba(154, 108, 175, 0.18)`,
+      pointerEvents: 'none',
+      zIndex: 9,
+      opacity: 1,
+      transition: 'opacity 140ms ease-out, box-shadow 140ms ease-out'
+    }}
+  >
+    {showHandles && handles.map((position, index) => <span key={index} style={{ ...handleBase, ...position }} />)}
+  </div>;
+}
+
+function VisionSelectionOverlay({ selection, gridSize, cellCount }) {
+  if (!selection) return null;
+  const shape = selection.shape || 'rect';
+  const sx = Number(selection.startX || 0);
+  const sy = Number(selection.startY || 0);
+  const ex = Number(selection.endX || 0);
+  const ey = Number(selection.endY || 0);
+  const centerX = (sx + 0.5) * gridSize;
+  const centerY = (sy + 0.5) * gridSize;
+  const radius = Math.max(0.5, Math.hypot(ex - sx, ey - sy) + 0.5) * gridSize;
+  let geometry;
+  if (shape === 'circle') {
+    geometry = <circle cx={centerX} cy={centerY} r={radius} />;
+  } else if (shape === 'cone') {
+    const direction = Math.atan2(ey - sy, ex - sx);
+    const halfAngle = (Math.max(15, Math.min(180, Number(selection.angle) || 60)) / 2) * Math.PI / 180;
+    const startAngle = direction - halfAngle;
+    const endAngle = direction + halfAngle;
+    const x1 = centerX + Math.cos(startAngle) * radius;
+    const y1 = centerY + Math.sin(startAngle) * radius;
+    const x2 = centerX + Math.cos(endAngle) * radius;
+    const y2 = centerY + Math.sin(endAngle) * radius;
+    geometry = <path d={`M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`} />;
+  } else {
+    const minX = Math.min(sx, ex) * gridSize;
+    const minY = Math.min(sy, ey) * gridSize;
+    geometry = <rect x={minX} y={minY} width={(Math.abs(ex - sx) + 1) * gridSize} height={(Math.abs(ey - sy) + 1) * gridSize} />;
+  }
+  return <>
+    <svg aria-label="玩家与直播视野选区" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 60, overflow: 'visible' }}>
+      <g fill="var(--pigment-verdigris-soft)" stroke="var(--pigment-verdigris)" strokeWidth="2" strokeDasharray="6 4">
+        {geometry}
+      </g>
+    </svg>
+    <span style={{
+      position: 'absolute', left: centerX + 8, top: Math.max(2, centerY - 24), zIndex: 61, pointerEvents: 'none',
+      padding: '2px 6px', background: 'var(--surface-overlay)', color: 'var(--pigment-verdigris)',
+      boxShadow: 'inset 0 0 0 1px var(--line-hairline)', fontFamily: 'var(--font-mono)', fontSize: 10, whiteSpace: 'nowrap'
+    }}>
+      {VISION_SELECTION_ITEMS.find(item => item.id === shape)?.label || '选区'} · {cellCount} 格
+    </span>
+  </>;
+}
+
+const pointSegmentDistance = (point, start, end) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-8) return Math.hypot(point.x - start.x, point.y - start.y);
+  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return Math.hypot(point.x - (start.x + ratio * dx), point.y - (start.y + ratio * dy));
+};
+
+const strokeTouchesPoint = (stroke, point, gridSize) => {
+  const points = Array.isArray(stroke?.points) ? stroke.points : [];
+  const radius = Math.max(0.55, Number(stroke?.width || 3) / gridSize + 0.35);
+  if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y) <= radius;
+  for (let index = 1; index < points.length; index += 1) {
+    if (pointSegmentDistance(point, points[index - 1], points[index]) <= radius) return true;
+  }
+  return false;
 };
 
 export default function MapSystem({ 
@@ -32,6 +178,7 @@ export default function MapSystem({
   setCombatRound,
   currentTurnIndex = 0,
   setCurrentTurnIndex,
+  combatParticipants = [],
   setCombatParticipants,
   combatTurnOrder = [],
   setCombatTurnOrder,
@@ -39,26 +186,26 @@ export default function MapSystem({
   onPresentationInteractionChange,
   presentationInteraction,
   presentationCamera,
-  presentationCameraMode = 'independent'
+  presentationCameraMode = 'independent',
+  compactPresentation = false,
+  onCharacterSelect,
+  itemPool = []
 }) {
   const [gridSize] = useState(20); // 20px represents 1ft
   
   // Retrieve the active map state
-  const activeMap = maps.find(m => m.id === activeMapId) || maps[0] || {
-    id: 'temp_map',
-    name: '临时战役地图',
-    width: 60,
-    height: 40,
-    bgUrl: '',
-    blockedCells: {},
-    terrainAreas: []
-  };
+  const activeMap = useMemo(() => maps.find(m => m.id === activeMapId) || maps[0] || TEMP_MAP, [maps, activeMapId]);
 
   const mapWidth = activeMap.width || 60;
   const mapHeight = activeMap.height || 40;
   const mapBgUrl = activeMap.bgUrl || '';
+  const mapBgScaleX = boundedNumber(activeMap.backgroundScaleX, 100, 50, 200);
+  const mapBgScaleY = boundedNumber(activeMap.backgroundScaleY, 100, 50, 200);
+  const mapBgPositionX = boundedNumber(activeMap.backgroundPositionX, 50, 0, 100);
+  const mapBgPositionY = boundedNumber(activeMap.backgroundPositionY, 50, 0, 100);
   const blockedCells = useMemo(() => activeMap.blockedCells || {}, [activeMap.blockedCells]);
-  const terrainAreas = activeMap.terrainAreas || [];
+  const terrainAreas = useMemo(() => activeMap.terrainAreas || [], [activeMap.terrainAreas]);
+  const mapDrawings = useMemo(() => activeMap.drawings || [], [activeMap.drawings]);
 
   // Custom setters routing back to App.jsx updateMap callback
   const setBlockedCells = (updater) => {
@@ -80,15 +227,38 @@ export default function MapSystem({
 
   const [selectedTokenId, setSelectedTokenId] = useState(null);
   const [hoveredTokenId, setHoveredTokenId] = useState(null);
+  const [terrainHint, setTerrainHint] = useState(null);
+  const terrainHintTimerRef = useRef(null);
   const [scale, setScale] = useState(1);
   const containerRef = useRef(null);
   const blockedCanvasRef = useRef(null);
+  const fogCanvasRef = useRef(null);
   const transformRef = useRef(null);
+  const viewportRef = useRef(null);
+  const rosterDragIdRef = useRef(null);
+  const [viewportRevision, setViewportRevision] = useState(0);
+  const lastAppliedCameraRef = useRef(null);
 
   // Undo history states & refs
   const [canUndo, setCanUndo] = useState(false);
   const historyRef = useRef([]);
   const lastPaintedCellRef = useRef(null);
+
+  const beginTerrainHint = (event, area) => {
+    if (!area?.featureType && !terrainTriggerDetails(area)) return;
+    clearTimeout(terrainHintTimerRef.current);
+    const point = { x: event.clientX, y: event.clientY };
+    terrainHintTimerRef.current = setTimeout(() => setTerrainHint({ areaId: area.id, ...point }), 480);
+  };
+  const moveTerrainHint = (event, area) => {
+    if (terrainHint?.areaId === area?.id) setTerrainHint(previous => ({ ...previous, x: event.clientX, y: event.clientY }));
+  };
+  const endTerrainHint = () => {
+    clearTimeout(terrainHintTimerRef.current);
+    setTerrainHint(null);
+  };
+
+  useEffect(() => () => clearTimeout(terrainHintTimerRef.current), []);
 
   const pushToHistory = () => {
     const stateSnapshot = {
@@ -178,13 +348,48 @@ export default function MapSystem({
   // Token dragging real-time measurement states
   const [draggedToken, setDraggedToken] = useState(null); // { id, startX, startY, name }
   const [dragHoverCoords, setDragHoverCoords] = useState(null); // { x, y }
+  const [isForcedMoveMode, setIsForcedMoveMode] = useState(false);
+  const [dragIsShiftPressed, setDragIsShiftPressed] = useState(false);
+
+  useEffect(() => {
+    const beginRosterDrag = event => { rosterDragIdRef.current = event.detail?.id || null; };
+    const endRosterDrag = () => {
+      rosterDragIdRef.current = null;
+      setDraggedToken(null);
+      setDragHoverCoords(null);
+      setDragIsShiftPressed(false);
+    };
+    window.addEventListener('dmforge:character-drag-start', beginRosterDrag);
+    window.addEventListener('dmforge:character-drag-end', endRosterDrag);
+    return () => {
+      window.removeEventListener('dmforge:character-drag-start', beginRosterDrag);
+      window.removeEventListener('dmforge:character-drag-end', endRosterDrag);
+    };
+  }, []);
 
   // Terrain editing states
   const [isTerrainEditMode, setIsTerrainEditMode] = useState(false);
-  const [terrainEditTool, setTerrainEditTool] = useState('select'); // paint_block, paint_erase, select, box_select
+  const [terrainEditTool, setTerrainEditTool] = useState('pan'); // pan, move, paint_block, paint_erase, box_select
   const [isPainting, setIsPainting] = useState(false);
   const [editingAreaId, setEditingAreaId] = useState(null);
   const [defaultImpassable, setDefaultImpassable] = useState(false);
+  const [featurePreset, setFeaturePreset] = useState('wall');
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [drawingTool, setDrawingTool] = useState('pen');
+  const [drawingColor, setDrawingColor] = useState('#f6c453');
+  const [drawingWidth, setDrawingWidth] = useState(4);
+  const [draftStroke, setDraftStroke] = useState(null);
+  const [erasedDrawingIds, setErasedDrawingIds] = useState(new Set());
+  const editingArea = terrainAreas.find(area => area.id === editingAreaId) || null;
+  const hintedArea = terrainAreas.find(area => area.id === terrainHint?.areaId) || null;
+  const terrainNameCounts = useMemo(() => terrainAreas.reduce((counts, area) => {
+    const name = area.name?.trim() || '未命名对象';
+    counts.set(name, (counts.get(name) || 0) + 1);
+    return counts;
+  }, new Map()), [terrainAreas]);
+  const [drawingHistoryRevision, setDrawingHistoryRevision] = useState(0);
+  const drawingGestureRef = useRef(null);
+  const drawingHistoryRef = useRef(new Map());
 
 
 
@@ -199,10 +404,13 @@ export default function MapSystem({
 
   // Map Property Configuration panel state
   const [showMapConfig, setShowMapConfig] = useState(false);
-
-  // Forced Movement States
-  const [isForcedMoveMode, setIsForcedMoveMode] = useState(false);
-  const [dragIsShiftPressed, setDragIsShiftPressed] = useState(false);
+  const [dmVisionPreview, setDmVisionPreview] = useState('bright');
+  const [isVisionControlMode, setIsVisionControlMode] = useState(false);
+  const [visionSelectionTool, setVisionSelectionTool] = useState('pan');
+  const [visionConeAngle, setVisionConeAngle] = useState(60);
+  const isDmVisionPreviewAvailable = appRole !== 'PLAYER' && !isPlayerViewMode;
+  const isVisionLimitedView = isPlayerViewMode || (isDmVisionPreviewAvailable && dmVisionPreview === 'player');
+  const isVisionBlackout = isDmVisionPreviewAvailable && dmVisionPreview === 'dark';
 
   useEffect(() => {
     if (appRole !== 'PLAYER') return;
@@ -222,20 +430,19 @@ export default function MapSystem({
 
   useEffect(() => {
     if (appRole !== 'PLAYER' || presentationCameraMode !== 'follow-dm' || !presentationCamera) return;
-    transformRef.current?.setTransform(
-      presentationCamera.x || 0,
-      presentationCamera.y || 0,
-      presentationCamera.scale || 1,
-      120,
-      'easeOut'
-    );
-  }, [appRole, presentationCamera, presentationCameraMode]);
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    const target = projectPresentationCamera(presentationCamera, viewport || {});
+    const previous = lastAppliedCameraRef.current;
+    if (samePresentationCamera(previous, target)) return;
+    lastAppliedCameraRef.current = target;
+    transformRef.current?.setTransform(target.x, target.y, target.scale, 0);
+  }, [appRole, presentationCamera, presentationCameraMode, viewportRevision]);
 
   useEffect(() => {
     if (appRole !== 'PLAYER' || presentationCameraMode !== 'follow-active') return;
     const activeId = combatTurnOrder[currentTurnIndex]?.id;
     const activeCharacter = characters.find(character => character.id === activeId && character.mapId === activeMapId);
-    const viewport = containerRef.current?.parentElement?.getBoundingClientRect();
+    const viewport = viewportRef.current?.getBoundingClientRect();
     if (!activeCharacter || !viewport) return;
     const targetScale = Math.min(1.4, Math.max(.65, Math.min(viewport.width / (mapWidth * gridSize), viewport.height / (mapHeight * gridSize)) * 1.8));
     transformRef.current?.setTransform(
@@ -248,7 +455,201 @@ export default function MapSystem({
   }, [appRole, presentationCameraMode, combatTurnOrder, currentTurnIndex, characters, activeMapId, mapWidth, mapHeight, gridSize]);
 
   // Filter character tokens to render only those placed on the active map
-  const activeTokens = characters.filter(char => char.mapId === activeMapId);
+  const activeTokens = useMemo(() => characters.filter(char => char.mapId === activeMapId), [characters, activeMapId]);
+  const visibilityCharacters = useMemo(() => characters.map(character => {
+    const source = character.lightSource;
+    if (!source?.enabled || !/手电筒|flashlight/i.test(`${source.id || ''} ${source.name || ''}`) || characterOwnsFlashlight(itemPool, character.id)) return character;
+    return { ...character, lightSource: { ...source, enabled: false } };
+  }), [characters, itemPool]);
+  const visibilityGeometryMap = useMemo(() => ({
+    id: activeMap.id,
+    width: activeMap.width,
+    height: activeMap.height,
+    terrainAreas: activeMap.terrainAreas,
+    blockedCells: activeMap.blockedCells,
+    vision: {
+      enabled: activeMap.vision?.enabled,
+      ambientLight: activeMap.vision?.ambientLight,
+      ceilingHeight: activeMap.vision?.ceilingHeight,
+      visionRangeCap: activeMap.vision?.visionRangeCap,
+      rememberExplored: activeMap.vision?.rememberExplored,
+      manualVisibleCells: activeMap.vision?.manualVisibleCells,
+      manualHiddenCells: activeMap.vision?.manualHiddenCells,
+      visionBlockers: activeMap.vision?.visionBlockers,
+      lightSources: activeMap.vision?.lightSources,
+      exploredCells: {}
+    }
+  }), [activeMap.id, activeMap.width, activeMap.height, activeMap.terrainAreas, activeMap.blockedCells,
+    activeMap.vision?.enabled, activeMap.vision?.ambientLight, activeMap.vision?.ceilingHeight,
+    activeMap.vision?.visionRangeCap, activeMap.vision?.rememberExplored, activeMap.vision?.manualVisibleCells,
+    activeMap.vision?.manualHiddenCells, activeMap.vision?.visionBlockers, activeMap.vision?.lightSources]);
+  const committedVisibility = useMemo(() => computeVisibility({
+    map: visibilityGeometryMap, characters: visibilityCharacters, isInCombat, combatTurnOrder, ignorePublicMode: true
+  }), [visibilityGeometryMap, visibilityCharacters, isInCombat, combatTurnOrder]);
+  const playerVisibility = useMemo(() => {
+    if (appRole === 'PLAYER' && activeMap.vision?.visibleCells) {
+      return {
+        visible: new Set(Object.keys(activeMap.vision.visibleCells).filter(key => activeMap.vision.visibleCells[key])),
+        bright: new Set(Object.keys(activeMap.vision.visibleCells).filter(key => activeMap.vision.visibleCells[key] && !activeMap.vision.dimCells?.[key])),
+        dim: new Set(Object.keys(activeMap.vision.dimCells || {}).filter(key => activeMap.vision.dimCells[key])),
+        explored: new Set(Object.keys(activeMap.vision.exploredCells || {}).filter(key => activeMap.vision.exploredCells[key])),
+        visibleCharacterIds: new Set(characters.map(character => character.id)),
+        sensedCombatIds: new Set(characters.filter(character => character.combatSensed).map(character => character.id))
+      };
+    }
+    if (!isVisionLimitedView) return committedVisibility;
+    // Dragging is only a route/landing preview. Fog and newly visible terrain
+    // update after the token position is committed by handleDrop.
+    return computeVisibility({ map: activeMap, characters: visibilityCharacters, isInCombat, combatTurnOrder });
+  }, [appRole, activeMap, characters, visibilityCharacters, isInCombat, combatTurnOrder, isVisionLimitedView, committedVisibility]);
+
+  useEffect(() => {
+    if (appRole === 'PLAYER' || normalizeMapVision(activeMap).enabled === false) return;
+    const normalizedVision = normalizeMapVision(activeMap);
+    if (normalizedVision.rememberExplored === false) return;
+    const existing = normalizedVision.exploredCells;
+    const hasInitialSnapshot = activeMap.vision?.memoryInitialCells !== undefined;
+    const hasCurrentSnapshot = activeMap.vision?.memoryCurrentCells !== undefined;
+    const currentArchive = hasCurrentSnapshot ? normalizedVision.memoryCurrentCells : existing;
+    const additions = [...committedVisibility.visible].filter(key => !existing[key]);
+    const currentAdditions = [...committedVisibility.visible].filter(key => !currentArchive[key]);
+    const exploredTerrainStates = updateExploredTerrainStates(normalizedVision.exploredTerrainStates, terrainAreas, committedVisibility.visible);
+    const currentTerrainArchive = activeMap.vision?.memoryCurrentTerrainStates !== undefined
+      ? normalizedVision.memoryCurrentTerrainStates
+      : normalizedVision.exploredTerrainStates;
+    const memoryCurrentTerrainStates = updateExploredTerrainStates(currentTerrainArchive, terrainAreas, committedVisibility.visible);
+    const terrainChanged = exploredTerrainStates !== normalizedVision.exploredTerrainStates;
+    const currentTerrainChanged = memoryCurrentTerrainStates !== currentTerrainArchive;
+    if (!additions.length && !currentAdditions.length && !terrainChanged && !currentTerrainChanged && hasInitialSnapshot && hasCurrentSnapshot) return;
+    updateMap(activeMap.id, { vision: {
+      ...normalizedVision,
+      exploredCells: mergeExploredCells(existing, committedVisibility.visible),
+      exploredTerrainStates,
+      memoryInitialCells: hasInitialSnapshot ? normalizedVision.memoryInitialCells : existing,
+      memoryInitialTerrainStates: activeMap.vision?.memoryInitialTerrainStates !== undefined
+        ? normalizedVision.memoryInitialTerrainStates
+        : normalizedVision.exploredTerrainStates,
+      memoryCurrentCells: mergeExploredCells(currentArchive, committedVisibility.visible),
+      memoryCurrentTerrainStates
+    } });
+  }, [appRole, activeMap, committedVisibility.visible, committedVisibility.explored, terrainAreas, updateMap]);
+
+  const updatePublicVisionMode = mode => {
+    const vision = normalizeMapVision(activeMap);
+    updateMap(activeMap.id, { vision: { ...vision, enabled: true, publicMode: mode } });
+    addLog?.({
+      type: 'SYSTEM', visibility: 'private',
+      content: `玩家端与直播端视野已切换为 **${PUBLIC_VISION_MODE_ITEMS.find(item => item.id === mode)?.label || mode}**。`,
+      timestamp: new Date().toLocaleTimeString()
+    });
+  };
+
+  const pauseExplorationMemory = () => {
+    const vision = normalizeMapVision(activeMap);
+    updateMap(activeMap.id, { vision: {
+      ...vision,
+      rememberExplored: false,
+      memoryInitialCells: activeMap.vision?.memoryInitialCells !== undefined ? vision.memoryInitialCells : vision.exploredCells,
+      memoryInitialTerrainStates: activeMap.vision?.memoryInitialTerrainStates !== undefined ? vision.memoryInitialTerrainStates : vision.exploredTerrainStates,
+      memoryCurrentCells: mergeExploredCells(vision.memoryCurrentCells, Object.keys(vision.exploredCells)),
+      memoryCurrentTerrainStates: { ...vision.memoryCurrentTerrainStates, ...vision.exploredTerrainStates }
+    } });
+    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `已暂停地图 **${activeMap.name}** 的迷雾记忆显示；当前与起点档案均已保留。`, timestamp: new Date().toLocaleTimeString() });
+  };
+
+  const resumeExplorationMemory = source => {
+    const vision = normalizeMapVision(activeMap);
+    const useInitial = source === 'initial';
+    const initialCells = activeMap.vision?.memoryInitialCells !== undefined ? vision.memoryInitialCells : vision.exploredCells;
+    const initialTerrainStates = activeMap.vision?.memoryInitialTerrainStates !== undefined ? vision.memoryInitialTerrainStates : vision.exploredTerrainStates;
+    const currentCells = activeMap.vision?.memoryCurrentCells !== undefined ? vision.memoryCurrentCells : vision.exploredCells;
+    const currentTerrainStates = activeMap.vision?.memoryCurrentTerrainStates !== undefined ? vision.memoryCurrentTerrainStates : vision.exploredTerrainStates;
+    updateMap(activeMap.id, { vision: {
+      ...vision,
+      rememberExplored: true,
+      exploredCells: useInitial ? initialCells : currentCells,
+      exploredTerrainStates: useInitial ? initialTerrainStates : currentTerrainStates,
+      memoryInitialCells: initialCells,
+      memoryInitialTerrainStates: initialTerrainStates,
+      memoryCurrentCells: currentCells,
+      memoryCurrentTerrainStates: currentTerrainStates
+    } });
+    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `已恢复地图 **${activeMap.name}** 的${useInitial ? '起点' : '当前'}迷雾记忆，并继续实时记录。`, timestamp: new Date().toLocaleTimeString() });
+  };
+
+  const resetExplorationMemoryStart = () => {
+    if (!window.confirm('将当前已经探索的内容设为新的“起点记忆”？旧的起点快照会被替换。')) return;
+    const vision = normalizeMapVision(activeMap);
+    updateMap(activeMap.id, { vision: {
+      ...vision,
+      memoryInitialCells: { ...vision.exploredCells },
+      memoryInitialTerrainStates: { ...vision.exploredTerrainStates },
+      memoryCurrentCells: { ...vision.exploredCells },
+      memoryCurrentTerrainStates: { ...vision.exploredTerrainStates }
+    } });
+    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `已将地图 **${activeMap.name}** 的当前探索状态设为新的迷雾记忆起点。`, timestamp: new Date().toLocaleTimeString() });
+  };
+
+  const applyVisionSelection = action => {
+    if (!selectionBox) return;
+    const vision = normalizeMapVision(activeMap);
+    const selectedCells = visionSelectionCells(selectionBox, mapWidth, mapHeight);
+    let exploredTerrainStates = { ...vision.exploredTerrainStates };
+    if (action === 'hide') {
+      for (const area of terrainAreas) if (terrainTouchesCells(area, selectedCells)) delete exploredTerrainStates[area.id];
+    } else if (action === 'show') {
+      exploredTerrainStates = updateExploredTerrainStates(exploredTerrainStates, terrainAreas, selectedCells);
+    }
+    const nextVision = action === 'show' ? {
+      ...vision,
+      manualVisibleCells: mergeCellRecords(vision.manualVisibleCells, selectedCells),
+      manualHiddenCells: removeCellRecords(vision.manualHiddenCells, selectedCells),
+      exploredCells: vision.rememberExplored ? mergeCellRecords(vision.exploredCells, selectedCells) : vision.exploredCells,
+      exploredTerrainStates,
+      memoryCurrentCells: mergeCellRecords(vision.memoryCurrentCells, selectedCells),
+      memoryCurrentTerrainStates: updateExploredTerrainStates(vision.memoryCurrentTerrainStates, terrainAreas, selectedCells)
+    } : action === 'hide' ? {
+      ...vision,
+      manualVisibleCells: removeCellRecords(vision.manualVisibleCells, selectedCells),
+      manualHiddenCells: mergeCellRecords(vision.manualHiddenCells, selectedCells),
+      exploredCells: removeCellRecords(vision.exploredCells, selectedCells),
+      exploredTerrainStates,
+      memoryCurrentCells: removeCellRecords(vision.memoryCurrentCells, selectedCells),
+      memoryCurrentTerrainStates: Object.fromEntries(Object.entries(vision.memoryCurrentTerrainStates).filter(([areaId]) => {
+        const area = terrainAreas.find(candidate => candidate.id === areaId);
+        return !area || !terrainTouchesCells(area, selectedCells);
+      }))
+    } : {
+      ...vision,
+      manualVisibleCells: removeCellRecords(vision.manualVisibleCells, selectedCells),
+      manualHiddenCells: removeCellRecords(vision.manualHiddenCells, selectedCells)
+    };
+    updateMap(activeMap.id, { vision: nextVision });
+    const actionLabel = action === 'show' ? '强制显示' : action === 'hide' ? '强制遮蔽并清除记忆' : '恢复自动视野判定';
+    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `DM 已在地图 **${activeMap.name}** 的框选区域执行：**${actionLabel}**。`, timestamp: new Date().toLocaleTimeString() });
+    setSelectionBox(null);
+  };
+
+  useEffect(() => {
+    const canvas = fogCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (isVisionBlackout) {
+      context.fillStyle = 'rgba(0, 0, 0, 0.985)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    if (!isVisionLimitedView || normalizeMapVision(activeMap).enabled === false) return;
+    for (let y = 0; y < mapHeight; y += 1) for (let x = 0; x < mapWidth; x += 1) {
+      const key = `${x}_${y}`;
+      if (playerVisibility.bright.has(key)) continue;
+      context.fillStyle = playerVisibility.dim.has(key)
+        ? 'rgba(2, 6, 12, 0.30)'
+        : playerVisibility.explored.has(key) ? 'rgba(2, 5, 10, 0.48)' : 'rgba(0, 0, 0, 0.97)';
+      context.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+    }
+  }, [isVisionBlackout, isVisionLimitedView, activeMap, playerVisibility, mapWidth, mapHeight, gridSize]);
 
   // Identify players that are on other maps and eligible for summon
   const unplacedPCs = characters.filter(char => char.type === 'PC' && char.mapId !== activeMapId);
@@ -259,12 +660,14 @@ export default function MapSystem({
       return;
     }
     // If we're painting, don't drag tokens
-    if (isTerrainEditMode && terrainEditTool !== 'select') {
+    if (isTerrainEditMode && terrainEditTool !== 'pan') {
       e.preventDefault();
       return;
     }
     setSelectedTokenId(tokenId);
     e.dataTransfer.setData('text/plain', tokenId);
+    e.dataTransfer.setData('application/x-dmforge-character', JSON.stringify({ id: tokenId, source: 'map' }));
+    e.dataTransfer.effectAllowed = 'move';
 
     const char = characters.find(c => c.id === tokenId);
     if (char) {
@@ -272,7 +675,9 @@ export default function MapSystem({
         id: tokenId,
         startX: char.gridX || 0,
         startY: char.gridY || 0,
-        name: char.name
+        name: char.name,
+        type: char.type,
+        isNewPlacement: false
       });
       setDragHoverCoords({ x: char.gridX || 0, y: char.gridY || 0 });
     }
@@ -280,7 +685,12 @@ export default function MapSystem({
 
   const handleDragOver = (e) => {
     e.preventDefault();
-    if (!draggedToken || !containerRef.current) return;
+    e.dataTransfer.dropEffect = 'move';
+    if (!containerRef.current) return;
+
+    const tokenId = e.dataTransfer.getData('text/plain') || rosterDragIdRef.current || draggedToken?.id;
+    const token = characters.find(character => character.id === tokenId);
+    if (!token) return;
 
     // Track if shift key is pressed during drag
     const isShift = e.shiftKey;
@@ -295,8 +705,21 @@ export default function MapSystem({
     const unscaledX = scaledX / scale;
     const unscaledY = scaledY / scale;
 
-    const gridX = Math.max(0, Math.min(mapWidth - 1, Math.floor(unscaledX / gridSize)));
-    const gridY = Math.max(0, Math.min(mapHeight - 1, Math.floor(unscaledY / gridSize)));
+    const target = clampCharacterCenterToMap(Math.floor(unscaledX / gridSize), Math.floor(unscaledY / gridSize), token, mapWidth, mapHeight);
+    const gridX = target.x;
+    const gridY = target.y;
+
+    if (!draggedToken || draggedToken.id !== tokenId) {
+      const isNewPlacement = token.mapId !== activeMapId;
+      setDraggedToken({
+        id: tokenId,
+        startX: isNewPlacement ? gridX : (token.gridX || 0),
+        startY: isNewPlacement ? gridY : (token.gridY || 0),
+        name: token.name,
+        type: token.type,
+        isNewPlacement
+      });
+    }
 
     if (!dragHoverCoords || dragHoverCoords.x !== gridX || dragHoverCoords.y !== gridY) {
       setDragHoverCoords({ x: gridX, y: gridY });
@@ -311,8 +734,29 @@ export default function MapSystem({
 
   const handleTransform = (ref) => {
     setScale(ref.state.scale);
-    onPresentationCameraChange?.({ scale: ref.state.scale, x: ref.state.positionX || 0, y: ref.state.positionY || 0 });
+    if (appRole === 'PLAYER') return;
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    onPresentationCameraChange?.(capturePresentationCamera(ref.state, viewport || {}));
   };
+
+  const handleViewportDragLeave = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    if (draggedToken?.isNewPlacement) handleDragEnd();
+  };
+
+  useEffect(() => {
+    if (!viewportRef.current || typeof ResizeObserver === 'undefined') return undefined;
+    let initialized = false;
+    const observer = new ResizeObserver(() => {
+      if (!initialized) { initialized = true; return; }
+      if (appRole === 'PLAYER') setViewportRevision(value => value + 1);
+      else if (transformRef.current?.state) handleTransform(transformRef.current);
+    });
+    observer.observe(viewportRef.current);
+    return () => observer.disconnect();
+  // handleTransform intentionally reads the current transform and callback props.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appRole]);
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -324,6 +768,7 @@ export default function MapSystem({
 
     const token = characters.find(c => c.id === tokenId);
     if (!token) return;
+    const isNewPlacement = token.mapId !== activeMapId;
 
     const rect = containerRef.current.getBoundingClientRect();
     
@@ -336,12 +781,13 @@ export default function MapSystem({
     const unscaledY = scaledY / scale;
 
     // Convert pixels to 1ft grids
-    const gridX = Math.max(0, Math.min(mapWidth - 1, Math.floor(unscaledX / gridSize)));
-    const gridY = Math.max(0, Math.min(mapHeight - 1, Math.floor(unscaledY / gridSize)));
+    const target = clampCharacterCenterToMap(Math.floor(unscaledX / gridSize), Math.floor(unscaledY / gridSize), token, mapWidth, mapHeight);
+    const gridX = target.x;
+    const gridY = target.y;
 
     let movementCost = 0;
 
-    if (isInCombat) {
+    if (isInCombat && !isNewPlacement) {
       const isForced = isForcedMoveMode || e.shiftKey;
 
       if (!isForced) {
@@ -353,7 +799,7 @@ export default function MapSystem({
       }
 
       // Calculate path and cost
-      const path = findShortestPath(
+      const path = findShortestPathCached(
         token.gridX || 0,
         token.gridY || 0,
         gridX,
@@ -361,7 +807,8 @@ export default function MapSystem({
         mapWidth,
         mapHeight,
         isCellBlocked,
-        isCellDifficult
+        isCellDifficult,
+        canTraverseStep
       );
 
       if (path) {
@@ -450,7 +897,9 @@ export default function MapSystem({
       if (addLog) {
         addLog({
           type: 'COMBAT',
-          content: `棋子 [${token.name}] 移动到位置: (${gridX}ft, ${gridY}ft) [地图: ${activeMap.name}]`,
+          content: isNewPlacement
+            ? `**[${token.name}]** 已从角色列表部署到地图 **[${activeMap.name}]** 的 (${gridX}ft, ${gridY}ft)。`
+            : `棋子 [${token.name}] 移动到位置: (${gridX}ft, ${gridY}ft) [地图: ${activeMap.name}]`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -458,27 +907,16 @@ export default function MapSystem({
 
     if (addLog) {
       // 2. Blocked Grid cell warning
-      const cellKey = `${gridX}_${gridY}`;
-      let isImpassableBlock = blockedCells[cellKey];
+      const occupiedCells = footprintCoveredCells(gridX, gridY, token);
+      let isImpassableBlock = occupiedCells.some(cell => blockedCells[`${cell.x}_${cell.y}`]);
       let blockedAreaName = '';
       if (!isImpassableBlock) {
         for (const area of terrainAreas) {
-          if (area.isImpassable) {
-            if (area.type === 'rect') {
-              if (gridX >= area.gridX && gridX < area.gridX + area.width &&
-                  gridY >= area.gridY && gridY < area.gridY + area.height) {
-                isImpassableBlock = true;
-                blockedAreaName = area.name;
-                break;
-              }
-            } else if (area.type === 'circle') {
-              const dist = Math.hypot(gridX - area.gridX, gridY - area.gridY);
-              if (dist <= area.radius) {
-                isImpassableBlock = true;
-                blockedAreaName = area.name;
-                break;
-              }
-            }
+          if (area.placement !== 'edge' && terrainBlocksMovement(area, token)
+            && occupiedCells.some(cell => cellInArea(cell.x, cell.y, area))) {
+            isImpassableBlock = true;
+            blockedAreaName = area.name;
+            break;
           }
         }
       }
@@ -493,29 +931,25 @@ export default function MapSystem({
 
       // 3. Custom terrain area collision detection
       terrainAreas.forEach(area => {
-        let intersected = false;
-        if (area.type === 'rect') {
-          intersected = gridX >= area.gridX && gridX < area.gridX + area.width &&
-                        gridY >= area.gridY && gridY < area.gridY + area.height;
-        } else if (area.type === 'circle') {
-          const dist = Math.sqrt(Math.pow(gridX - area.gridX, 2) + Math.pow(gridY - area.gridY, 2));
-          intersected = dist <= area.radius;
-        }
+        const intersected = occupiedCells.some(cell => cellInArea(cell.x, cell.y, area));
 
         if (intersected) {
+          const hazard = terrainHazard(area);
+          const triggerDetails = terrainTriggerDetails(area);
+          if (hazard === 'none' && !triggerDetails) return;
           let warningText;
-          if (area.color === 'red') {
+          if (triggerDetails) {
+            warningText = `陷阱触发：[${token.name}] 进入了 [${area.name}]。判定：${triggerDetails.check}；效果：${triggerDetails.effect}`;
+          } else if (hazard === 'fire') {
             warningText = `警告：[${token.name}] 踏入了 [${area.name}] (烈火地形)！请注意扣减生命值并做反射豁免！`;
-          } else if (area.color === 'emerald') {
+          } else if (hazard === 'toxic') {
             warningText = `警告：[${token.name}] 踏入了 [${area.name}] (毒性/酸性地形)！请每回合进行体质豁免鉴定！`;
-          } else if (area.color === 'blue') {
+          } else if (hazard === 'cold') {
             warningText = `提示：[${token.name}] 进入了 [${area.name}] (寒冰/水体地形)，移动速度可能受阻。`;
-          } else if (area.color === 'amber') {
+          } else if (hazard === 'difficult') {
             warningText = `提示：[${token.name}] 进入了 [${area.name}] (困难地形/碎石)，在困难地形内移动需要消耗双倍移动力。`;
-          } else if (area.color === 'purple') {
+          } else if (hazard === 'arcane') {
             warningText = `警告：[${token.name}] 进入了 [${area.name}] (法术/诅咒地形)，请进行意志豁免判定！`;
-          } else {
-            warningText = `提示：[${token.name}] 进入了 [${area.name}] 地形区。`;
           }
 
           addLog({
@@ -539,7 +973,7 @@ export default function MapSystem({
   // Direct dragging of terrain areas (snapped to 1ft grids, zoom-compensated)
   const handleTerrainDragStart = (e, area) => {
     if (appRole === 'PLAYER') return;
-    if (!isTerrainEditMode || terrainEditTool !== 'select') return;
+    if (!isTerrainEditMode || terrainEditTool !== 'move') return;
     
     // Do not drag if clicking resize handle
     if (e.target.title && e.target.title.includes('改变')) {
@@ -555,6 +989,8 @@ export default function MapSystem({
     const startY = e.clientY;
     const initialGridX = area.gridX;
     const initialGridY = area.gridY;
+    const initialEndX = Number(area.endX);
+    const initialEndY = Number(area.endY);
     let lastCommittedGridX = initialGridX;
     let lastCommittedGridY = initialGridY;
 
@@ -571,7 +1007,14 @@ export default function MapSystem({
       if (nextGridX !== lastCommittedGridX || nextGridY !== lastCommittedGridY) {
         lastCommittedGridX = nextGridX;
         lastCommittedGridY = nextGridY;
-        handleUpdateArea(area.id, { gridX: nextGridX, gridY: nextGridY }, true);
+        handleUpdateArea(area.id, {
+          gridX: nextGridX,
+          gridY: nextGridY,
+          ...(area.orientation === 'free' ? {
+            endX: Math.max(0, Math.min(mapWidth, initialEndX + nextGridX - initialGridX)),
+            endY: Math.max(0, Math.min(mapHeight, initialEndY + nextGridY - initialGridY))
+          } : {})
+        }, true);
       }
     };
 
@@ -587,7 +1030,7 @@ export default function MapSystem({
   // Resizing rectangle terrain areas (width and height snapped to ft)
   const handleRectResizeStart = (e, area) => {
     if (appRole === 'PLAYER') return;
-    if (!isTerrainEditMode || terrainEditTool !== 'select') return;
+    if (!isTerrainEditMode || terrainEditTool !== 'move') return;
     e.stopPropagation();
     e.preventDefault();
     setEditingAreaId(area.id);
@@ -626,10 +1069,46 @@ export default function MapSystem({
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const handleEdgeResizeStart = (e, area) => {
+    if (appRole === 'PLAYER' || !isTerrainEditMode || terrainEditTool !== 'move') return;
+    e.stopPropagation();
+    e.preventDefault();
+    setEditingAreaId(area.id);
+    pushToHistory();
+    const start = area.orientation === 'vertical' ? e.clientY : e.clientX;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialEndX = Number(area.endX ?? area.gridX + 1);
+    const initialEndY = Number(area.endY ?? area.gridY);
+    const initialLength = Number(area.length || area.width || 1);
+    const handleMouseMove = (moveEvent) => {
+      if (area.orientation === 'free') {
+        handleUpdateArea(area.id, {
+          endX: Math.max(0, Math.min(mapWidth, initialEndX + Math.round((moveEvent.clientX - startX) / scale / gridSize))),
+          endY: Math.max(0, Math.min(mapHeight, initialEndY + Math.round((moveEvent.clientY - startY) / scale / gridSize)))
+        }, true);
+        return;
+      }
+      const current = area.orientation === 'vertical' ? moveEvent.clientY : moveEvent.clientX;
+      const nextLength = Math.max(1, Math.round(initialLength + (current - start) / scale / gridSize));
+      handleUpdateArea(area.id, {
+        length: nextLength,
+        width: area.orientation === 'vertical' ? Number(area.thickness || 0.15) : nextLength,
+        height: area.orientation === 'vertical' ? nextLength : Number(area.thickness || 0.15)
+      }, true);
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   // Resizing circular terrain areas (radius snapped to ft)
   const handleCircleResizeStart = (e, area) => {
     if (appRole === 'PLAYER') return;
-    if (!isTerrainEditMode || terrainEditTool !== 'select') return;
+    if (!isTerrainEditMode || terrainEditTool !== 'move') return;
     e.stopPropagation();
     e.preventDefault();
     setEditingAreaId(area.id);
@@ -660,17 +1139,119 @@ export default function MapSystem({
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const drawingPointFromMouse = (event) => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(mapWidth, (event.clientX - rect.left) / scale / gridSize)),
+      y: Math.max(0, Math.min(mapHeight, (event.clientY - rect.top) / scale / gridSize))
+    };
+  };
+
+  const pushDrawingHistory = (snapshot = mapDrawings) => {
+    const history = drawingHistoryRef.current.get(activeMap.id) || [];
+    history.push(structuredClone(snapshot));
+    if (history.length > 30) history.shift();
+    drawingHistoryRef.current.set(activeMap.id, history);
+    setDrawingHistoryRevision(value => value + 1);
+  };
+
+  const eraseDrawingsAt = (point) => {
+    const gesture = drawingGestureRef.current;
+    if (!gesture || gesture.tool !== 'eraser') return;
+    for (const stroke of gesture.original) if (strokeTouchesPoint(stroke, point, gridSize)) gesture.removed.add(stroke.id);
+    setErasedDrawingIds(new Set(gesture.removed));
+  };
+
+  const beginDrawingGesture = (event) => {
+    if (!isDrawingMode || event.button !== 0) return;
+    const point = drawingPointFromMouse(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (drawingTool === 'eraser') {
+      drawingGestureRef.current = { tool: 'eraser', original: mapDrawings, removed: new Set() };
+      eraseDrawingsAt(point);
+      return;
+    }
+    const stroke = {
+      id: `drawing_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+      color: drawingColor,
+      width: drawingWidth,
+      points: [point]
+    };
+    drawingGestureRef.current = { tool: 'pen', original: mapDrawings, stroke };
+    setDraftStroke(stroke);
+  };
+
+  const continueDrawingGesture = (event) => {
+    const gesture = drawingGestureRef.current;
+    if (!gesture) return;
+    const point = drawingPointFromMouse(event);
+    if (!point) return;
+    if (gesture.tool === 'eraser') {
+      eraseDrawingsAt(point);
+      return;
+    }
+    const previous = gesture.stroke.points.at(-1);
+    if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.08) return;
+    gesture.stroke = { ...gesture.stroke, points: [...gesture.stroke.points, point] };
+    setDraftStroke(gesture.stroke);
+  };
+
+  const finishDrawingGesture = () => {
+    const gesture = drawingGestureRef.current;
+    if (!gesture) return;
+    drawingGestureRef.current = null;
+    if (gesture.tool === 'pen' && gesture.stroke.points.length) {
+      pushDrawingHistory(gesture.original);
+      updateMap(activeMap.id, { drawings: [...gesture.original, gesture.stroke] });
+    } else if (gesture.tool === 'eraser' && gesture.removed.size) {
+      pushDrawingHistory(gesture.original);
+      updateMap(activeMap.id, { drawings: gesture.original.filter(stroke => !gesture.removed.has(stroke.id)) });
+    }
+    setDraftStroke(null);
+    setErasedDrawingIds(new Set());
+  };
+
+  const undoDrawing = () => {
+    const history = drawingHistoryRef.current.get(activeMap.id) || [];
+    if (!history.length) return;
+    const previous = history.pop();
+    drawingHistoryRef.current.set(activeMap.id, history);
+    updateMap(activeMap.id, { drawings: previous });
+    setDrawingHistoryRevision(value => value + 1);
+  };
+
+  const clearDrawings = () => {
+    if (!mapDrawings.length) return;
+    pushDrawingHistory(mapDrawings);
+    updateMap(activeMap.id, { drawings: [] });
+  };
+
   // Brush Painting functions
   const handleMapMouseDown = (e) => {
     if (appRole === 'PLAYER') return;
-    if (!isTerrainEditMode) return;
+    if (isDrawingMode) {
+      beginDrawingGesture(e);
+      return;
+    }
+    if (!isTerrainEditMode && !isVisionControlMode) return;
     
     // Ignore clicks on token handles or form inputs
     if (e.target.closest('.token-node') || e.target.closest('.terrain-resize-handle') || e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') {
       return;
     }
 
-    if (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase') {
+    if (isVisionControlMode) {
+      if (visionSelectionTool === 'pan') return;
+      e.preventDefault();
+      const rect = containerRef.current.getBoundingClientRect();
+      const gridX = Math.max(0, Math.min(mapWidth - 1, Math.floor(((e.clientX - rect.left) / scale) / gridSize)));
+      const gridY = Math.max(0, Math.min(mapHeight - 1, Math.floor(((e.clientY - rect.top) / scale) / gridSize)));
+      setIsSelecting(visionSelectionTool !== 'cell');
+      setSelectionBox({ shape: visionSelectionTool, angle: visionConeAngle, startX: gridX, startY: gridY, endX: gridX, endY: gridY });
+    } else if (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase') {
       e.preventDefault();
       pushToHistory();
       lastPaintedCellRef.current = null;
@@ -706,9 +1287,18 @@ export default function MapSystem({
   };
 
   const handleMapMouseMove = (e) => {
-    if (!isTerrainEditMode) return;
+    if (isDrawingMode) {
+      continueDrawingGesture(e);
+      return;
+    }
+    if (!isTerrainEditMode && !isVisionControlMode) return;
     
-    if (isPainting && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase')) {
+    if (isVisionControlMode && visionSelectionTool !== 'pan' && isSelecting) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const gridX = Math.max(0, Math.min(mapWidth - 1, Math.floor(((e.clientX - rect.left) / scale) / gridSize)));
+      const gridY = Math.max(0, Math.min(mapHeight - 1, Math.floor(((e.clientY - rect.top) / scale) / gridSize)));
+      setSelectionBox(previous => previous ? { ...previous, endX: gridX, endY: gridY } : null);
+    } else if (isPainting && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase')) {
       paintCellAtMouse(e);
     } else if (terrainEditTool === 'box_select') {
       const rect = containerRef.current.getBoundingClientRect();
@@ -728,9 +1318,14 @@ export default function MapSystem({
   };
 
   const handleMapMouseUp = () => {
+    if (isDrawingMode) finishDrawingGesture();
     setIsPainting(false);
+    if (isVisionControlMode) {
+      setIsSelecting(false);
+      return;
+    }
     
-    if (terrainEditTool === 'box_select') {
+    if (terrainEditTool === 'box_select' || isVisionControlMode) {
       if (isSelecting) {
         setIsSelecting(false);
         // If selection size is 0 (just a click), clear the selectionBox!
@@ -791,6 +1386,7 @@ export default function MapSystem({
   };
 
   const handleMapMouseLeave = () => {
+    if (isDrawingMode) finishDrawingGesture();
     setIsPainting(false);
     if (terrainEditTool === 'box_select') {
       setIsSelecting(false);
@@ -886,7 +1482,9 @@ export default function MapSystem({
       id: 'terrain_' + Date.now(),
       name: '新未命名矩形区',
       type: 'rect',
-      color: 'purple',
+      color: 'custom',
+      customColor: '#6b7280',
+      hazardLevel: 'none',
       gridX: Math.floor(mapWidth / 4),
       gridY: Math.floor(mapHeight / 4),
       width: 6,
@@ -903,7 +1501,9 @@ export default function MapSystem({
       id: 'terrain_' + Date.now(),
       name: '新未命名圆形区',
       type: 'circle',
-      color: 'purple',
+      color: 'custom',
+      customColor: '#6b7280',
+      hazardLevel: 'none',
       gridX: Math.floor(mapWidth / 2),
       gridY: Math.floor(mapHeight / 2),
       radius: 4,
@@ -912,6 +1512,18 @@ export default function MapSystem({
     };
     setTerrainAreas([...terrainAreas, newArea]);
     setEditingAreaId(newArea.id);
+  };
+
+  const handleAddFeature = (presetKey = featurePreset) => {
+    pushToHistory();
+    const newArea = createTerrainFeature(presetKey, {
+      id: `terrain_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      gridX: Math.floor(mapWidth / 2),
+      gridY: Math.floor(mapHeight / 2)
+    });
+    setTerrainAreas([...terrainAreas, newArea]);
+    setEditingAreaId(newArea.id);
+    setTerrainEditTool('move');
   };
 
   const handleUpdateArea = (id, updatedFields) => {
@@ -924,6 +1536,7 @@ export default function MapSystem({
   };
 
   const handleDeleteArea = (id) => {
+    pushToHistory();
     setTerrainAreas(terrainAreas.filter(area => area.id !== id));
     if (editingAreaId === id) setEditingAreaId(null);
   };
@@ -950,7 +1563,8 @@ export default function MapSystem({
   };
 
   const handleClearAllTerrains = () => {
-    if (window.confirm('确定要清空当前地图上的所有阻挡网格与区域地形吗？该操作不可撤销！')) {
+    if (window.confirm('确定要清空当前地图上的所有阻挡网格与区域地形吗？清空后可立即使用撤销恢复。')) {
+      pushToHistory();
       setBlockedCells({});
       setTerrainAreas([]);
       setEditingAreaId(null);
@@ -1023,7 +1637,7 @@ export default function MapSystem({
     // Reset each participant character's combat speeds, start grids, and turn resources
     setCharacters(prev => prev.map(c => {
       if (activeParticipantsIds.includes(c.id)) {
-        return resetTurnResources(c);
+        return prepareCharacterForCombat(c);
       }
       return c;
     }));
@@ -1161,6 +1775,62 @@ export default function MapSystem({
     }));
   };
 
+  const handleQuickPatchArea = (area, updater) => {
+    if (!area) return;
+    pushToHistory();
+    setTerrainAreas(terrainAreas.map(candidate => {
+      if (candidate.id !== area.id) return candidate;
+      return typeof updater === 'function' ? updater(candidate) : { ...candidate, ...updater };
+    }));
+  };
+
+  const handleQuickRevealArea = (area) => {
+    handleQuickPatchArea(area, { discoveredByParty: true });
+    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `DM 已向玩家揭示 **${area.name}**。`, timestamp: new Date().toLocaleTimeString() });
+  };
+
+  const handleQuickDestroyArea = (area) => {
+    handleQuickPatchArea(area, current => current.featureType === 'door'
+      ? { ...setDoorState(current, 'broken'), currentHp: 0, visualState: current.availableStates?.includes('broken') ? 'broken' : current.visualState }
+      : { ...current, currentHp: 0, visualState: current.availableStates?.includes('broken') ? 'broken' : current.availableStates?.includes('collapsed') ? 'collapsed' : current.visualState });
+  };
+
+  const handleQuickRepairArea = (area) => {
+    handleQuickPatchArea(area, current => {
+      const restoredState = current.availableStates?.find(state => !['broken', 'collapsed', 'damaged', 'overturned'].includes(state));
+      const repaired = current.featureType === 'door' ? setDoorState(current, 'closed') : current;
+      return { ...repaired, currentHp: Number(current.maxHp || 1), ...(restoredState ? { visualState: restoredState } : {}) };
+    });
+  };
+
+  const handleQuickToggleDoor = (area) => {
+    if (appRole === 'PLAYER' || area?.featureType !== 'door') return;
+    pushToHistory();
+    handleUpdateArea(area.id, toggleDoorState(area));
+  };
+
+  const handleRemoveTokenFromMap = (character) => {
+    const isDefeatedEnemy = isInCombat && character.type === 'NPC' && Number(character.hp) <= 0;
+    if (isDefeatedEnemy) {
+      const nextCombat = removeCombatantFromState(character.id, combatParticipants, combatTurnOrder, currentTurnIndex);
+      setCharacters(previous => previous.filter(entry => entry.id !== character.id));
+      setCombatParticipants(nextCombat.combatParticipants);
+      setCombatTurnOrder(nextCombat.combatTurnOrder);
+      setCurrentTurnIndex(nextCombat.currentTurnIndex);
+    } else {
+      setCharacters(previous => previous.map(entry => entry.id === character.id ? { ...entry, mapId: null } : entry));
+    }
+    addLog?.({
+      type: 'COMBAT',
+      content: isDefeatedEnemy
+        ? `**死亡单位清理**：[${character.name}] 在 HP 归零后被移出地图，已同时从角色列表与战斗顺序删除。`
+        : `角色 [${character.name}] 已手动从地图移出。`,
+      timestamp: new Date().toLocaleTimeString()
+    });
+    setSelectedTokenId(null);
+    onCharacterSelect?.(null);
+  };
+
   // Adjust HP values
   const adjustHp = (charId, amount) => {
     setCharacters(prev => prev.map(c => {
@@ -1233,53 +1903,65 @@ export default function MapSystem({
     purple: { value: 'var(--accent)', bg: TERRAIN_HATCH('accent'), glow: 'var(--accent-line)', label: '法术/诅咒' },
   };
 
+  const getAreaColor = (area) => {
+    if (area.color !== 'custom') return colorConfig[area.color] || colorConfig.purple;
+    const value = safeTerrainColor(area);
+    return {
+      value,
+      bg: `repeating-linear-gradient(45deg, color-mix(in srgb, ${value} 22%, transparent) 0 3px, transparent 3px 7px)`,
+      glow: `color-mix(in srgb, ${value} 55%, transparent)`,
+      label: '自定义颜色'
+    };
+  };
+
   // Filter terrains visible to the current perspective
-  const visibleTerrains = terrainAreas.filter(area => !isPlayerViewMode || !area.isSecret);
+  const visibleTerrains = !isVisionLimitedView ? terrainAreas : terrainAreas.flatMap(area => {
+    if (area.isSecret && area.discoveredByParty !== true) return [];
+    if (terrainTouchesCells(area, playerVisibility.visible)) return [area];
+    const remembered = normalizeMapVision(activeMap).exploredTerrainStates?.[area.id];
+    if (remembered) return [remembered];
+    const dynamic = area.featureState || area.destructible === true;
+    return !dynamic && terrainTouchesCells(area, playerVisibility.explored) ? [area] : [];
+  });
 
   // Helper to determine if a cell is blocked by brush walls or impassable vector shapes
-  const isCellBlocked = (x, y) => {
-    // 1. Check brush-drawn blocked cells
-    if (blockedCells[`${x}_${y}`]) return true;
+  const terrainGeometry = useMemo(() => ({ terrainAreas }), [terrainAreas]);
+  const terrainSpatialIndex = useMemo(() => getTerrainSpatialIndex(terrainGeometry), [terrainGeometry]);
+  const movingCharacter = useMemo(
+    () => characters.find(character => character.id === draggedToken?.id),
+    [characters, draggedToken?.id]
+  );
 
-    // 2. Check impassable vector terrain areas
-    for (const area of terrainAreas) {
-      if (area.isImpassable) {
-        if (area.type === 'rect') {
-          if (x >= area.gridX && x < area.gridX + area.width &&
-              y >= area.gridY && y < area.gridY + area.height) {
-            return true;
-          }
-        } else if (area.type === 'circle') {
-          const dist = Math.hypot(x - area.gridX, y - area.gridY);
-          if (dist <= area.radius) {
-            return true;
-          }
-        }
+  const isCellBlocked = useCallback((x, y) => {
+    for (const footprintCell of footprintCoveredCells(x, y, movingCharacter)) {
+      const cellX = footprintCell.x;
+      const cellY = footprintCell.y;
+      if (cellX < 0 || cellX >= mapWidth || cellY < 0 || cellY >= mapHeight) return true;
+      if (blockedCells[`${cellX}_${cellY}`]) return true;
+      for (const area of terrainAreasAtCell(terrainGeometry, cellX, cellY, terrainSpatialIndex)) {
+        if (terrainBlocksMovement(area, movingCharacter)) return true;
       }
     }
     return false;
-  };
+  }, [blockedCells, mapHeight, mapWidth, movingCharacter, terrainGeometry, terrainSpatialIndex]);
 
   // Helper to determine if a cell is difficult terrain (amber color and visible)
-  const isCellDifficult = (x, y) => {
-    for (const area of terrainAreas) {
-      if (isPlayerViewMode && area.isSecret) continue; // Skip hidden secret traps in player mode
-      if (area.color === 'amber') {
-        if (area.type === 'rect') {
-          if (x >= area.gridX && x < area.gridX + area.width &&
-              y >= area.gridY && y < area.gridY + area.height) {
-            return true;
-          }
-        } else if (area.type === 'circle') {
-          const dist = Math.hypot(x - area.gridX, y - area.gridY);
-          if (dist <= area.radius) {
-            return true;
-          }
-        }
+  const isCellDifficult = useCallback((x, y) => {
+    for (const footprintCell of footprintCoveredCells(x, y, movingCharacter)) {
+      for (const area of terrainAreasAtCell(terrainGeometry, footprintCell.x, footprintCell.y, terrainSpatialIndex)) {
+        if (isVisionLimitedView && area.isSecret && area.discoveredByParty !== true) continue; // Skip unrevealed secret traps in player-style views
+        if (isDifficultTerrain(area)) return true;
       }
     }
     return false;
-  };
+  }, [isVisionLimitedView, movingCharacter, terrainGeometry, terrainSpatialIndex]);
+
+  const canTraverseStep = useCallback(
+    (fromX, fromY, toX, toY) => canTraverseTerrainStep(
+      terrainGeometry, fromX, fromY, toX, toY, movingCharacter, terrainSpatialIndex
+    ),
+    [movingCharacter, terrainGeometry, terrainSpatialIndex]
+  );
 
   // Calculate A* path for dragging
   let dragPath;
@@ -1290,22 +1972,27 @@ export default function MapSystem({
   let dragIsSpeedExceeded = false;
   let dragActiveCharName = '';
   let dragSpeedRemaining = 30;
+  const canUndoDrawing = drawingHistoryRevision >= 0 && (drawingHistoryRef.current.get(activeMap.id)?.length || 0) > 0;
+  const renderedDrawings = [
+    ...mapDrawings.filter(stroke => !erasedDrawingIds.has(stroke.id)),
+    ...(draftStroke ? [draftStroke] : [])
+  ];
 
-  if (draggedToken && dragHoverCoords) {
+  if (draggedToken && dragHoverCoords && !draggedToken.isNewPlacement) {
     const isForced = isForcedMoveMode || dragIsShiftPressed;
 
     // 1. If in combat, validate turn
     if (isInCombat && !isForced) {
       const activeParticipant = combatTurnOrder[currentTurnIndex];
       const activeChar = characters.find(c => c.id === activeParticipant?.id);
-      dragActiveCharName = activeChar ? activeChar.name : '未知';
+      dragActiveCharName = activeChar ? compactCharacterName(activeChar.name) : '未知';
       
       if (activeParticipant?.id !== draggedToken.id) {
         dragIsNonActiveCombatMove = true;
       }
     }
 
-    dragPath = findShortestPath(
+    dragPath = findShortestPathCached(
       draggedToken.startX,
       draggedToken.startY,
       dragHoverCoords.x,
@@ -1313,7 +2000,8 @@ export default function MapSystem({
       mapWidth,
       mapHeight,
       isCellBlocked,
-      isCellDifficult
+      isCellDifficult,
+      canTraverseStep
     );
 
     if (dragPath) {
@@ -1413,6 +2101,28 @@ export default function MapSystem({
           {activeMap.width}×{activeMap.height} · 1ft
         </span>
 
+        {isDmVisionPreviewAvailable && (
+          <>
+            <ToolbarDivider />
+            <ToolbarLabel>视野</ToolbarLabel>
+            <SegmentedControl
+              ariaLabel="DM 本地视野预览"
+              fullWidth={false}
+              value={dmVisionPreview}
+              onChange={mode => {
+                setDmVisionPreview(mode);
+                setTerrainHint(null);
+                if (mode !== 'bright') {
+                  setSelectedTokenId(null);
+                  setHoveredTokenId(null);
+                }
+              }}
+              items={DM_VISION_PREVIEW_ITEMS}
+              style={{ flexShrink: 0 }}
+            />
+          </>
+        )}
+
         <span style={{ flex: 1 }} />
 
         {!isPlayerViewMode && (
@@ -1440,16 +2150,137 @@ export default function MapSystem({
             <ToolbarDivider />
             <Button
               size="sm"
+              variant={isVisionControlMode ? 'primary' : 'secondary'}
+              icon="eye"
+              onClick={() => {
+                setIsVisionControlMode(value => !value);
+                setIsDrawingMode(false);
+                setIsTerrainEditMode(false);
+                setEditingAreaId(null);
+                setSelectionBox(null);
+                setVisionSelectionTool('pan');
+              }}
+              title="控制玩家端与直播端的同步视野，并框选强制显示或遮蔽区域"
+            >
+              {isVisionControlMode ? '退出视野控制' : '玩家视野'}
+            </Button>
+            <Button
+              size="sm"
+              variant={isDrawingMode ? 'primary' : 'secondary'}
+              icon="pencil-simple"
+              onClick={() => {
+                setIsDrawingMode(value => !value);
+                setIsVisionControlMode(false);
+                setIsTerrainEditMode(false);
+                setEditingAreaId(null);
+              }}
+              title={isDrawingMode ? '退出地图标注模式' : '在地图上绘制会同步到直播端的标注'}
+            >
+              {isDrawingMode ? '退出标注' : '地图标注'}
+            </Button>
+            <Button
+              size="sm"
               variant={isTerrainEditMode ? 'primary' : 'secondary'}
               icon={isTerrainEditMode ? 'check' : 'paint-brush'}
-              onClick={() => { setIsTerrainEditMode(!isTerrainEditMode); setEditingAreaId(null); setTerrainEditTool('select'); }}
+              onClick={() => { setIsTerrainEditMode(!isTerrainEditMode); setIsDrawingMode(false); setIsVisionControlMode(false); setEditingAreaId(null); setTerrainEditTool('pan'); setSelectionBox(null); }}
               title={isTerrainEditMode ? '保存并退出地形编辑模式' : '进入地形编辑模式，绘制阻挡格与地形区域'}
             >
-              {isTerrainEditMode ? '保存并退出编辑' : '地形编辑画笔'}
+              {isTerrainEditMode ? '保存并退出编辑' : '快速编辑地图'}
             </Button>
           </>
         )}
       </Toolbar>
+
+      {isVisionControlMode && !isPlayerViewMode && (() => {
+        const vision = normalizeMapVision(activeMap);
+        const publicMode = vision.enabled === false ? 'bright' : vision.publicMode;
+        const overrideCount = Object.keys(vision.manualVisibleCells).length + Object.keys(vision.manualHiddenCells).length;
+        const selectedCellCount = selectionBox ? visionSelectionCells(selectionBox, mapWidth, mapHeight).size : 0;
+        const initialMemoryCount = Object.keys(vision.memoryInitialCells).length;
+        const currentMemoryCount = Object.keys(vision.memoryCurrentCells).length || Object.keys(vision.exploredCells).length;
+        return <div style={{
+          position: 'relative', zIndex: 1100, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
+          padding: 'var(--space-3) var(--space-5)', background: 'var(--surface-sunken)', borderBottom: 'var(--border-hairline)'
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <ToolbarLabel>玩家与直播</ToolbarLabel>
+            <SegmentedControl ariaLabel="玩家与直播同步视野" fullWidth={false} value={publicMode} onChange={updatePublicVisionMode} items={PUBLIC_VISION_MODE_ITEMS} style={{ flexShrink: 0 }} />
+            <ToolbarDivider />
+            <Badge size="sm" tone={vision.rememberExplored ? 'verdigris' : 'madder'}>
+              {vision.rememberExplored ? '记忆实时记录中' : '记忆已暂停 · 仅看当前'}
+            </Badge>
+            {vision.rememberExplored && <Button size="sm" variant="secondary" icon="pause" onClick={pauseExplorationMemory} title="暂停显示和积累探索记忆，但保留当前与起点档案">暂停记忆</Button>}
+            <Button size="sm" variant={vision.rememberExplored ? 'ghost' : 'primary'} icon="clock-counter-clockwise" onClick={() => resumeExplorationMemory('current')} title="打开当前累计的迷雾记忆，并继续实时记录">恢复当前 ({currentMemoryCount})</Button>
+            <Button size="sm" variant="ghost" icon="arrow-u-up-left" onClick={() => resumeExplorationMemory('initial')} title="回到记忆记录开始前的探索状态，并继续实时记录">恢复起点 ({initialMemoryCount})</Button>
+            <Button size="sm" variant="ghost" onClick={resetExplorationMemoryStart} title="把当前探索状态保存为新的起点和当前档案">设当前为起点</Button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <ToolbarLabel>视野选区</ToolbarLabel>
+            <SegmentedControl
+              ariaLabel="玩家视野选区形状"
+              fullWidth={false}
+              value={visionSelectionTool}
+              onChange={tool => { setVisionSelectionTool(tool); setSelectionBox(null); setIsSelecting(false); }}
+              items={VISION_SELECTION_ITEMS}
+              style={{ flexShrink: 0 }}
+            />
+            {visionSelectionTool === 'cone' && <Select
+              size="sm" fullWidth={false} aria-label="锥形角度" value={String(visionConeAngle)}
+              onChange={event => { setVisionConeAngle(Number(event.target.value) || 60); setSelectionBox(null); }}
+              options={[30, 45, 60, 90, 120].map(value => ({ value: String(value), label: `${value}°` }))}
+              style={{ width: 76 }}
+            />}
+            <ToolbarDivider />
+            {selectionBox ? <>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--accent)' }}>已选 {selectedCellCount} 格</span>
+              <Button size="sm" variant="secondary" icon="eye" onClick={() => applyVisionSelection('show')} title="强制玩家端与直播端显示选区">显示选区</Button>
+              <Button size="sm" variant="danger" icon="eye-slash" onClick={() => applyVisionSelection('hide')} title="强制遮蔽选区，并移除该区域的探索记忆">遮蔽选区</Button>
+              <Button size="sm" variant="secondary" icon="arrow-counter-clockwise" onClick={() => applyVisionSelection('auto')} title="移除选区手动覆盖，恢复角色视线、光照与遮挡判定">恢复自动</Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectionBox(null)}>取消</Button>
+            </> : <span style={{ color: 'var(--text-faint)', fontSize: 'var(--type-meta)' }}>
+              {visionSelectionTool === 'pan' ? '拖拽地图移动视角；切换形状后再编辑视野' : visionSelectionTool === 'cell' ? '点击一个地格' : '从起点拖拽到范围边缘'}
+            </span>}
+            <span style={{ flex: '1 1 16px' }} />
+            {overrideCount > 0 && <Button size="sm" variant="ghost" icon="broom" onClick={() => updateMap(activeMap.id, { vision: { ...vision, manualVisibleCells: {}, manualHiddenCells: {} } })} title="清除当前地图全部手动显示与遮蔽覆盖">清除覆盖 ({overrideCount})</Button>}
+          </div>
+        </div>;
+      })()}
+
+      {isDrawingMode && !isPlayerViewMode && (
+        <div style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-3)',
+          padding: 'var(--space-2) var(--space-5)', background: 'var(--surface-sunken)', borderBottom: 'var(--border-hairline)'
+        }}>
+          <ToolbarLabel>地图标注</ToolbarLabel>
+          <IconButton icon="pencil-simple" active={drawingTool === 'pen'} onClick={() => setDrawingTool('pen')} title="自由画笔" />
+          <IconButton icon="eraser" active={drawingTool === 'eraser'} onClick={() => setDrawingTool('eraser')} title="按笔画擦除" />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--text-muted)', fontSize: 'var(--type-meta)' }}>
+            颜色
+            <input
+              type="color"
+              value={drawingColor}
+              onChange={event => setDrawingColor(event.target.value)}
+              title="画笔颜色"
+              style={{ width: 34, height: 26, padding: 1, border: 'var(--border-hairline)', background: 'var(--surface-raised)' }}
+            />
+          </label>
+          <Select
+            size="sm"
+            fullWidth={false}
+            value={String(drawingWidth)}
+            onChange={event => setDrawingWidth(Number(event.target.value) || 4)}
+            options={[
+              { value: '2', label: '细线 2px' }, { value: '4', label: '标准 4px' },
+              { value: '7', label: '粗线 7px' }, { value: '11', label: '强调 11px' }
+            ]}
+            style={{ width: 120 }}
+          />
+          <ToolbarDivider />
+          <Button size="sm" variant="secondary" icon="arrow-u-up-left" disabled={!canUndoDrawing} onClick={undoDrawing} title="撤回上一次画笔、擦除或清空操作">撤回</Button>
+          <Button size="sm" variant="danger" icon="broom" disabled={!mapDrawings.length} onClick={clearDrawings} title="清除当前地图全部标注；可立即撤回">一键清除</Button>
+          <span style={{ color: 'var(--text-faint)', fontSize: 'var(--type-micro)' }}>仅为视觉标注，不影响地形、移动与视野判定</span>
+        </div>
+      )}
 
       {/* Map properties (DM only) */}
       {showMapConfig && !isPlayerViewMode && (
@@ -1502,6 +2333,38 @@ export default function MapSystem({
             placeholder= "可粘贴外部网络或本地图片 URL 地址"
             style={{ flex: 1, minWidth: 240 }}
           />
+          <Select
+            size="sm"
+            label="环境光"
+            value={normalizeMapVision(activeMap).ambientLight}
+            onChange={(e) => updateMap(activeMap.id, { vision: { ...normalizeMapVision(activeMap), ambientLight: e.target.value } })}
+            options={[{ value: 'bright', label: '明亮' }, { value: 'dim', label: '微光' }, { value: 'dark', label: '黑暗' }]}
+          />
+          <TextInput
+            size="sm"
+            mono
+            type="number"
+            label="楼层净高 (ft)"
+            value={normalizeMapVision(activeMap).ceilingHeight || 10}
+            onChange={(event) => updateMap(activeMap.id, { vision: { ...normalizeMapVision(activeMap), ceilingHeight: Math.max(1, Number(event.target.value) || 10) } })}
+            fullWidth={false}
+            style={{ width: 96 }}
+          />
+          <TextInput
+            size="sm"
+            mono
+            type="number"
+            label="室内视野上限 (ft)"
+            value={Math.min(180, normalizeMapVision(activeMap).visionRangeCap || 180)}
+            onChange={(event) => updateMap(activeMap.id, { vision: { ...normalizeMapVision(activeMap), visionRangeCap: Math.min(180, Math.max(1, Number(event.target.value) || 180)) } })}
+            fullWidth={false}
+            style={{ width: 126 }}
+          />
+          <Checkbox
+            checked={normalizeMapVision(activeMap).enabled !== false}
+            onChange={() => updateMap(activeMap.id, { vision: { ...normalizeMapVision(activeMap), enabled: normalizeMapVision(activeMap).enabled === false } })}
+            label="启用玩家视野"
+          />
           {activeMap.bgUrl && (
             <Button size="sm" variant="secondary" icon="x" onClick={() => updateMap(activeMap.id, { bgUrl: '' })} title= "清除背景图片">
               清除
@@ -1541,11 +2404,12 @@ export default function MapSystem({
             borderBottom: 'var(--border-hairline)'
           }}
         >
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-4)' }}>
-            <ToolbarLabel>Brush</ToolbarLabel>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <ToolbarLabel>工具</ToolbarLabel>
             <IconButton icon="wall" active={terrainEditTool === 'paint_block'} onClick={() => setTerrainEditTool('paint_block')} title= "绘制实体阻挡格" />
             <IconButton icon="eraser" active={terrainEditTool === 'paint_erase'} onClick={() => setTerrainEditTool('paint_erase')} title= "擦除实体阻挡格" />
-            <IconButton icon="hand" active={terrainEditTool === 'select'} onClick={() => setTerrainEditTool('select')} title= "选择/漫游模式（在地图上直接拖动区域更改位置，或拖拽边缘边角缩放大小）" />
+            <IconButton icon="hand" active={terrainEditTool === 'pan'} onClick={() => setTerrainEditTool('pan')} title="地图漫游：拖动地图，不会移动任何构件" />
+            <IconButton icon="arrows-out-cardinal" active={terrainEditTool === 'move'} onClick={() => setTerrainEditTool('move')} title="移动构件：仅在此模式下可拖动或缩放地图构件" />
             <IconButton
               icon="selection"
               active={terrainEditTool === 'box_select'}
@@ -1565,6 +2429,28 @@ export default function MapSystem({
                 }}
               >
                 <span style={{ fontSize: 'var(--type-meta)', color: 'var(--accent)' }}>已框选区域</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="eye"
+                  title="永久揭示框选区域内的地形；其中的角色和物品仍只在当前视野内显示"
+                  onClick={() => {
+                    const vision = normalizeMapVision(activeMap);
+                    const exploredCells = revealRectCells(vision.exploredCells, selectionBox, mapWidth, mapHeight);
+                    const selectionCells = new Set(Object.keys(revealRectCells({}, selectionBox, mapWidth, mapHeight)));
+                    updateMap(activeMap.id, {
+                      vision: {
+                        ...vision,
+                        exploredCells,
+                        exploredTerrainStates: updateExploredTerrainStates(vision.exploredTerrainStates, terrainAreas, selectionCells)
+                      }
+                    });
+                    addLog?.({ type: 'SYSTEM', visibility: 'private', content: `DM 已揭示地图 **${activeMap.name}** 的一个框选房间区域。`, timestamp: new Date().toLocaleTimeString() });
+                    setSelectionBox(null);
+                  }}
+                >
+                  揭示框内地形
+                </Button>
                 <Button
                   size="sm"
                   variant="danger"
@@ -1596,40 +2482,78 @@ export default function MapSystem({
             )}
 
             <ToolbarDivider />
-            <ToolbarLabel>Areas</ToolbarLabel>
-            <Button size="sm" variant="secondary" icon="square" onClick={handleAddRectArea} title= "在地图中心新建一块矩形地形区域">矩形地形</Button>
-            <Button size="sm" variant="secondary" icon="circle" onClick={handleAddCircleArea} title= "在地图中心新建一块圆形地形区域">圆形地形</Button>
+            <ToolbarLabel>区域</ToolbarLabel>
+            <IconButton icon="square" onClick={handleAddRectArea} title="新建矩形地形" />
+            <IconButton icon="circle" onClick={handleAddCircleArea} title="新建圆形地形" />
             <Checkbox
               checked={defaultImpassable}
               onChange={() => setDefaultImpassable(!defaultImpassable)}
-              label= "默认阻挡"
-              hint= "勾选后，新建的图形地形默认具备实体阻挡属性，防止棋子穿过"
+              label="新区域阻挡"
+            />
+
+            <ToolbarDivider />
+            <ToolbarLabel><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><DmforgeIcon name="component-library" size={15} />构件</span></ToolbarLabel>
+            <Select
+              size="sm"
+              fullWidth={false}
+              value={featurePreset}
+              onChange={(event) => setFeaturePreset(event.target.value)}
+              options={TERRAIN_FEATURE_OPTIONS}
+              style={{ width: 170 }}
+            />
+            <Button size="sm" variant="secondary" icon="plus" onClick={() => handleAddFeature()} title="按当前预设创建地图构件">
+              添加
+            </Button>
+            <IconButton icon="wall" onClick={() => handleAddFeature('wall')} title="快速添加完整墙体" />
+
+            <ToolbarDivider />
+            <Select
+              size="sm"
+              fullWidth={false}
+              value={editingAreaId || ''}
+              onChange={(event) => setEditingAreaId(event.target.value || null)}
+              options={[
+                { value: '', label: `选择对象（${terrainAreas.length}）` },
+                ...terrainAreas.map(area => {
+                  const name = area.name?.trim() || '未命名对象';
+                  const position = `X${area.gridX ?? 0} Y${area.gridY ?? 0}`;
+                  return {
+                    value: area.id,
+                    label: terrainNameCounts.get(name) > 1 ? `${name} · ${position}` : name
+                  };
+                })
+              ]}
+              style={{ width: 190 }}
             />
 
             <span style={{ flex: 1 }} />
-            <Button
-              size="sm"
-              variant="secondary"
+            <IconButton
               icon="arrow-u-up-left"
               disabled={!canUndo}
               onClick={handleUndo}
               title={canUndo ? '撤销上一步地形或阻挡绘制' : '暂无可以撤销的操作'}
-            >
-              撤销绘制
-            </Button>
-            <Button size="sm" variant="danger" icon="broom" onClick={handleClearAllTerrains} title= "清空这张地图上的所有地形区域与阻挡格（不可撤销）">
-              清空所有地形
-            </Button>
+            />
           </div>
 
-          {terrainAreas.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
-                区域地形列表（{terrainAreas.length}）· 在地图上点击图形或修改下方参数以调节大小与状态
-              </span>
-              <div style={{ display: 'flex', gap: 'var(--space-3)', overflowX: 'auto', paddingBottom: 2 }}>
-                {terrainAreas.map(area => {
-                  const color = colorConfig[area.color] || colorConfig.purple;
+          {editingArea && (
+            <div style={{
+              position: 'fixed',
+              top: `${Math.max(12, (viewportRef.current?.getBoundingClientRect().top || 132) + 12)}px`,
+              right: `${Math.max(12, (globalThis.innerWidth || 1280) - (viewportRef.current?.getBoundingClientRect().right || (globalThis.innerWidth || 1280)) + 12)}px`,
+              width: 340,
+              maxHeight: `${Math.max(280, (viewportRef.current?.getBoundingClientRect().height || 620) - 24)}px`,
+              zIndex: 650,
+              overflow: 'hidden',
+              background: 'var(--surface-overlay)',
+              boxShadow: 'inset 0 0 0 1px var(--line-strong), var(--shadow-float)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 34, padding: '0 var(--space-3)', borderBottom: 'var(--border-hairline)' }}>
+                <ToolbarLabel>对象检查器</ToolbarLabel>
+                <IconButton icon="x" size="sm" onClick={() => setEditingAreaId(null)} title="关闭对象检查器" />
+              </div>
+              <div style={{ maxHeight: `${Math.max(240, (viewportRef.current?.getBoundingClientRect().height || 620) - 58)}px`, overflowY: 'auto', padding: 'var(--space-2)' }}>
+                {[editingArea].map(area => {
+                  const color = getAreaColor(area);
                   const isEditing = editingAreaId === area.id;
 
                   return (
@@ -1637,12 +2561,13 @@ export default function MapSystem({
                       key={area.id}
                       onClick={() => setEditingAreaId(area.id)}
                       style={{
-                        minWidth: 240,
+                        minWidth: 0,
+                        width: '100%',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 'var(--space-2)',
                         padding: 'var(--space-3)',
-                        cursor: 'pointer',
+                        cursor: 'default',
                         background: 'var(--surface-raised)',
                         boxShadow: `inset 2px 0 0 ${color.value}, inset 0 0 0 1px ${isEditing ? 'var(--line-strong)' : 'var(--line-hairline)'}`,
                         transition: 'var(--motion-control)'
@@ -1659,17 +2584,91 @@ export default function MapSystem({
                           icon={area.isSecret ? 'eye-closed' : 'eye'}
                           size="sm"
                           active={area.isSecret}
-                          onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isSecret: !area.isSecret }); }}
+                          onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { isSecret: !area.isSecret, discoveredByParty: area.isSecret ? area.discoveredByParty : false }); }}
                           title={area.isSecret ? '玩家不可见 (隐秘陷阱)' : '玩家可见'}
                         />
                         <IconButton icon="copy" size="sm" onClick={(e) => { e.stopPropagation(); handleDuplicateArea(area); }} title= "快速复制此地形区域" />
-                        <IconButton icon="trash" size="sm" tone="danger" onClick={(e) => { e.stopPropagation(); handleDeleteArea(area.id); }} title= "删除地形" />
                       </div>
 
-                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-2)' }} onClick={(event) => event.stopPropagation()}>
+                        <Button size="sm" variant={terrainEditTool === 'move' ? 'primary' : 'secondary'} icon="arrows-out-cardinal" onClick={() => setTerrainEditTool('move')} title="进入构件移动模式">移动</Button>
+                        {area.featureType === 'door' && (
+                          <Button size="sm" variant="secondary" onClick={() => handleQuickPatchArea(area, current => toggleDoorState(current))}>
+                            {area.featureState === 'open' ? '关门' : '开门'}
+                          </Button>
+                        )}
+                        {area.isSecret && area.discoveredByParty !== true && (
+                          <Button size="sm" variant="secondary" icon="eye" onClick={() => handleQuickRevealArea(area)}>揭示</Button>
+                        )}
+                        {area.destructible && terrainIsDestroyed(area) && (
+                          <Button size="sm" variant="secondary" onClick={() => handleQuickRepairArea(area)}>修复</Button>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }} onClick={(event) => event.stopPropagation()}>
+                        <Select
+                          size="sm"
+                          label="形状"
+                          value={area.type}
+                          disabled={area.placement === 'edge'}
+                          onChange={(event) => handleUpdateArea(area.id, changeTerrainShape(area, event.target.value))}
+                          options={[{ value: 'rect', label: '矩形' }, { value: 'circle', label: '圆形' }]}
+                        />
+                        {area.placement === 'edge' && (
+                          <Select
+                            size="sm"
+                            label="格线方向"
+                            value={area.orientation || 'horizontal'}
+                            onChange={(event) => {
+                              const orientation = event.target.value;
+                              const length = Number(area.length || area.width || area.height || 1);
+                              const thickness = Number(area.thickness || 0.15);
+                              handleUpdateArea(area.id, {
+                                orientation,
+                                width: orientation === 'vertical' ? thickness : length,
+                                height: orientation === 'vertical' ? length : thickness,
+                                ...(orientation === 'free' ? { endX: Number(area.endX ?? area.gridX + length), endY: Number(area.endY ?? area.gridY) } : {})
+                              });
+                            }}
+                            options={[{ value: 'horizontal', label: '水平' }, { value: 'vertical', label: '垂直' }, { value: 'free', label: '自由斜线' }]}
+                          />
+                        )}
+                        {area.featureType && <Badge tone="neutral">{TERRAIN_FEATURE_OPTIONS.find(option => option.value === area.featureType)?.label || '自定义构件'}</Badge>}
+                        {area.featureType === 'door' && (
+                          <Select
+                            size="sm"
+                            label="门状态"
+                            value={area.featureState || 'closed'}
+                            options={DOOR_STATE_OPTIONS}
+                            onChange={(event) => handleUpdateArea(area.id, setDoorState(area, event.target.value))}
+                          />
+                        )}
+                        {area.availableStates?.length > 0 && (
+                          <Select
+                            size="sm"
+                            label="外观状态"
+                            value={area.visualState || area.availableStates[0]}
+                            options={terrainFeatureStateOptions(area)}
+                            onChange={(event) => handleUpdateArea(area.id, { visualState: event.target.value })}
+                          />
+                        )}
+                      </div>
+
+                      <ToolbarLabel>位置与尺寸</ToolbarLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(72px, 1fr))', gap: 'var(--space-2)' }}>
                         <TextInput size="sm" mono type="number" label= "X(ft)" value={area.gridX} onChange={(e) => handleUpdateArea(area.id, { gridX: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
                         <TextInput size="sm" mono type="number" label= "Y(ft)" value={area.gridY} onChange={(e) => handleUpdateArea(area.id, { gridY: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
-                        {area.type === 'rect' ? (
+                        {area.placement === 'edge' && area.orientation === 'free' ? (
+                          <>
+                            <TextInput size="sm" mono type="number" label="终点 X" value={area.endX ?? area.gridX + 1} onChange={(e) => handleUpdateArea(area.id, { endX: Math.max(0, Number(e.target.value) || 0) })} />
+                            <TextInput size="sm" mono type="number" label="终点 Y" value={area.endY ?? area.gridY} onChange={(e) => handleUpdateArea(area.id, { endY: Math.max(0, Number(e.target.value) || 0) })} />
+                          </>
+                        ) : area.placement === 'edge' ? (
+                          <TextInput size="sm" mono type="number" label="长度" value={area.length || area.width || 1} onChange={(e) => {
+                            const length = Math.max(1, Number(e.target.value) || 1);
+                            handleUpdateArea(area.id, { length, width: area.orientation === 'vertical' ? Number(area.thickness || 0.15) : length, height: area.orientation === 'vertical' ? length : Number(area.thickness || 0.15) });
+                          }} />
+                        ) : area.type === 'rect' ? (
                           <>
                             <TextInput size="sm" mono type="number" label= "宽" value={area.width} onChange={(e) => handleUpdateArea(area.id, { width: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
                             <TextInput size="sm" mono type="number" label= "高" value={area.height} onChange={(e) => handleUpdateArea(area.id, { height: Math.max(1, parseInt(e.target.value, 10) || 1) })} />
@@ -1679,32 +2678,84 @@ export default function MapSystem({
                         )}
                       </div>
 
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={!!area.isImpassable}
-                          onChange={() => handleUpdateArea(area.id, { isImpassable: !area.isImpassable })}
-                          label= "实体阻挡障碍 (角色不可穿越)"
-                        />
-                      </div>
+                      <details className="terrain-rule-details" onClick={(event) => event.stopPropagation()}>
+                        <summary>移动、视野与掩体 <span>{terrainMovementMode(area) === 'blocked' ? '阻挡' : '可通行'} · {terrainVisionMode(area) === 'blocked' ? '遮挡' : '可见'}</span></summary>
+                        <div className="terrain-rule-grid">
+                          <Select size="sm" label="地形穿越" value={terrainMovementMode(area)} options={TERRAIN_MOVEMENT_OPTIONS} onChange={(event) => handleUpdateArea(area.id, { movementMode: event.target.value, isImpassable: event.target.value === 'blocked' })} />
+                          <Select size="sm" label="视野穿越" value={terrainVisionMode(area)} options={TERRAIN_VISION_OPTIONS} onChange={(event) => handleUpdateArea(area.id, { visionMode: event.target.value, blocksVision: event.target.value === 'blocked' })} />
+                          <Select size="sm" label="掩体等级" value={terrainCoverLevel(area)} options={TERRAIN_COVER_OPTIONS} onChange={(event) => handleUpdateArea(area.id, { coverLevel: event.target.value })} />
+                          <TextInput size="sm" mono type="number" label="离地高度(ft)" value={area.baseHeight || 0} onChange={(event) => handleUpdateArea(area.id, { baseHeight: Math.max(0, Number(event.target.value) || 0) })} />
+                          <TextInput size="sm" mono type="number" label="构件高度(ft)" value={area.obstacleHeight ?? 10} onChange={(event) => handleUpdateArea(area.id, { obstacleHeight: Math.max(0, Number(event.target.value) || 0) })} />
+                          {terrainVisionMode(area) === 'oneWay' && <TextInput size="sm" mono type="number" label="阻挡方向(°)" value={area.visionDirection || 0} onChange={(event) => handleUpdateArea(area.id, { visionDirection: Number(event.target.value) || 0 })} />}
+                          {area.featureState === 'ajar' && <TextInput size="sm" mono type="number" label="门缝视角(°)" value={area.apertureAngle || 70} onChange={(event) => handleUpdateArea(area.id, { apertureAngle: Math.max(5, Math.min(175, Number(event.target.value) || 70)) })} />}
+                        </div>
+                        <div className="terrain-rule-checks">
+                          <Checkbox checked={area.transmitsLight === true} onChange={() => handleUpdateArea(area.id, { transmitsLight: area.transmitsLight !== true })} label="光照可穿越" />
+                          <Checkbox checked={area.transmitsAttacks === true} onChange={() => handleUpdateArea(area.id, { transmitsAttacks: area.transmitsAttacks !== true })} label="远程攻击可穿越" />
+                        </div>
+                      </details>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                        <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>灾害级</span>
-                        {Object.keys(colorConfig).map(c => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleUpdateArea(area.id, { color: c }); }}
-                            title={colorConfig[c].label}
-                            style={{
-                              width: 11,
-                              height: 11,
-                              padding: 0,
-                              background: colorConfig[c].value,
-                              border: area.color === c ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)',
-                              cursor: 'pointer'
-                            }}
+                      {(area.isSecret || terrainHazard(area) !== 'none' || terrainTriggerDetails(area)) && (
+                        <details className="terrain-rule-details" onClick={(event) => event.stopPropagation()}>
+                          <summary>陷阱与触发效果 <span>{terrainTriggerDetails(area) ? '已标注' : '待填写'}</span></summary>
+                          <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+                            <TextInput size="sm" label="触发条件" value={area.trapTrigger || ''} placeholder="例如：单位首次进入区域" onChange={(event) => handleUpdateArea(area.id, { trapTrigger: event.target.value })} />
+                            <TextInput size="sm" label="判定方式" value={area.trapCheck || ''} placeholder="例如：敏捷豁免 DC 13" onChange={(event) => handleUpdateArea(area.id, { trapCheck: event.target.value })} />
+                            <TextInput size="sm" multiline rows={3} label="触发效果" value={area.trapEffect || ''} placeholder="伤害、状态、位移或警报效果" onChange={(event) => handleUpdateArea(area.id, { trapEffect: event.target.value })} />
+                            <TextInput size="sm" label="持续时间" value={area.trapDuration || ''} placeholder="例如：直到下一回合结束" onChange={(event) => handleUpdateArea(area.id, { trapDuration: event.target.value })} />
+                            <TextInput size="sm" label="解除方式" value={area.trapDisarm || ''} placeholder="例如：技术检定或破坏控制盒" onChange={(event) => handleUpdateArea(area.id, { trapDisarm: event.target.value })} />
+                          </div>
+                        </details>
+                      )}
+
+                      <details className="terrain-rule-details" onClick={(event) => event.stopPropagation()}>
+                        <summary>耐久与高级设置 <span>{area.destructible ? `${area.currentHp ?? area.maxHp ?? 1}/${area.maxHp ?? 1}` : '不可破坏'}</span></summary>
+                        <Checkbox checked={area.destructible === true} onChange={() => handleUpdateArea(area.id, { destructible: area.destructible !== true })} label="可破坏构件" />
+                        {area.isSecret && <Checkbox checked={area.discoveredByParty === true} onChange={() => handleUpdateArea(area.id, { discoveredByParty: area.discoveredByParty !== true })} label="玩家已发现此秘密构件" />}
+                        {area.destructible && (
+                          <>
+                            <div className="terrain-rule-grid terrain-rule-grid--two">
+                              <TextInput size="sm" mono type="number" label="当前耐久" value={area.currentHp ?? area.maxHp ?? 1} onChange={(event) => handleUpdateArea(area.id, { currentHp: Math.max(0, Number(event.target.value) || 0) })} />
+                              <TextInput size="sm" mono type="number" label="最大耐久" value={area.maxHp ?? 1} onChange={(event) => handleUpdateArea(area.id, { maxHp: Math.max(1, Number(event.target.value) || 1) })} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                              {!terrainIsDestroyed(area) ? (
+                                <>
+                                  <Button size="sm" variant="secondary" onClick={() => handleQuickPatchArea(area, current => ({ ...current, currentHp: Math.max(0, Number(current.currentHp ?? current.maxHp ?? 1) - 5) }))}>耐久 -5</Button>
+                                  <Button size="sm" variant="secondary" onClick={() => handleQuickDestroyArea(area)}>破坏</Button>
+                                </>
+                              ) : <Button size="sm" variant="secondary" onClick={() => handleQuickRepairArea(area)}>修复</Button>}
+                            </div>
+                          </>
+                        )}
+                      </details>
+
+                      <details className="terrain-rule-details" onClick={(event) => event.stopPropagation()}>
+                        <summary>外观与灾害 <span>{TERRAIN_HAZARDS.find(option => option.value === terrainHazard(area))?.label || '无'}</span></summary>
+                        <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+                          <Select
+                            size="sm"
+                            label="灾害级"
+                            value={terrainHazard(area)}
+                            onChange={(event) => handleUpdateArea(area.id, { hazardLevel: event.target.value })}
+                            options={TERRAIN_HAZARDS}
                           />
-                        ))}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>颜色</span>
+                            {Object.keys(colorConfig).map(c => (
+                              <button key={c} type="button" onClick={() => handleUpdateArea(area.id, { color: c })} title={colorConfig[c].label} aria-label={colorConfig[c].label} style={{ width: 18, height: 18, padding: 0, background: colorConfig[c].value, border: area.color === c ? '2px solid var(--text-body)' : '1px solid var(--line-hairline)', cursor: 'pointer' }} />
+                            ))}
+                            <input type="color" aria-label="自定义地形颜色" value={safeTerrainColor(area)} onChange={(event) => handleUpdateArea(area.id, { color: 'custom', customColor: event.target.value })} style={{ width: 32, height: 22, padding: 0, border: '1px solid var(--line-hairline)', background: 'transparent', cursor: 'pointer' }} />
+                          </div>
+                        </div>
+                      </details>
+
+                      <div style={{ display: 'grid', gap: 'var(--space-2)', marginTop: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }} onClick={(event) => event.stopPropagation()}>
+                        <Button size="sm" variant="danger" icon="trash" onClick={() => handleDeleteArea(area.id)}>删除当前对象</Button>
+                        <details className="terrain-rule-details">
+                          <summary>地图级操作 <span>谨慎</span></summary>
+                          <Button size="sm" variant="danger" icon="broom" fullWidth onClick={handleClearAllTerrains}>清空全部地形</Button>
+                        </details>
                       </div>
                     </div>
                   );
@@ -1716,7 +2767,7 @@ export default function MapSystem({
       )}
 
       {/* Initiative rail */}
-      {isInCombat && (
+      {isInCombat && !compactPresentation && (
         <div
           style={{
             flexShrink: 0,
@@ -1746,8 +2797,8 @@ export default function MapSystem({
                   <button
                     key={char.id}
                     type="button"
-                    onClick={() => setSelectedTokenId(char.id)}
-                    title={`选中 ${char.name}`}
+                    onClick={() => { setSelectedTokenId(char.id); onCharacterSelect?.(char.id); }}
+                    title={`选中 ${compactCharacterName(char.name)}`}
                     style={{
                       position: 'relative',
                       display: 'flex',
@@ -1765,10 +2816,10 @@ export default function MapSystem({
                       transition: 'var(--motion-control)'
                     }}
                   >
-                    <MapToken kind={char.type === 'PC' ? 'PC' : 'MONSTER'} name={char.name} size={32} active={isActive} />
+                    <MapToken kind={char.type === 'PC' ? 'PC' : 'MONSTER'} name={compactCharacterName(char.name)} image={characterAvatar(char)} size={32} active={isActive} />
                     <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                       <span style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {char.name}
+                        {compactCharacterName(char.name)}
                       </span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
                         先攻 {participant.total} · 顺位 {index + 1}
@@ -1813,7 +2864,7 @@ export default function MapSystem({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '1 1 200px', minWidth: 180, paddingRight: 'var(--space-4)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <strong style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {activeChar.name}
+                      {compactCharacterName(activeChar.name)}
                     </strong>
                     <Badge tone="accent" size="sm">当前行动</Badge>
                   </div>
@@ -1854,12 +2905,12 @@ export default function MapSystem({
                   </Button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '2 1 300px', minWidth: 260, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '3 1 480px', minWidth: 300, paddingLeft: 'var(--space-4)', borderLeft: 'var(--border-hairline)' }}>
                   <ToolbarLabel>动作、法术与角色资源</ToolbarLabel>
-                  <div className="no-scrollbar" style={{ display: 'flex', gap: 'var(--space-2)', overflowX: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 'var(--space-2)', width: '100%', alignItems: 'start' }}>
                     {activeChar.resources && activeChar.resources.length > 0 ? (
                       activeChar.resources.map((res, resIdx) => (
-                        <span key={resIdx} style={{ minWidth: 190, flexShrink: 0 }}>
+                        <span key={`${res.name}-${resIdx}`} style={{ minWidth: 0 }}>
                           <ResourceSlot
                             name={res.name}
                             value={res.value}
@@ -1908,12 +2959,14 @@ export default function MapSystem({
 
       {/* Map Content Box */}
       <div 
+        ref={viewportRef}
         style={{ flex: 1, minHeight: 0, position: 'relative', background: 'var(--surface-sunken)', display: 'flex', overflow: 'hidden' }}
         onDragOver={handleDragOver}
+        onDragLeave={handleViewportDragLeave}
         onDrop={handleDrop}
       >
         {/* Ambient Atmosphere Background Image (DMForge Sleek Morandi Ambient Overlay) */}
-        {mapBgUrl && (
+        {mapBgUrl && !isVisionLimitedView && !isVisionBlackout && (
           <div 
             style={{
               position: 'absolute',
@@ -1921,7 +2974,7 @@ export default function MapSystem({
               backgroundImage: `url(${mapBgUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
-              opacity: 0.35, // High-end dimmed ambient backdrop
+              opacity: 0.18,
               zIndex: 0,
               pointerEvents: 'none'
             }}
@@ -1930,6 +2983,7 @@ export default function MapSystem({
 
         <TransformWrapper
           ref={transformRef}
+          onInit={handleTransform}
           initialScale={1}
           initialPositionX={0}
           initialPositionY={0}
@@ -1937,7 +2991,7 @@ export default function MapSystem({
           maxScale={4}
           onTransformed={handleTransform}
           onZoom={handleTransform}
-          panning={{ disabled: isTerrainEditMode && (terrainEditTool === 'paint_block' || terrainEditTool === 'paint_erase' || terrainEditTool === 'box_select') }}
+          panning={{ disabled: isDrawingMode || isVisionControlMode && visionSelectionTool !== 'pan' || isTerrainEditMode && terrainEditTool !== 'pan' }}
           wheel={{ step: 0.05 }}
           smooth={false}
           limitToBounds={false}
@@ -1948,7 +3002,7 @@ export default function MapSystem({
               <div style={{
                 position: 'absolute',
                 top: '16px',
-                right: '16px',
+                right: isTerrainEditMode && editingArea ? '368px' : '16px',
                 zIndex: 100,
                 display: 'flex',
                 flexDirection: 'column',
@@ -1971,12 +3025,17 @@ export default function MapSystem({
                     width: `${mapWidth * gridSize}px`,
                     height: `${mapHeight * gridSize}px`,
                     position: 'relative',
-                    backgroundColor: mapBgUrl ? 'var(--surface-scrim)' : 'var(--surface-sunken)',
-                    backdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
-                    WebkitBackdropFilter: mapBgUrl ? 'blur(10px)' : 'none',
+                    backgroundColor: 'var(--surface-sunken)',
+                    backgroundImage: mapBgUrl
+                      ? `linear-gradient(rgba(5, 7, 12, 0.32), rgba(5, 7, 12, 0.32)), url("${mapBgUrl.replaceAll('"', '%22')}")`
+                      : undefined,
+                    backgroundSize: mapBgUrl ? `${mapBgScaleX}% ${mapBgScaleY}%, ${mapBgScaleX}% ${mapBgScaleY}%` : undefined,
+                    backgroundPosition: mapBgUrl ? `${mapBgPositionX}% ${mapBgPositionY}%, ${mapBgPositionX}% ${mapBgPositionY}%` : undefined,
+                    backgroundRepeat: 'no-repeat',
                     border: mapBgUrl ? '1px solid var(--line-hairline)' : 'none',
                     boxShadow: 'inset 0 0 0 1px var(--line-hairline)',
-                    cursor: isTerrainEditMode && terrainEditTool === 'paint_block' ? 'cell' :
+                    cursor: isVisionControlMode ? (visionSelectionTool === 'pan' ? 'grab' : 'crosshair') : isDrawingMode ? (drawingTool === 'eraser' ? 'cell' : 'crosshair') :
+                            isTerrainEditMode && terrainEditTool === 'paint_block' ? 'cell' :
                             isTerrainEditMode && terrainEditTool === 'paint_erase' ? 'no-drop' : 'default'
                   }}
                 >
@@ -2021,6 +3080,15 @@ export default function MapSystem({
                     </span>
                   ))}
 
+                  {isVisionControlMode && visionSelectionTool !== 'pan' && <div
+                    aria-label="框选玩家与直播视野范围"
+                    onMouseDown={event => { event.stopPropagation(); handleMapMouseDown(event); }}
+                    onMouseMove={event => { event.stopPropagation(); handleMapMouseMove(event); }}
+                    onMouseUp={event => { event.stopPropagation(); handleMapMouseUp(); }}
+                    onMouseLeave={event => { event.stopPropagation(); handleMapMouseLeave(); }}
+                    style={{ position: 'absolute', inset: 0, zIndex: 59, cursor: 'crosshair' }}
+                  />}
+
                   {/* 1px crosshair through the acting token. */}
                   {(() => {
                     const crossId = isInCombat ? combatTurnOrder[currentTurnIndex]?.id : selectedTokenId;
@@ -2028,8 +3096,8 @@ export default function MapSystem({
                     if (!crossChar) return null;
                     return (
                       <>
-                        <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, top: (crossChar.gridY || 0) * gridSize + gridSize * 0.75, height: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
-                        <span aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, left: (crossChar.gridX || 0) * gridSize + gridSize * 0.75, width: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
+                        <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, top: ((crossChar.gridY || 0) + 0.5) * gridSize, height: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
+                        <span aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, left: ((crossChar.gridX || 0) + 0.5) * gridSize, width: 1, background: 'var(--accent-line)', zIndex: 2, pointerEvents: 'none' }} />
                       </>
                     );
                   })()}
@@ -2048,8 +3116,14 @@ export default function MapSystem({
                     }}
                   />
 
-                  {/* Render selection box and real-time drag translation preview */}
-                  {selectionBox && (
+                  {isVisionControlMode && selectionBox && <VisionSelectionOverlay
+                    selection={selectionBox}
+                    gridSize={gridSize}
+                    cellCount={visionSelectionCells(selectionBox, mapWidth, mapHeight).size}
+                  />}
+
+                  {/* Render terrain selection box and real-time drag translation preview */}
+                  {selectionBox && !isVisionControlMode && (
                     (() => {
                       const minX = Math.min(selectionBox.startX, selectionBox.endX);
                       const maxX = Math.max(selectionBox.startX, selectionBox.endX);
@@ -2069,11 +3143,11 @@ export default function MapSystem({
                             top: `${displayTop}px`,
                             width: `${displayWidth}px`,
                             height: `${displayHeight}px`,
-                            border: '2px dashed var(--accent)',
-                            background: 'rgba(168, 85, 247, 0.08)',
-                            boxShadow: '0 0 12px rgba(168, 85, 247, 0.4), inset 0 0 6px rgba(168, 85, 247, 0.2)',
+                            border: `2px dashed ${isVisionControlMode ? 'var(--pigment-verdigris)' : 'var(--accent)'}`,
+                            background: isVisionControlMode ? 'var(--pigment-verdigris-soft)' : 'rgba(168, 85, 247, 0.08)',
+                            boxShadow: isVisionControlMode ? '0 0 12px var(--pigment-verdigris-line)' : '0 0 12px rgba(168, 85, 247, 0.4), inset 0 0 6px rgba(168, 85, 247, 0.2)',
                             pointerEvents: 'none',
-                            zIndex: 3
+                            zIndex: isVisionControlMode ? 60 : 3
                           }}
                         >
                           <div style={{
@@ -2085,7 +3159,7 @@ export default function MapSystem({
                             borderRadius: '4px',
                             padding: '2px 6px',
                             fontSize: '10px',
-                            color: 'var(--accent)',
+                            color: isVisionControlMode ? 'var(--pigment-verdigris)' : 'var(--accent)',
                             whiteSpace: 'nowrap',
                             pointerEvents: 'none',
                             display: 'flex',
@@ -2093,7 +3167,7 @@ export default function MapSystem({
                             gap: '4px',
                             boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
                           }}>
-                            <span> 按住框选区可拖动平移</span>
+                            <span>{isVisionControlMode ? '玩家与直播视野选区' : '按住框选区可拖动平移'}</span>
                           </div>
                         </div>
                       );
@@ -2127,9 +3201,9 @@ export default function MapSystem({
                             top: `${(cell.y + dragOffset.y) * gridSize}px`,
                             width: `${gridSize}px`,
                             height: `${gridSize}px`,
-                            background: 'repeating-linear-gradient(45deg, rgba(168, 85, 247, 0.3), rgba(168, 85, 247, 0.3) 4px, rgba(239, 68, 68, 0.3) 4px, rgba(239, 68, 68, 0.3) 8px)',
+                            background: 'repeating-linear-gradient(45deg, var(--accent-soft) 0 4px, var(--pigment-madder-soft) 4px 8px)',
                             border: '1px solid var(--accent)',
-                            boxShadow: '0 0 8px rgba(168, 85, 247, 0.5)',
+                            boxShadow: 'none',
                             pointerEvents: 'none',
                             zIndex: 2
                           }}
@@ -2140,34 +3214,56 @@ export default function MapSystem({
 
                   {/* Render Custom Vector Hazard Regions */}
                   {visibleTerrains.map(area => {
-                    const color = colorConfig[area.color] || colorConfig.purple;
+                    const color = getAreaColor(area);
                     const isEditing = editingAreaId === area.id;
+                    const movementBlocked = terrainBlocksMovement(area);
+                    const canQuickToggleDoor = area.featureType === 'door' && appRole !== 'PLAYER' && !isDrawingMode;
 
                     if (area.type === 'rect') {
+                      const isEdge = area.placement === 'edge';
+                      const length = Math.max(1, Number(area.length || area.width || 1));
+                      const thicknessPx = Math.max(4, Number(area.thickness || 0.15) * gridSize);
+                      const isFreeEdge = isEdge && area.orientation === 'free';
+                      const freeDx = Number(area.endX ?? area.gridX + 1) - Number(area.gridX || 0);
+                      const freeDy = Number(area.endY ?? area.gridY) - Number(area.gridY || 0);
+                      const freeLengthPx = Math.max(gridSize, Math.hypot(freeDx, freeDy) * gridSize);
+                      const freeAngle = Math.atan2(freeDy, freeDx) * 180 / Math.PI;
                       return (
                         <div
                           key={area.id}
-                          onMouseDown={(e) => handleTerrainDragStart(e, area)}
+                          onMouseDown={(e) => {
+                            if (canQuickToggleDoor && !isTerrainEditMode) e.stopPropagation();
+                            else handleTerrainDragStart(e, area);
+                          }}
+                          onMouseEnter={(event) => beginTerrainHint(event, area)}
+                          onMouseMove={(event) => moveTerrainHint(event, area)}
+                          onMouseLeave={endTerrainHint}
+                          role={canQuickToggleDoor && !isTerrainEditMode ? 'button' : undefined}
+                          tabIndex={canQuickToggleDoor && !isTerrainEditMode ? 0 : undefined}
+                          aria-label={canQuickToggleDoor ? `${area.name}：${area.featureState === 'open' ? '点击关闭' : '点击开启'}` : undefined}
+                          data-terrain-selected={isEditing || undefined}
                           style={{
                             position: 'absolute',
                             left: `${area.gridX * gridSize}px`,
                             top: `${area.gridY * gridSize}px`,
-                            width: `${area.width * gridSize}px`,
-                            height: `${area.height * gridSize}px`,
-                            background: area.isImpassable 
-                              ? `repeating-linear-gradient(45deg, ${color.bg}, ${color.bg} 8px, rgba(239, 68, 68, 0.15) 8px, rgba(239, 68, 68, 0.15) 16px)`
+                            width: isFreeEdge ? `${freeLengthPx}px` : isEdge ? (area.orientation === 'vertical' ? `${thicknessPx}px` : `${length * gridSize}px`) : `${area.width * gridSize}px`,
+                            height: isFreeEdge ? `${thicknessPx}px` : isEdge ? (area.orientation === 'vertical' ? `${length * gridSize}px` : `${thicknessPx}px`) : `${area.height * gridSize}px`,
+                            transform: isFreeEdge
+                              ? `translateY(${-thicknessPx / 2}px) rotate(${freeAngle}deg)`
+                              : isEdge && area.orientation === 'vertical' ? `translateX(${-thicknessPx / 2}px)` : isEdge ? `translateY(${-thicknessPx / 2}px)` : undefined,
+                            transformOrigin: isFreeEdge ? 'left center' : undefined,
+                            background: movementBlocked
+                              ? `repeating-linear-gradient(45deg, ${color.bg} 0 8px, var(--pigment-madder-soft) 8px 16px)`
                               : color.bg,
-                            border: isEditing 
-                              ? `2px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}` 
-                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
-                            boxShadow: isEditing ? `0 0 12px ${color.glow}, inset 0 0 6px ${color.glow}` : `0 0 8px ${color.glow}`,
-                            borderRadius: '4px',
-                            pointerEvents: isTerrainEditMode ? 'auto' : 'none',
+                            border: area.suppressOutline ? 'none' : `2px ${movementBlocked ? 'solid' : 'dashed'} ${movementBlocked ? 'var(--pigment-madder)' : color.value}`,
+                            boxShadow: 'none',
+                            borderRadius: 0,
+                            pointerEvents: isTerrainEditMode || canQuickToggleDoor || area.featureType || terrainTriggerDetails(area) ? 'auto' : 'none',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            zIndex: 2,
-                            cursor: isTerrainEditMode && terrainEditTool === 'select' ? 'grab' : 'default',
+                            zIndex: isEditing ? 4 : 2,
+                            cursor: canQuickToggleDoor && !isTerrainEditMode ? 'pointer' : isTerrainEditMode && terrainEditTool === 'move' ? 'grab' : 'default',
                             transition: 'border 0.2s, box-shadow 0.2s',
                             opacity: area.isSecret ? 0.75 : 1
                           }}
@@ -2175,41 +3271,56 @@ export default function MapSystem({
                             if (isTerrainEditMode) {
                               e.stopPropagation();
                               setEditingAreaId(area.id);
+                            } else if (canQuickToggleDoor) {
+                              e.stopPropagation();
+                              handleQuickToggleDoor(area);
                             }
                           }}
+                          onKeyDown={(event) => {
+                            if (!canQuickToggleDoor || isTerrainEditMode || !['Enter', ' '].includes(event.key)) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleQuickToggleDoor(area);
+                          }}
                         >
-                          <span style={{
+                          {isEditing && <TerrainSelectionFrame edge={isEdge} orientation={area.orientation} />}
+                          <MapComponentArt assetKey={area.assetKey} state={area.visualState} selected={isEditing} />
+                          {area.featureType && area.featureType !== 'wall' && !area.id?.startsWith('vr_cage_') && (!area.assetKey || isTerrainEditMode || area.featureType === 'door') && <span style={{
                             fontSize: '9px',
                             color: 'var(--text-body)',
-                            background: 'rgba(10, 12, 20, 0.85)',
+                            background: 'var(--surface-overlay)',
                             padding: '2px 5px',
-                            borderRadius: '4px',
+                            borderRadius: 0,
                             fontWeight: 'bold',
-                            border: `1px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
+                            border: `1px solid ${movementBlocked ? 'var(--pigment-madder)' : color.value}`,
                             userSelect: 'none',
-                            boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
+                            boxShadow: 'none'
                           }}>
-                            {area.name} {area.isImpassable &&''} {area.isSecret &&''}
-                          </span>
+                            {area.name} {area.featureType === 'door'
+                              ? `（${DOOR_STATE_OPTIONS.find(option => option.value === area.featureState)?.label || '关闭'}）`
+                              : ''}
+                          </span>}
 
                           {/* Direct Resize Handle at bottom-right */}
-                          {isTerrainEditMode && terrainEditTool === 'select' && (
+                          {isTerrainEditMode && terrainEditTool === 'move' && isEditing && (
                             <div
+                              className="terrain-resize-handle"
+                              data-testid="terrain-resize-handle"
                               style={{
                                 position: 'absolute',
                                 right: '-5px',
                                 bottom: '-5px',
                                 width: '10px',
                                 height: '10px',
-                                background: color.value,
-                                border: '1px solid var(--bracket-line)',
-                                borderRadius: '2px',
+                                background: TERRAIN_SELECTION_HANDLE,
+                                border: '2px solid rgba(18, 14, 24, 0.95)',
+                                borderRadius: 0,
                                 cursor: 'se-resize',
                                 zIndex: 10,
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
+                                boxShadow: 'none'
                               }}
-                              onMouseDown={(e) => handleRectResizeStart(e, area)}
-                              title= "拖拽改变宽度和高度"
+                              onMouseDown={(e) => isEdge ? handleEdgeResizeStart(e, area) : handleRectResizeStart(e, area)}
+                              title={isEdge ? '拖拽改变格线构件长度' : '拖拽改变宽度和高度'}
                             />
                           )}
                         </div>
@@ -2218,27 +3329,34 @@ export default function MapSystem({
                       return (
                         <div
                           key={area.id}
-                          onMouseDown={(e) => handleTerrainDragStart(e, area)}
+                          onMouseDown={(e) => {
+                            if (canQuickToggleDoor && !isTerrainEditMode) e.stopPropagation();
+                            else handleTerrainDragStart(e, area);
+                          }}
+                          onMouseEnter={(event) => beginTerrainHint(event, area)}
+                          onMouseMove={(event) => moveTerrainHint(event, area)}
+                          onMouseLeave={endTerrainHint}
+                          role={canQuickToggleDoor && !isTerrainEditMode ? 'button' : undefined}
+                          tabIndex={canQuickToggleDoor && !isTerrainEditMode ? 0 : undefined}
+                          data-terrain-selected={isEditing || undefined}
                           style={{
                             position: 'absolute',
                             left: `${(area.gridX - area.radius) * gridSize}px`,
                             top: `${(area.gridY - area.radius) * gridSize}px`,
                             width: `${area.radius * 2 * gridSize}px`,
                             height: `${area.radius * 2 * gridSize}px`,
-                            background: area.isImpassable 
-                              ? `repeating-linear-gradient(45deg, ${color.bg}, ${color.bg} 8px, rgba(239, 68, 68, 0.15) 8px, rgba(239, 68, 68, 0.15) 16px)`
+                            background: movementBlocked
+                              ? `repeating-linear-gradient(45deg, ${color.bg} 0 8px, var(--pigment-madder-soft) 8px 16px)`
                               : color.bg,
-                            border: isEditing 
-                              ? `2px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}` 
-                              : `2px ${area.isImpassable ? 'solid' : 'dashed'} ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
-                            boxShadow: isEditing ? `0 0 12px ${color.glow}, inset 0 0 6px ${color.glow}` : `0 0 8px ${color.glow}`,
+                            border: `2px ${movementBlocked ? 'solid' : 'dashed'} ${movementBlocked ? 'var(--pigment-madder)' : color.value}`,
+                            boxShadow: 'none',
                             borderRadius: '50%',
-                            pointerEvents: isTerrainEditMode ? 'auto' : 'none',
+                            pointerEvents: isTerrainEditMode || canQuickToggleDoor || area.featureType || terrainTriggerDetails(area) ? 'auto' : 'none',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            zIndex: 2,
-                            cursor: isTerrainEditMode && terrainEditTool === 'select' ? 'grab' : 'default',
+                            zIndex: isEditing ? 4 : 2,
+                            cursor: canQuickToggleDoor && !isTerrainEditMode ? 'pointer' : isTerrainEditMode && terrainEditTool === 'move' ? 'grab' : 'default',
                             transition: 'border 0.2s, box-shadow 0.2s',
                             opacity: area.isSecret ? 0.75 : 1
                           }}
@@ -2246,38 +3364,53 @@ export default function MapSystem({
                             if (isTerrainEditMode) {
                               e.stopPropagation();
                               setEditingAreaId(area.id);
+                            } else if (canQuickToggleDoor) {
+                              e.stopPropagation();
+                              handleQuickToggleDoor(area);
                             }
                           }}
+                          onKeyDown={(event) => {
+                            if (!canQuickToggleDoor || isTerrainEditMode || !['Enter', ' '].includes(event.key)) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleQuickToggleDoor(area);
+                          }}
                         >
-                          <span style={{
+                          {isEditing && <TerrainSelectionFrame round />}
+                          <MapComponentArt assetKey={area.assetKey} state={area.visualState} fit="contain" selected={isEditing} />
+                          {area.featureType && (!area.assetKey || isTerrainEditMode || area.featureType === 'door') && <span style={{
                             fontSize: '9px',
                             color: 'var(--text-body)',
-                            background: 'rgba(10, 12, 20, 0.85)',
+                            background: 'var(--surface-overlay)',
                             padding: '2px 5px',
-                            borderRadius: '4px',
+                            borderRadius: 0,
                             fontWeight: 'bold',
-                            border: `1px solid ${area.isImpassable ? 'var(--pigment-madder)' : color.value}`,
+                            border: `1px solid ${movementBlocked ? 'var(--pigment-madder)' : color.value}`,
                             userSelect: 'none',
-                            boxShadow: `0 2px 4px rgba(0,0,0,0.5)`
+                            boxShadow: 'none'
                           }}>
-                            {area.name} {area.isImpassable &&''} {area.isSecret &&''}
-                          </span>
+                            {area.name} {area.featureType === 'door'
+                              ? `（${DOOR_STATE_OPTIONS.find(option => option.value === area.featureState)?.label || '关闭'}）`
+                              : ''}
+                          </span>}
 
                           {/* Direct Radius Resize Handle at rightmost edge */}
-                          {isTerrainEditMode && terrainEditTool === 'select' && (
+                          {isTerrainEditMode && terrainEditTool === 'move' && isEditing && (
                             <div
+                              className="terrain-resize-handle"
+                              data-testid="terrain-resize-handle"
                               style={{
                                 position: 'absolute',
                                 right: '-5px',
                                 top: 'calc(50% - 5px)',
                                 width: '10px',
                                 height: '10px',
-                                background: color.value,
-                                border: '1px solid var(--bracket-line)',
+                                background: TERRAIN_SELECTION_HANDLE,
+                                border: '2px solid rgba(18, 14, 24, 0.95)',
                                 borderRadius: '50%',
                                 cursor: 'ew-resize',
                                 zIndex: 10,
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
+                                boxShadow: 'none'
                               }}
                               onMouseDown={(e) => handleCircleResizeStart(e, area)}
                               title= "拖拽改变圆半径"
@@ -2288,6 +3421,75 @@ export default function MapSystem({
                     }
                     return null;
                   })}
+
+                  {/* Room names use independent world-space anchors so later fixtures cannot push or cover them. */}
+                  {visibleTerrains.filter(area => !area.featureType && area.suppressLabel !== true).map(area => {
+                    const color = getAreaColor(area);
+                    const triggerDetails = terrainTriggerDetails(area);
+                    const centerX = area.type === 'circle'
+                      ? Number(area.gridX || 0)
+                      : Number(area.gridX || 0) + Number(area.width || 1) / 2;
+                    const centerY = area.type === 'circle'
+                      ? Number(area.gridY || 0)
+                      : Number(area.gridY || 0) + Number(area.height || 1) / 2;
+                    return <span key={`terrain-label-${area.id}`} style={{
+                      position: 'absolute',
+                      left: `${Number(area.labelX ?? centerX) * gridSize}px`,
+                      top: `${Number(area.labelY ?? centerY) * gridSize}px`,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 3,
+                      maxWidth: `${Math.max(4, Number(area.labelMaxWidth || 18)) * gridSize}px`,
+                      padding: '3px 6px',
+                      borderRadius: 0,
+                      border: `1px solid ${color.value}`,
+                      background: 'rgba(10, 12, 20, 0.88)',
+                      color: 'var(--text-body)',
+                      boxShadow: 'none',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      lineHeight: 1.25,
+                      textAlign: 'center',
+                      whiteSpace: 'normal',
+                      pointerEvents: 'none',
+                      userSelect: 'none'
+                    }}>
+                      {triggerDetails && <DmforgeIcon name="trap" size={12} style={{ marginRight: 4, color: 'var(--pigment-ochre)', verticalAlign: -2 }} />}
+                      {area.name}
+                    </span>;
+                  })}
+
+                  {/* Player fog-of-war updates only after a token drop is committed. */}
+                  <canvas
+                    ref={fogCanvasRef}
+                    width={mapWidth * gridSize}
+                    height={mapHeight * gridSize}
+                    aria-label="玩家视野与战争迷雾"
+                    style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: isVisionBlackout ? 50 : 4 }}
+                  />
+
+                  {/* Shared visual annotations sit above fog but never affect map rules. */}
+                  <svg
+                    data-testid="map-drawing-layer"
+                    aria-label="地图绘图标注"
+                    viewBox={`0 0 ${mapWidth * gridSize} ${mapHeight * gridSize}`}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }}
+                  >
+                    {renderedDrawings.map(stroke => {
+                      const points = Array.isArray(stroke.points) ? stroke.points : [];
+                      const color = /^#[0-9a-f]{6}$/i.test(stroke.color || '') ? stroke.color : '#f6c453';
+                      const width = Math.max(1, Math.min(24, Number(stroke.width || 4)));
+                      if (points.length === 1) return <circle key={stroke.id} cx={points[0].x * gridSize} cy={points[0].y * gridSize} r={width / 2} fill={color} />;
+                      return <polyline
+                        key={stroke.id}
+                        points={points.map(point => `${point.x * gridSize},${point.y * gridSize}`).join(' ')}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={width}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />;
+                    })}
+                  </svg>
 
                   {/* Distance Measurement Line helper */}
                   {selectedTokenObj && hoveredTokenObj && selectedTokenObj.id !== hoveredTokenObj.id && (
@@ -2331,7 +3533,7 @@ export default function MapSystem({
                   )}
 
                   {/* Real-time Token Drag Distance Measurement helper */}
-                  {draggedToken && dragHoverCoords && (draggedToken.startX !== dragHoverCoords.x || draggedToken.startY !== dragHoverCoords.y) && (
+                  {draggedToken && !draggedToken.isNewPlacement && dragHoverCoords && (draggedToken.startX !== dragHoverCoords.x || draggedToken.startY !== dragHoverCoords.y) && (
                     (() => {
                       const isForced = isForcedMoveMode || dragIsShiftPressed;
                       const pathColor = isForced ? 'var(--pigment-woad)' : (dragPathExists ? 'var(--accent)' : 'var(--pigment-madder)');
@@ -2485,16 +3687,55 @@ export default function MapSystem({
                     })()
                   )}
 
+                  {/* The roster card never becomes the map preview: show the token's real footprint instead. */}
+                  {draggedToken && dragHoverCoords && (
+                    (() => {
+                      const previewCharacter = characters.find(character => character.id === draggedToken.id) || draggedToken;
+                      const footprint = characterFootprintCells(previewCharacter);
+                      const avatar = characterAvatar(previewCharacter);
+                      return <div
+                      data-testid="token-drop-preview"
+                      aria-label={`${compactCharacterName(draggedToken.name || '棋子')}落点预览`}
+                      style={{
+                        position: 'absolute',
+                        left: `${(dragHoverCoords.x + 0.5) * gridSize}px`,
+                        top: `${(dragHoverCoords.y + 0.5) * gridSize}px`,
+                        width: `${gridSize * footprint}px`,
+                        height: `${gridSize * footprint}px`,
+                        transform: 'translate(-50%, -50%)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        borderRadius: '50%',
+                        border: '2px solid var(--accent)',
+                        background: draggedToken.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
+                        color: 'var(--surface-panel)',
+                        boxShadow: '0 0 0 2px var(--surface-scrim), 0 0 14px var(--accent-line)',
+                        fontFamily: 'var(--font-display)',
+                        fontWeight: 700,
+                        fontSize: Math.max(7, Math.min(18, Math.round(gridSize * Math.min(1.4, footprint) * 0.55))),
+                        opacity: 0.72,
+                        pointerEvents: 'none',
+                        zIndex: 12
+                      }}
+                    >
+                      {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : compactCharacterName(draggedToken.name || '棋子').substring(0, 2)}
+                    </div>;
+                    })()
+                  )}
+
                   {/* Draggable Character Tokens */}
-                  {activeTokens.map(char => {
-                    const tokenX = (char.gridX || 0) * gridSize;
-                    const tokenY = (char.gridY || 0) * gridSize;
+                  {activeTokens.filter(char => !isVisionBlackout && (!isVisionLimitedView || playerVisibility.visibleCharacterIds.has(char.id))).map(char => {
+                    const tokenX = ((char.gridX || 0) + 0.5) * gridSize;
+                    const tokenY = ((char.gridY || 0) + 0.5) * gridSize;
+                    const footprint = characterFootprintCells(char);
+                    const avatar = characterAvatar(char);
                     const isActiveTurn = isInCombat && combatTurnOrder[currentTurnIndex]?.id === char.id;
+                    const isCombatSensed = isVisionLimitedView && playerVisibility.sensedCombatIds.has(char.id);
 
                     return (
                       <div
                         key={char.id}
-                        draggable={!isTerrainEditMode || terrainEditTool === 'select'}
+                        draggable={!isDrawingMode && (!isTerrainEditMode || terrainEditTool === 'pan')}
                         onDragStart={(e) => handleTokenDragStart(e, char.id)}
                         onDragEnd={handleDragEnd}
                         onMouseEnter={() => setHoveredTokenId(char.id)}
@@ -2502,30 +3743,36 @@ export default function MapSystem({
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedTokenId(char.id === selectedTokenId ? null : char.id);
+                          onCharacterSelect?.(char.id);
                         }}
                         style={{
                           position: 'absolute',
                           left: `${tokenX}px`,
                           top: `${tokenY}px`,
-                          width: `${gridSize * 1.5}px`,
-                          height: `${gridSize * 1.5}px`,
+                          width: `${gridSize * footprint}px`,
+                          height: `${gridSize * footprint}px`,
+                          transform: 'translate(-50%, -50%)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           userSelect: 'none',
+                          pointerEvents: isDrawingMode ? 'none' : 'auto',
                           background: char.type === 'PC' ? 'var(--pigment-woad)' : 'var(--pigment-madder)',
                           color: 'var(--surface-panel)',
                           fontFamily: 'var(--font-display)',
                           fontWeight: 700,
-                          fontSize: Math.round(gridSize * 0.55),
-                          boxShadow: '0 0 0 1px var(--bracket-line)',
+                          fontSize: Math.max(7, Math.min(18, Math.round(gridSize * Math.min(1.4, footprint) * 0.55))),
+                          opacity: isCombatSensed ? 0.72 : 1,
+                          filter: isCombatSensed ? 'grayscale(.75)' : 'none',
+                          boxShadow: isCombatSensed ? '0 0 0 2px var(--pigment-ochre), 0 0 10px var(--pigment-ochre-line)' : '0 0 0 1px var(--bracket-line)',
                           outline: isActiveTurn ? '1px solid var(--accent)' : selectedTokenId === char.id ? '1px solid var(--text-body)' : 'none',
                           outlineOffset: 2,
-                          zIndex: selectedTokenId === char.id ? 10 : 3,
-                          cursor: isTerrainEditMode && terrainEditTool !== 'select' ? 'not-allowed' : 'grab'
+                          zIndex: selectedTokenId === char.id ? 10 : 7,
+                          cursor: isTerrainEditMode && terrainEditTool !== 'pan' ? 'not-allowed' : 'grab'
                         }}
                       >
-                        {char.name ? char.name.substring(0, 2) : 'Token'}
+                        {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%', pointerEvents: 'none' }} /> : char.name ? compactCharacterName(char.name).substring(0, 2) : 'Token'}
+                        {isCombatSensed && <span title="战斗中已知目标（不在正常视线内）" style={{ position: 'absolute', right: -5, top: -7, fontSize: 10, color: 'var(--pigment-ochre)' }}>!</span>}
                       </div>
                     );
                   })}
@@ -2536,9 +3783,40 @@ export default function MapSystem({
         </TransformWrapper>
 
         {/* Selected Token Floating Interaction Panel */}
-        {selectedTokenObj && appRole !== 'PLAYER' && (() => {
+        {selectedTokenObj && appRole !== 'PLAYER' && !isTerrainEditMode && (() => {
           const actionRes = (selectedTokenObj.resources || []).find(r => r.name === '动作') || { value: 1, max: 1 };
           const bonusRes = (selectedTokenObj.resources || []).find(r => r.name === '附赠动作') || { value: 1, max: 1 };
+          const flashlightItem = itemPool.find(item => item.name?.includes('手电筒') && item.quantity > 0
+            && item.ownerId === selectedTokenObj.id);
+          const flashlightOn = Boolean(flashlightItem && selectedTokenObj.lightSource?.enabled === true);
+
+          const updateVision = patch => setCharacters(previous => previous.map(character => character.id === selectedTokenObj.id
+            ? { ...character, vision: { darkvision: 0, normalVisionLimit: 180, sharedWithParty: true, ...(character.vision || {}), ...patch } }
+            : character));
+          const updateGeometry = patch => setCharacters(previous => previous.map(character => {
+            if (character.id !== selectedTokenObj.id) return character;
+            const updated = { ...character, ...patch };
+            if (patch.sizeCategory !== undefined || patch.footprintCells !== undefined) {
+              const centered = clampCharacterCenterToMap(updated.gridX, updated.gridY, updated, mapWidth, mapHeight);
+              return { ...updated, gridX: centered.x, gridY: centered.y };
+            }
+            return updated;
+          }));
+          const turnFacing = amount => setCharacters(previous => previous.map(character => character.id === selectedTokenObj.id
+            ? { ...character, facing: ((Number(character.facing || 0) + amount) % 360 + 360) % 360,
+              lightSource: character.lightSource ? { ...character.lightSource, direction: ((Number(character.facing || 0) + amount) % 360 + 360) % 360 } : character.lightSource }
+            : character));
+          const toggleFlashlight = () => {
+            if (!flashlightItem) return;
+            setCharacters(previous => previous.map(character => character.id === selectedTokenObj.id ? {
+              ...character,
+              lightSource: {
+                id: `flashlight-${character.id}`, name: '手电筒', shape: 'cone', angle: 60,
+                brightRange: 30, dimRange: 30, direction: Number(character.facing || 0),
+                ...(flashlightItem?.lightSource || character.lightSource || {}), enabled: !flashlightOn
+              }
+            } : character));
+          };
 
           const toggleQuickRes = (resName) => {
             setCharacters(prev => prev.map(c => {
@@ -2638,10 +3916,10 @@ export default function MapSystem({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
-                <MapToken kind={selectedTokenObj.type === 'PC' ? 'PC' : 'MONSTER'} name={selectedTokenObj.name} size={34} selected />
+                <MapToken kind={selectedTokenObj.type === 'PC' ? 'PC' : 'MONSTER'} name={compactCharacterName(selectedTokenObj.name)} image={characterAvatar(selectedTokenObj)} size={34} selected />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-display-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {selectedTokenObj.name}
+                    {compactCharacterName(selectedTokenObj.name)}
                   </div>
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)' }}>
                     {selectedTokenObj.type} · {selectedTokenObj.class || '无职业'} · X{String(selectedTokenObj.gridX || 0).padStart(2, '0')} Y{String(selectedTokenObj.gridY || 0).padStart(2, '0')}
@@ -2657,6 +3935,35 @@ export default function MapSystem({
                   <Button size="sm" variant="danger" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, -1)} title= "扣除 1 点生命值">-1</Button>
                   <Button size="sm" variant="secondary" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, 1)} title= "恢复 1 点生命值">+1</Button>
                   <Button size="sm" variant="secondary" style={{ flex: 1 }} onClick={() => adjustHp(selectedTokenObj.id, 5)} title= "恢复 5 点生命值">+5</Button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', paddingTop: 'var(--space-3)', borderTop: 'var(--border-hairline)' }}>
+                <ToolbarLabel>视野与照明</ToolbarLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                  <TextInput size="sm" type="number" label="黑暗视觉 (ft)" value={selectedTokenObj.vision?.darkvision || 0} onChange={event => updateVision({ darkvision: Math.max(0, Number(event.target.value) || 0) })} />
+                  <Button size="sm" variant={flashlightOn ? 'primary' : 'secondary'} icon="flashlight" disabled={!flashlightItem} onClick={toggleFlashlight} title={flashlightItem ? '开关该角色背包中的手电筒' : '该角色背包中没有可用手电筒'}>
+                    {flashlightOn ? '关闭手电筒' : '开启手电筒'}
+                  </Button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+                  <TextInput size="sm" type="number" label="眼高(ft)" value={selectedTokenObj.eyeHeight || 5.5} onChange={event => updateGeometry({ eyeHeight: Math.max(0.5, Number(event.target.value) || 5.5) })} />
+                  <TextInput size="sm" type="number" label="离地(ft)" value={selectedTokenObj.elevation || 0} onChange={event => updateGeometry({ elevation: Math.max(0, Number(event.target.value) || 0) })} />
+                  <Select
+                    size="sm"
+                    label="人物体型"
+                    value={selectedTokenObj.sizeCategory || sizeCategoryForFootprint(selectedTokenObj.footprintCells)}
+                    options={CHARACTER_SIZE_OPTIONS}
+                    onChange={event => {
+                      const option = CHARACTER_SIZE_OPTIONS.find(candidate => candidate.value === event.target.value) || CHARACTER_SIZE_OPTIONS[3];
+                      updateGeometry({ sizeCategory: option.value, footprintCells: option.footprint });
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: 'var(--space-2)' }}>
+                  <Button size="sm" variant="secondary" icon="arrow-counter-clockwise" onClick={() => turnFacing(-45)} title="向左转 45°">左转</Button>
+                  <Button size="sm" variant="secondary" icon="arrow-clockwise" onClick={() => turnFacing(45)} title="向右转 45°">右转</Button>
+                  <StatPill label="朝向" value={`${Number(selectedTokenObj.facing || 0)}°`} size="sm" tone="accent" />
                 </div>
               </div>
 
@@ -2696,12 +4003,17 @@ export default function MapSystem({
                   )}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
-                  {['眩晕', '倒地', '定身', '中毒', '致盲', '虚弱', '狂暴', '祝福'].map(condName => (
+                  {['眩晕', '倒地', '定身', '中毒', '致盲', '隐身', '虚弱', '祝福'].map(condName => (
                     <Button key={condName} size="sm" variant="secondary" onClick={() => addCondition(condName)} title={`为此棋子附加 [${condName}] 状态`}>
                       {condName}
                     </Button>
                   ))}
                 </div>
+                {(selectedTokenObj.conditions || []).some(condition => condition.id === '隐身' || condition.name === '隐身') && (
+                  <Button size="sm" variant={selectedTokenObj.revealedToParty ? 'primary' : 'secondary'} icon="eye" onClick={() => setCharacters(previous => previous.map(character => character.id === selectedTokenObj.id ? { ...character, revealedToParty: !character.revealedToParty } : character))}>
+                    {selectedTokenObj.revealedToParty ? '全队已识破隐身' : '标记为全队识破'}
+                  </Button>
+                )}
                 <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                   <TextInput
                     size="sm"
@@ -2735,23 +4047,63 @@ export default function MapSystem({
                 size="sm"
                 icon="map-pin-simple-area"
                 fullWidth
-                title= "把此棋子从当前地图上移除（角色卡保留）"
-                onClick={() => {
-                  setCharacters(prev => prev.map(c => (c.id === selectedTokenObj.id ? { ...c, mapId: null } : c)));
-                  addLog?.({
-                    type: 'COMBAT',
-                    content: `角色 [${selectedTokenObj.name}] 已手动从地图移出。`,
-                    timestamp: new Date().toLocaleTimeString()
-                  });
-                  setSelectedTokenId(null);
-                }}
+                title={isInCombat && selectedTokenObj.type === 'NPC' && Number(selectedTokenObj.hp) <= 0 ? '移出并清理这名死亡敌人' : '把此棋子从当前地图上移除（角色卡保留）'}
+                onClick={() => handleRemoveTokenFromMap(selectedTokenObj)}
               >
-                手动从地图移出
+                {isInCombat && selectedTokenObj.type === 'NPC' && Number(selectedTokenObj.hp) <= 0 ? '移出并清理死亡单位' : '手动从地图移出'}
               </Button>
             </div>
           );
         })()}
       </div>
+
+      {terrainHint && hintedArea && (
+        <div
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            left: terrainHint.x + 14,
+            top: terrainHint.y + 14,
+            transform: terrainHint.x > (globalThis.innerWidth || 1200) - 310 ? 'translateX(-100%)' : undefined,
+            zIndex: 2200,
+            width: 320,
+            pointerEvents: 'none',
+            padding: 'var(--space-3)',
+            background: 'var(--surface-overlay)',
+            color: 'var(--text-body)',
+            boxShadow: 'inset 0 0 0 1px var(--line-strong), var(--shadow-float)',
+            fontSize: 'var(--type-meta)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+            <DmforgeIcon name={terrainTriggerDetails(hintedArea) ? 'trap' : 'component-library'} size={16} style={{ color: terrainTriggerDetails(hintedArea) ? 'var(--pigment-ochre)' : 'var(--accent)' }} />
+            <strong style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--type-body-sm)' }}>{hintedArea.name}</strong>
+            <Badge tone={hintedArea.isSecret ? 'madder' : terrainIsDestroyed(hintedArea) ? 'neutral' : 'accent'} size="sm">
+              {hintedArea.isSecret && !hintedArea.discoveredByParty ? 'DM 隐藏' : terrainIsDestroyed(hintedArea) ? '已破坏' : terrainTriggerDetails(hintedArea) ? '触发陷阱' : TERRAIN_FEATURE_OPTIONS.find(option => option.value === hintedArea.featureType)?.label || '地图构件'}
+            </Badge>
+          </div>
+
+          <p style={{ margin: '0 0 var(--space-2)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            {TERRAIN_FEATURE_DESCRIPTIONS[hintedArea.featureType] || (terrainTriggerDetails(hintedArea) ? '进入或满足条件时会触发的地图机关。' : '可在地形编辑器中调整位置、尺寸、穿越与视野规则。')}
+          </p>
+          {terrainTriggerDetails(hintedArea) && (() => {
+            const details = terrainTriggerDetails(hintedArea);
+            return <div style={{ display: 'grid', gap: 5, marginBottom: 'var(--space-2)', padding: 'var(--space-2)', background: 'var(--pigment-ochre-soft)', boxShadow: 'inset 2px 0 0 var(--pigment-ochre)' }}>
+              <span><b style={{ color: 'var(--pigment-ochre)' }}>触发：</b>{details.trigger}</span>
+              <span><b style={{ color: 'var(--pigment-ochre)' }}>判定：</b>{details.check}</span>
+              <span><b style={{ color: 'var(--pigment-madder)' }}>效果：</b>{details.effect}</span>
+              <span><b>持续：</b>{details.duration}</span>
+              <span><b>解除：</b>{details.disarm}</span>
+            </div>;
+          })()}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6, color: 'var(--text-faint)' }}>
+            <span>移动<br /><b style={{ color: 'var(--text-body)' }}>{TERRAIN_MOVEMENT_OPTIONS.find(option => option.value === terrainMovementMode(hintedArea))?.label || '自定义'}</b></span>
+            <span>视线<br /><b style={{ color: 'var(--text-body)' }}>{TERRAIN_VISION_OPTIONS.find(option => option.value === terrainVisionMode(hintedArea))?.label || '自定义'}</b></span>
+            <span>掩体<br /><b style={{ color: 'var(--text-body)' }}>{TERRAIN_COVER_OPTIONS.find(option => option.value === terrainCoverLevel(hintedArea))?.label || '无'}</b></span>
+          </div>
+          {hintedArea.destructible && <div style={{ marginTop: 'var(--space-2)', fontFamily: 'var(--font-mono)', color: 'var(--text-faint)' }}>耐久 {Math.max(0, Number(hintedArea.currentHp ?? hintedArea.maxHp ?? 1))}/{Number(hintedArea.maxHp ?? 1)}</div>}
+        </div>
+      )}
 
       {/* Bottom readout */}
       <div
@@ -2766,16 +4118,24 @@ export default function MapSystem({
           fontSize: 'var(--type-meta)'
         }}
       >
-        {isTerrainEditMode ? (
+        {isVisionControlMode ? (
+          <span style={{ color: 'var(--pigment-verdigris)' }}>
+            {visionSelectionTool === 'pan'
+              ? '玩家与直播视野控制已开启 · 当前为地图漫游，拖拽可移动视角'
+              : `正在编辑${VISION_SELECTION_ITEMS.find(item => item.id === visionSelectionTool)?.label || ''}视野选区 · 完成后在上方选择显示、遮蔽或恢复自动`}
+          </span>
+        ) : isTerrainEditMode ? (
           <span style={{ color: 'var(--accent)' }}>
             正在编辑地形：
             {terrainEditTool === 'paint_block' ? '阻挡刷子激活（按住鼠标左键并在地图上拖动绘制）'
               : terrainEditTool === 'paint_erase' ? '橡皮擦激活（按住鼠标左键并在阻挡格上拖动擦除）'
-                : '漫游模式：可在地图上直接按住拖拽移动区域地形，或拖动其边缘/边角调节大小'}
+                : terrainEditTool === 'move' ? '构件移动：拖动构件改变位置，拖动控制点调整大小'
+                  : terrainEditTool === 'box_select' ? '框选工具：拖出矩形范围以揭示地形或消除阻挡'
+                    : '地图漫游：拖动地图不会移动任何构件'}
           </span>
         ) : selectedTokenObj ? (
           <span style={{ color: 'var(--text-muted)' }}>
-            已选中 <strong style={{ color: 'var(--accent)' }}>{selectedTokenObj.name}</strong>
+            已选中 <strong style={{ color: 'var(--accent)' }}>{compactCharacterName(selectedTokenObj.name)}</strong>
             <span style={{ fontFamily: 'var(--font-mono)', marginLeft: 'var(--space-2)' }}>
               X{String(selectedTokenObj.gridX || 0).padStart(2, '0')} Y{String(selectedTokenObj.gridY || 0).padStart(2, '0')}
             </span>
@@ -2845,7 +4205,7 @@ export default function MapSystem({
                 <Checkbox
                   checked={isChecked}
                   onChange={() => setTempParticipants(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
-                  label={c.name}
+                  label={compactCharacterName(c.name)}
                 />
                 <Badge size="sm" tone={c.type === 'PC' ? 'woad' : 'madder'}>{c.type}</Badge>
                 <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />

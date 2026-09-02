@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Alarm light</title>
+  <path d="M14 49h36l5 9H9l5-9Z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M19 49V26c0-9 5-15 13-15s13 6 13 15v23H19Z" fill="#704080" fill-opacity=".55" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M24 25h16M24 32h16M24 39h16" stroke="#c58a00" stroke-width="1.5"/>
+  <path d="M32 5V1M12 13 8 9M52 13l4-4M7 30H1M63 30h-6" stroke="#c58a00" stroke-width="1.5"/>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64" fill="none">
+  <title>DMForge optical mark 32px for dark backgrounds</title>
+  <g stroke="#e9dfcf" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 44C16 40 15 33 17 25L15.5 17 18.5 8 28 18Q32 16 36 18L45.5 8 48.5 17 47 25C49 33 48 40 44 44"/>
+    <path d="m19.5 13 4 3-2 2 3 2.5M44.5 13l-4 3 2 2-3 2.5" stroke-width="2"/>
+    <path d="M21 31Q25 27.5 28.5 31M35.5 31Q39 27.5 43 31"/>
+    <path d="M30 36Q32 38 34 36M32 38Q31 41 28.5 40M32 38Q33 41 35.5 40" stroke-width="2"/>
+    <path d="M18 33 11 31M18 36 10 36M18 39 11 42M46 33 53 31M46 36 54 36M46 39 53 42" stroke-width="2"/>
+  </g>
+  <g stroke="#704080" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 44 14 48 17 55Q23 58 28 54M44 44 50 48 47 55Q41 58 36 54"/>
+    <path d="M20 44Q24 48 27 49M44 44Q40 48 37 49" stroke-width="2"/>
+  </g>
+  <g stroke="#c58a00" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m32 44.5 6.5 4v8l-6.5 4-6.5-4v-8l6.5-4Z"/>
+    <path d="m32 44.5 3.5 6.5-3.5 9.5-3.5-9.5 3.5-6.5Zm-6.5 4 3 2.5h7l3-2.5M25.5 56.5l3-5.5M38.5 56.5l-3-5.5" stroke-width="1.8"/>
+  </g>
+</svg>

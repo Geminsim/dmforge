@@ -1,4 +1,5 @@
 import { Modal, Button, Checkbox, Badge, Meter } from '../../ds';
+import { getLongRestRations, LONG_REST_CALORIES_PER_PC } from '../../utils/inventoryRules';
 
 /**
  * Short / long rest. The explanation block spells out the mechanical
@@ -12,8 +13,8 @@ const COPY = {
     confirm: '确定进行短休',
     effect: (
       <>
-        <strong>短休效果</strong>：被勾选的角色恢复其 <strong>50% 最大生命值</strong>，并全部充能重置所有
-        <strong>每短休重置</strong>与<strong>每回合重置</strong>的技能资源槽。
+        <strong>短休效果</strong>：被勾选的角色恢复其 <strong>50% 最大生命值</strong>，斗气恢复 <strong>3 格</strong>；
+        其他<strong>每短休重置</strong>与<strong>每回合重置</strong>资源按各自规则恢复。
       </>
     )
   },
@@ -30,10 +31,13 @@ const COPY = {
   }
 };
 
-export default function RestModal({ open, restType, characters, participants, setParticipants, onClose, onConfirm }) {
+export default function RestModal({ open, restType, characters, itemPool = [], participants, setParticipants, onClose, onConfirm }) {
   if (!open) return null;
   const copy = COPY[restType] || COPY.short;
   const selectedCount = Object.values(participants).filter(Boolean).length;
+  const selectedPcIds = characters.filter(character => character.type === 'PC' && participants[character.id]).map(character => character.id);
+  const rationPlan = getLongRestRations(itemPool, selectedPcIds);
+  const rationBlocked = restType === 'long' && !rationPlan.enough;
 
   return (
     <Modal
@@ -45,7 +49,7 @@ export default function RestModal({ open, restType, characters, participants, se
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>取消</Button>
-          <Button icon="check" disabled={selectedCount === 0} onClick={onConfirm}>{copy.confirm}</Button>
+          <Button icon="check" disabled={selectedCount === 0 || rationBlocked} onClick={onConfirm}>{copy.confirm}</Button>
         </>
       }
     >
@@ -61,6 +65,14 @@ export default function RestModal({ open, restType, characters, participants, se
       >
         {copy.effect}
       </p>
+
+      {restType === 'long' && (
+        <div style={{ padding: 'var(--space-3) var(--space-4)', background: rationBlocked ? 'var(--pigment-madder-soft)' : 'var(--pigment-verdigris-soft)', boxShadow: `inset 3px 0 0 ${rationBlocked ? 'var(--pigment-madder)' : 'var(--pigment-verdigris)'}`, fontSize: 'var(--type-meta)', color: 'var(--text-body)', lineHeight: 'var(--type-body-lh)' }}>
+          <strong>长休口粮：</strong>{rationPlan.available} / {rationPlan.required} kcal
+          <span style={{ color: 'var(--text-muted)' }}>（每名玩家角色 {LONG_REST_CALORIES_PER_PC} kcal；从已勾选玩家的背包共享扣除）</span>
+          {rationBlocked && <div style={{ color: 'var(--pigment-madder)', marginTop: 'var(--space-1)' }}>还缺少 {rationPlan.shortage} kcal，补足食物后才能进行长休。</div>}
+        </div>
+      )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-3)' }}>

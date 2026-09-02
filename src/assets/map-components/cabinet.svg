@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Storage cabinet</title>
+  <path d="M9 5h46v54H9z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M14 10h16v44H14zM34 10h16v44H34z" fill="#3a332d" stroke="#8d8190" stroke-width="1.5"/>
+  <path d="M26 31h3M35 31h3" stroke="#c58a00" stroke-width="2"/>
+  <path d="M16 15h12M36 15h12M16 49h12M36 49h12" stroke="#704080" stroke-width="1"/>
+</svg>

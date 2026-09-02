@@ -28,20 +28,53 @@ export function sf6ProficiencyBonus(level) {
 
 export const sf6Modifier = value => Math.floor(((Number(value) || 0) - 10) / 2);
 
+export function normalizeSf6ResourcesForLevel(resources = [], level = 1) {
+  const normalizedLevel = Math.max(1, Number(level) || 1);
+  const normalized = resources
+    .filter(resource => resource?.name !== '超级必杀槽' || normalizedLevel >= 8)
+    .map(resource => resource?.name === '超级必杀槽'
+      ? { ...resource, max: 1, value: Math.min(1, resource.value ?? 1), resetType: 'long_rest' }
+      : resource);
+  if (normalizedLevel >= 8 && !normalized.some(resource => resource?.name === '超级必杀槽')) {
+    normalized.push({ id: 'super', name: '超级必杀槽', max: 1, value: 1, resetType: 'long_rest' });
+  }
+  return normalized;
+}
+
+export function createSf6Attack(source = {}) {
+  return Object.assign({}, source, {
+    name: String(source.name || ''),
+    attackBonus: String(source.attackBonus || ''),
+    diceCount: Math.max(0, Math.min(20, Number(source.diceCount) || 0)),
+    die: ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'].includes(source.die) ? source.die : 'd6',
+    fixedDamage: Math.max(-100, Math.min(100, Number(source.fixedDamage) || 0)),
+    damageType: String(source.damageType || ''),
+    description: String(source.description || '')
+  });
+}
+
 export function createSf6SheetData(source = {}) {
   const base = {
-    playerName: '', background: '', personality: '', gender: '', inventory: '', biography: '',
+    playerName: '', background: '', personality: '', gender: '', inventory: '', biography: '', avatarImage: '', portraitImage: '', acOverride: null,
     statBonuses: Object.fromEntries(SF6_STAT_ROWS.map(row => [row.key, 0])),
     deathSaveSuccesses: 0, deathSaveFailures: 0, drive: [true, true, true, true, true, true],
-    attacks: Array.from({ length: 6 }, () => ({ name: '', attackBonus: '', damageType: '' })),
+    attacks: Array.from({ length: 6 }, () => createSf6Attack()),
     attackNotes: '', skillProficiencies: {}, selectedFeats: ['', '', ''],
     ...source
   };
+  const attacks = Array.from({ length: 6 }, (_, index) => createSf6Attack(source.attacks?.[index]));
+  if (source.attackNotes && attacks.every(attack => !attack.description)) {
+    const target = Math.max(0, attacks.findIndex(attack => attack.name));
+    attacks[target] = createSf6Attack({ ...attacks[target], description: source.attackNotes });
+  }
   return {
     ...base,
+    acOverride: source.acOverride === null || source.acOverride === '' || source.acOverride === undefined
+      ? null
+      : Math.max(0, Math.min(100, Number(source.acOverride) || 0)),
     statBonuses: { ...Object.fromEntries(SF6_STAT_ROWS.map(row => [row.key, 0])), ...(source.statBonuses || {}) },
     drive: Array.from({ length: 6 }, (_, index) => source.drive?.[index] ?? true),
-    attacks: Array.from({ length: 6 }, (_, index) => ({ name: '', attackBonus: '', damageType: '', ...(source.attacks?.[index] || {}) })),
+    attacks,
     skillProficiencies: { ...(source.skillProficiencies || {}) },
     selectedFeats: Array.from({ length: 3 }, (_, index) => source.selectedFeats?.[index] || '')
   };
@@ -60,13 +93,13 @@ export function calculateSf6Character(draft, ruleset) {
   return {
     ...draft, sheet, stats, proficiencyBonus, savingThrows: saves, skillTotals,
     passivePerception: 10 + skillTotals.perception,
-    ac: (definition?.ac ?? 10) + modifiers.速度,
+    ac: sheet.acOverride ?? ((definition?.ac ?? 10) + modifiers.速度),
     initiative: modifiers.速度,
     speed,
     hitDice: definition?.hitDice || draft.hitDice || 'd8',
-    resources: (draft.resources?.length ? draft.resources : ruleset?.resources || []).map(resource => resource.name === '斗气'
+    resources: normalizeSf6ResourcesForLevel((draft.resources?.length ? draft.resources : ruleset?.resources || []).map(resource => resource.name === '斗气'
       ? { ...resource, max: 6, value: sheet.drive.filter(Boolean).length }
-      : { ...resource, value: resource.value ?? resource.max })
+      : { ...resource, value: resource.value ?? resource.max }), draft.level)
   };
 }
 

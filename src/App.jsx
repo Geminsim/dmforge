@@ -17,25 +17,123 @@ import { createCampaignExport, openCampaignExport } from './utils/campaignExport
 import { serializeJsonOffThread } from './utils/jsonSerialization';
 import { decideInitialSync, decidePollingSync } from './utils/syncDecision';
 import { buildPublicPresentationSnapshot, DEFAULT_PRESENTATION_SETTINGS, normalizePresentationSettings, PRESENTATION_PROTOCOL } from './utils/presentation';
+import { CompactPresentationControls } from './components/PresentationControls';
 import { resetResourcesForRest } from './utils/combatRules';
+import { consumeLongRestRations, effectiveSpeed, getLongRestRations, syncCharacterEncumbrance } from './utils/inventoryRules';
 import { SF6_RULESET } from './data/sf6Ruleset';
-import { createBlankCampaign, createSf6Campaign } from './data/campaignTemplates';
-import { calculateSf6Character, createSf6SheetData, sf6CharacterFeatureMap } from './utils/sf6CharacterSheet';
+import {
+  createBlankCampaign,
+  createSf6Campaign,
+  SF6_CHAPTER_ONE_CONTENT_VERSION,
+  SF6_CHAPTER_ONE_CUTSCENES,
+  SF6_CHAPTER_ONE_ITEMS,
+  SF6_CHAPTER_ONE_MAPS,
+  SF6_CHAPTER_ONE_NOTES,
+  upgradeSf6BuiltInMaps
+} from './data/campaignTemplates';
+import { SF6_ENEMY_BESTIARY_VERSION, SF6_STANDARD_ENEMIES } from './data/sf6EnemyBestiary';
+import { calculateSf6Character, createSf6SheetData, normalizeSf6ResourcesForLevel, sf6CharacterFeatureMap } from './utils/sf6CharacterSheet';
+import { createEnemyTemplate, normalizeEnemyBestiary } from './utils/enemyBestiary';
+import { normalizeCutscenes } from './utils/cutscenes';
 
-const isSf6Campaign = data => data?.rulesetId === SF6_RULESET.id || data?.ruleset?.id === SF6_RULESET.id || data?.metadata?.templateId === SF6_RULESET.id;
+// SF6 rules and the native SF6 sheet belong to the bundled default campaign.
+// Do not enable them merely because an imported/legacy payload happens to carry
+// a rulesetId: the campaign template is the authority for feature isolation.
+const isSf6Campaign = data => data?.metadata?.templateId === SF6_RULESET.id;
+const resolveCampaignRuleset = data => isSf6Campaign(data) ? structuredClone(SF6_RULESET) : null;
+const withoutSf6Sheet = character => {
+  const copy = { ...character };
+  delete copy.sheet;
+  return copy;
+};
+const hydrateSf6ChapterOne = data => {
+  if (!isSf6Campaign(data) || data.metadata?.contentVersion === SF6_CHAPTER_ONE_CONTENT_VERSION) return data;
+  const noteIds = new Set((data.floatingNotes || []).map(note => note.id));
+  const itemIds = new Set((data.itemPool || []).map(item => item.id));
+  const templateNames = new Set((data.itemTemplates || []).map(item => item.name));
+  const cutsceneIds = new Set((data.cutscenes || []).map(scene => scene.id));
+  const retainedMaps = (data.maps || []).filter(map => !(map.id === 'map_montpellier_arrival'
+    && Object.keys(map.blockedCells || {}).length === 0
+    && (map.terrainAreas || []).length === 0
+    && !map.bgUrl));
+  const maps = upgradeSf6BuiltInMaps(retainedMaps);
+  const activeMapId = maps.some(map => map.id === data.activeMapId) ? data.activeMapId : SF6_CHAPTER_ONE_MAPS[0].id;
+  return {
+    ...data,
+    metadata: { ...data.metadata, contentVersion: SF6_CHAPTER_ONE_CONTENT_VERSION },
+    floatingNotes: [...(data.floatingNotes || []), ...structuredClone(SF6_CHAPTER_ONE_NOTES.filter(note => !noteIds.has(note.id)))],
+    itemPool: [
+      ...(data.itemPool || []).map(item => {
+        const definition = SF6_CHAPTER_ONE_ITEMS.find(candidate => candidate.id === item.id);
+        return definition ? { ...structuredClone(definition), ...item } : item;
+      }),
+      ...structuredClone(SF6_CHAPTER_ONE_ITEMS.filter(item => !itemIds.has(item.id)))
+    ],
+    maps,
+    activeMapId,
+    cutscenes: [...(data.cutscenes || []), ...structuredClone(SF6_CHAPTER_ONE_CUTSCENES.filter(scene => !cutsceneIds.has(scene.id)))],
+    itemTemplates: [
+      ...(data.itemTemplates || []),
+      ...SF6_CHAPTER_ONE_ITEMS.filter(item => !templateNames.has(item.name)).map(item => {
+        const copy = structuredClone(item);
+        delete copy.id;
+        delete copy.ownerId;
+        delete copy.quantity;
+        return copy;
+      })
+    ]
+  };
+};
+const hydrateSf6Bestiary = data => {
+  if (!isSf6Campaign(data) || data.metadata?.bestiaryVersion === SF6_ENEMY_BESTIARY_VERSION) return data;
+  const existingIds = new Set((data.enemyBestiary || []).map(entry => entry.id));
+  const builtInById = new Map(SF6_STANDARD_ENEMIES.map(entry => [entry.id, entry]));
+  const upgradedCharacters = (data.characters || []).map(character => {
+    const definition = builtInById.get(character.enemyTemplateId);
+    if (!definition) return character;
+    const builtInInventory = createEnemyTemplate(definition).inventory;
+    const existingById = new Map((character.inventory || []).map(item => [item.id, item]));
+    return {
+      ...character,
+      inventory: builtInInventory.map(item => ({ ...structuredClone(item), ...(existingById.get(item.id) || {}) }))
+    };
+  });
+  const inventoryByCharacter = new Map(upgradedCharacters.filter(character => builtInById.has(character.enemyTemplateId)).map(character => [character.id, character.inventory || []]));
+  const existingPool = data.itemPool || [];
+  const addedInventoryItems = [];
+  for (const [characterId, inventory] of inventoryByCharacter) {
+    for (const item of inventory) {
+      const existing = existingPool.find(candidate => candidate.ownerId === characterId && (candidate.templateItemId === item.id || candidate.name === item.name));
+      if (!existing) addedInventoryItems.push({ ...structuredClone(item), id: `item_${characterId}_${item.id}`, templateItemId: item.id, ownerId: characterId, infinite: false });
+    }
+  }
+  return {
+    ...data,
+    metadata: { ...data.metadata, bestiaryVersion: SF6_ENEMY_BESTIARY_VERSION },
+    characters: upgradedCharacters,
+    itemPool: [...existingPool.map(item => {
+      const inventory = inventoryByCharacter.get(item.ownerId);
+      const definition = inventory?.find(candidate => candidate.id === item.templateItemId || candidate.name === item.name);
+      return definition ? { ...structuredClone(definition), ...item, infinite: false } : item;
+    }), ...addedInventoryItems],
+    enemyBestiary: [
+      ...(data.enemyBestiary || []).map(entry => builtInById.has(entry.id) ? structuredClone(builtInById.get(entry.id)) : entry),
+      ...structuredClone(SF6_STANDARD_ENEMIES.filter(entry => !existingIds.has(entry.id)))
+    ]
+  };
+};
+const hydrateSf6Campaign = data => hydrateSf6Bestiary(hydrateSf6ChapterOne(data));
 const upgradeSf6Notes = (notes, data) => {
   if (!isSf6Campaign(data)) return notes || [];
   const content = SF6_RULESET.rulings.map(item => `• ${item.text}`).join('\n');
-  return (notes || []).map(note => note.id === 'note_dm_rulings' ? { ...note, title: 'DM：v0.9 规则裁定', content } : note);
+  return (notes || []).map(note => note.id === 'note_dm_rulings' ? { ...note, title: `DM：v${SF6_RULESET.version} 规则说明`, content } : note);
 };
 const upgradeSf6Characters = (characters, data) => {
   const sanitized = sanitizeCharacters(characters || []);
-  if (!isSf6Campaign(data)) return sanitized;
+  if (!isSf6Campaign(data)) return sanitized.map(withoutSf6Sheet);
   return sanitized.map(character => ({
     ...character,
-    resources: character.resources.map(resource => resource.name === '超级必杀槽'
-      ? { ...resource, max: 1, value: Math.min(1, resource.value ?? 1), resetType: 'long_rest' }
-      : resource)
+    resources: normalizeSf6ResourcesForLevel(character.resources, character.level)
   }));
 };
 
@@ -81,7 +179,9 @@ const sanitizeCharacters = (chars) => {
       level: c.level !== undefined ? c.level : 1,
       hitDice: c.hitDice !== undefined ? c.hitDice : 'd8',
       levelHpIncreases: c.levelHpIncreases ? [...c.levelHpIncreases] : [],
-      tempHp: c.tempHp !== undefined ? c.tempHp : 0
+      tempHp: c.tempHp !== undefined ? c.tempHp : 0,
+      vision: { darkvision: 0, normalVisionLimit: 180, sharedWithParty: true, ...(c.vision || {}) },
+      facing: Number(c.facing || 0)
     };
   });
 };
@@ -131,6 +231,7 @@ const getSavedState = (key, fallback) => {
 
 export default function App({ onExitToCampaigns }) {
   const apiPath = React.useCallback(path => `${path}?campaignId=${encodeURIComponent(getActiveCampaignId() || 'legacy-current')}`, []);
+  const lastUpdatedSettingKey = `dmforge_lastUpdated:${getActiveCampaignId() || 'legacy-current'}`;
   // --- LAN Sync System States ---
   const clientId = React.useRef(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
   const lastUpdatedRef = React.useRef(0);
@@ -158,11 +259,11 @@ export default function App({ onExitToCampaigns }) {
   const [presentationConnected, setPresentationConnected] = useState(false);
   const [presentationWindowOpen, setPresentationWindowOpen] = useState(false);
   const [presentationFallbackUrl, setPresentationFallbackUrl] = useState('');
-  const [presentationCamera, setPresentationCamera] = useState({ scale: 1, x: 0, y: 0 });
+  const [presentationCamera, setPresentationCamera] = useState({ scale: 1, x: 0, y: 0, centerX: null, centerY: null });
   const [presentationInteraction, setPresentationInteraction] = useState(null);
   const [presentationSettings, setPresentationSettings] = useState(() => normalizePresentationSettings(getSavedState(
-    'dmforge_presentationSettingsV2',
-    { ...getSavedState('dmforge_presentationSettings', DEFAULT_PRESENTATION_SETTINGS), showBlockedCells: true }
+    'dmforge_presentationSettingsV3',
+    { ...getSavedState('dmforge_presentationSettingsV2', getSavedState('dmforge_presentationSettings', DEFAULT_PRESENTATION_SETTINGS)), cameraMode: 'follow-dm', showBlockedCells: true }
   )));
   const [storageReady, setStorageReady] = useState(false);
   const [storageError, setStorageError] = useState('');
@@ -215,9 +316,18 @@ export default function App({ onExitToCampaigns }) {
   });
   const [itemPool, setItemPool] = useState(INITIAL_ITEM_POOL);
   const [itemTemplates, setItemTemplates] = useState(INITIAL_ITEM_TEMPLATES);
+  const [enemyBestiary, setEnemyBestiary] = useState([]);
+  const [cutscenes, setCutscenes] = useState([]);
+  const [activeCutsceneId, setActiveCutsceneId] = useState('');
+  const [playerDisplayMode, setPlayerDisplayMode] = useState('map');
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [floatingNotes, setFloatingNotes] = useState(INITIAL_FLOATING_NOTES);
   const [maps, setMaps] = useState(INITIAL_MAPS);
+  const encumbranceCharacterSignature = characters.map(character => `${character.id}:${character.type}:${character.stats?.耐力 ?? character.stats?.['体质 (Fortitude)'] ?? 10}`).join('|');
+
+  useEffect(() => {
+    setCharacters(previous => syncCharacterEncumbrance(previous, itemPool));
+  }, [itemPool, encumbranceCharacterSignature]);
   const [activeMapId, setActiveMapId] = useState('map_blank_1');
   
   // Global turn-based combat states
@@ -243,15 +353,20 @@ export default function App({ onExitToCampaigns }) {
     '智力 (Intellect)': '智力 (Intellect)',
     '神秘 (Arcane)': '神秘 (Arcane)'
   });
+  const [selectedCharacterId, setSelectedCharacterId] = useState(null);
 
   useEffect(() => {
     let active = true;
     loadActiveCampaignSnapshot().then(snapshot => {
       if (!active || !snapshot) return;
-      const data = prepareCampaign(snapshot);
+      const data = hydrateSf6Campaign(prepareCampaign(snapshot));
       setCharacters(upgradeSf6Characters(data.characters, data));
       setItemPool(data.itemPool);
       setItemTemplates(data.itemTemplates);
+      setEnemyBestiary(normalizeEnemyBestiary(data.enemyBestiary));
+      setCutscenes(normalizeCutscenes(data.cutscenes));
+      setActiveCutsceneId(data.activeCutsceneId || '');
+      setPlayerDisplayMode(data.playerDisplayMode === 'cutscene' ? 'cutscene' : 'map');
       setLogs(data.logs);
       setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
       setMaps(data.maps);
@@ -265,7 +380,7 @@ export default function App({ onExitToCampaigns }) {
       setCombatTurnOrder(data.combatTurnOrder);
       setCustomAttributeLabels(data.customAttributeLabels);
       setCampaignMetadata(data.metadata || { name: '未命名战役', templateId: 'legacy', templateVersion: '1' });
-      setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
+      setRuleset(resolveCampaignRuleset(data));
       lastUpdatedRef.current = data.lastUpdated || 0;
     }).catch(error => {
       if (active) setStorageError(describeStorageError(error));
@@ -282,9 +397,13 @@ export default function App({ onExitToCampaigns }) {
   const handleSetAppRole = (role) => {
     setAppRole(role);
     if (role === 'PLAYER') {
-      setCurrentTab('map');
+      setCurrentTab(playerDisplayMode === 'cutscene' ? 'cutscene' : 'map');
     }
   };
+
+  useEffect(() => {
+    if (appRole === 'PLAYER') setCurrentTab(playerDisplayMode === 'cutscene' ? 'cutscene' : 'map');
+  }, [appRole, playerDisplayMode]);
 
   // Root-level Character creation modal states
   const [isAddCharModalOpen, setIsAddCharModalOpen] = useState(false);
@@ -387,12 +506,15 @@ export default function App({ onExitToCampaigns }) {
 
     addLog({
       type: 'COMBAT',
-      content: `**战役短休**: 角色 [${restingNames.join(',')}] 完成了短休整顿，生命值恢复 50%，并充能重置了短休和回合技能资源槽！`,
+      content: `**战役短休**: 角色 [${restingNames.join(',')}] 完成短休：生命值恢复 50%，斗气恢复 3 格，其他短休与回合资源按规则恢复。`,
       timestamp: new Date().toLocaleTimeString()
     });
   };
 
   const handleLongRest = (selectedIds) => {
+    const selectedPcIds = selectedIds.filter(id => characters.some(character => character.id === id && character.type === 'PC'));
+    const rationPlan = getLongRestRations(itemPool, selectedPcIds);
+    if (!rationPlan.enough) return false;
     const restingNames = [];
     setCharacters(prev => {
       const updated = prev.map(c => {
@@ -404,8 +526,8 @@ export default function App({ onExitToCampaigns }) {
           return {
             ...resetResourcesForRest(c, 'long'),
             hp: c.maxHp,
-            conditions: [], // clear all conditions
-            combatSpeedRemaining: c.speed !== undefined ? c.speed : 30 // recover speed
+            conditions: [], // encumbrance-derived conditions are restored by the inventory synchronizer
+            combatSpeedRemaining: effectiveSpeed(c)
           };
         }
         return c;
@@ -413,11 +535,14 @@ export default function App({ onExitToCampaigns }) {
       return sanitizeCharacters(updated);
     });
 
+    setItemPool(previous => consumeLongRestRations(previous, rationPlan));
+
     addLog({
       type: 'COMBAT',
-      content: `**战役长休**: 角色 [${restingNames.join(',')}] 完成了长休整顿！生命恢复 100%，所有资源槽满额重载，且身上的特殊状态与移动限制已完全清除！`,
+      content: `**战役长休**: 角色 [${restingNames.join(',')}] 完成长休，消耗队伍口粮 ${rationPlan.required} kcal；生命恢复 100%，资源槽重置并清除特殊负面状态。`,
       timestamp: new Date().toLocaleTimeString()
     });
+    return true;
   };
 
   const handleOpenEditCharModal = React.useCallback((char) => {
@@ -445,7 +570,7 @@ export default function App({ onExitToCampaigns }) {
       hitDice: char.hitDice !== undefined ? char.hitDice : 'd8',
       levelHpIncreases: char.levelHpIncreases ? [...char.levelHpIncreases] : [],
       tempHp: char.tempHp !== undefined ? char.tempHp : 0
-      ,sheet: char.sheet ? createSf6SheetData(char.sheet) : (ruleset?.id === SF6_RULESET.id ? createSf6SheetData() : undefined)
+      ,sheet: ruleset?.id === SF6_RULESET.id ? createSf6SheetData(char.sheet) : undefined
     });
     // The resource sub-form lives in CharacterEditorModal and unmounts with it,
     // so it resets itself every time the modal opens.
@@ -457,13 +582,18 @@ export default function App({ onExitToCampaigns }) {
   
   // Pack current campaign state to JSON payload
   const getCampaignPayload = (timestamp) => {
+    const hasBundledRules = campaignMetadata?.templateId === SF6_RULESET.id;
     return {
       metadata: campaignMetadata,
-      rulesetId: ruleset?.id || null,
-      ruleset,
-      characters,
+      rulesetId: hasBundledRules ? SF6_RULESET.id : null,
+      ruleset: hasBundledRules ? ruleset : null,
+      characters: hasBundledRules ? characters : characters.map(withoutSf6Sheet),
       itemPool,
       itemTemplates,
+      enemyBestiary,
+      cutscenes,
+      activeCutsceneId,
+      playerDisplayMode,
       logs,
       floatingNotes,
       maps,
@@ -487,23 +617,24 @@ export default function App({ onExitToCampaigns }) {
   const presentationHost = window.location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
   const presentationOrigin = `${window.location.protocol}//${presentationHost}${window.location.port ? `:${window.location.port}` : ''}`;
   const presentationUrl = `${presentationOrigin}/presenter?session=${encodeURIComponent(presentationSessionRef.current)}`;
-  const presentationSnapshot = React.useMemo(() => buildPublicPresentationSnapshot(
+  const presentationSnapshot = React.useMemo(() => (!presentationWindowOpen && !presentationConnected) ? null : buildPublicPresentationSnapshot(
     getCampaignPayload(lastUpdatedRef.current || Date.now()), presentationSettings, presentationCamera, presentationInteraction
   // getCampaignPayload captures the campaign fields listed in this dependency array.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels, presentationSettings, presentationCamera, presentationInteraction]);
+  ), [presentationWindowOpen, presentationConnected, characters, itemPool, itemTemplates, enemyBestiary, cutscenes, activeCutsceneId, playerDisplayMode, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels, presentationSettings, presentationCamera, presentationInteraction]);
   const presentationChannelRef = React.useRef(null);
   const presentationSnapshotRef = React.useRef(presentationSnapshot);
   presentationSnapshotRef.current = presentationSnapshot;
 
   const sendPresentationSnapshot = React.useCallback((targetWindow = presenterWindowRef.current) => {
+    if (!presentationSnapshotRef.current) return;
     const message = { protocol: PRESENTATION_PROTOCOL, sessionId: presentationSessionRef.current, type: 'SNAPSHOT', snapshot: presentationSnapshotRef.current };
     try { if (targetWindow && !targetWindow.closed) targetWindow.postMessage(message, presentationOrigin); } catch { /* the window may be navigating */ }
     presentationChannelRef.current?.postMessage(message);
   }, [presentationOrigin]);
 
   useEffect(() => {
-    safeWriteSetting('dmforge_presentationSettingsV2', normalizePresentationSettings(presentationSettings), setStorageError);
+    safeWriteSetting('dmforge_presentationSettingsV3', normalizePresentationSettings(presentationSettings), setStorageError);
   }, [presentationSettings]);
 
   useEffect(() => {
@@ -514,6 +645,12 @@ export default function App({ onExitToCampaigns }) {
       if (event.data?.protocol !== PRESENTATION_PROTOCOL || event.data.sessionId !== presentationSessionRef.current) return;
       if (event.data.type === 'READY') { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); sendPresentationSnapshot(); }
       if (event.data.type === 'PONG') { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); }
+      if (event.data.type === 'CLOSED') {
+        presentationLastSeenRef.current = 0;
+        presenterWindowRef.current = null;
+        setPresentationWindowOpen(false);
+        setPresentationConnected(false);
+      }
     };
     return () => { presentationChannelRef.current = null; channel.close(); };
   }, [sendPresentationSnapshot]);
@@ -528,6 +665,12 @@ export default function App({ onExitToCampaigns }) {
         presentationLastSeenRef.current = Date.now(); setPresentationWindowOpen(true); setPresentationConnected(true); sendPresentationSnapshot(event.source);
       }
       if (data.type === 'PONG' && event.source === presenterWindowRef.current) { presentationLastSeenRef.current = Date.now(); setPresentationConnected(true); }
+      if (data.type === 'CLOSED' && (!presenterWindowRef.current || event.source === presenterWindowRef.current)) {
+        presentationLastSeenRef.current = 0;
+        presenterWindowRef.current = null;
+        setPresentationWindowOpen(false);
+        setPresentationConnected(false);
+      }
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
@@ -545,7 +688,7 @@ export default function App({ onExitToCampaigns }) {
       if (!target || target.closed) {
         presenterWindowRef.current = null;
         if (presentationWindowOpen) setPresentationWindowOpen(false);
-        if (presentationLastSeenRef.current && Date.now() - presentationLastSeenRef.current > 5000) setPresentationConnected(false);
+        if (!presentationLastSeenRef.current || Date.now() - presentationLastSeenRef.current > 5000) setPresentationConnected(false);
         return;
       }
       setPresentationWindowOpen(true);
@@ -569,9 +712,28 @@ export default function App({ onExitToCampaigns }) {
   };
   const focusPresentationWindow = () => { try { presenterWindowRef.current?.focus(); } catch { /* cross-origin focus may be restricted */ } };
   const closePresentationWindow = () => { try { presenterWindowRef.current?.close(); } catch { /* already closed */ } presenterWindowRef.current = null; setPresentationWindowOpen(false); setPresentationConnected(false); };
+  const refreshPresentationWindow = () => {
+    const target = presenterWindowRef.current;
+    const recentlySeen = presentationLastSeenRef.current > 0 && Date.now() - presentationLastSeenRef.current < 5000;
+    if ((!target || target.closed) && !recentlySeen) {
+      presenterWindowRef.current = null;
+      presentationLastSeenRef.current = 0;
+      setPresentationWindowOpen(false);
+      setPresentationConnected(false);
+      return;
+    }
+    const message = { protocol: PRESENTATION_PROTOCOL, sessionId: presentationSessionRef.current, type: 'RELOAD' };
+    try { if (target && !target.closed) target.postMessage(message, presentationOrigin); } catch { /* presenter may be navigating */ }
+    presentationChannelRef.current?.postMessage(message);
+    setPresentationWindowOpen(Boolean(target && !target.closed));
+    setPresentationConnected(false);
+  };
   const requestPresentationFullscreen = () => setPresentationSettings(current => ({ ...current, fullscreenRequest: (current.fullscreenRequest || 0) + 1 }));
   const handlePresentationCameraChange = React.useCallback(camera => {
-    setPresentationCamera(previous => Math.abs(previous.scale - camera.scale) < .002 && Math.abs(previous.x - camera.x) < .5 && Math.abs(previous.y - camera.y) < .5 ? previous : camera);
+    setPresentationCamera(previous => Math.abs(previous.scale - camera.scale) < .002
+      && Math.abs(previous.x - camera.x) < .5 && Math.abs(previous.y - camera.y) < .5
+      && Math.abs((previous.centerX || 0) - (camera.centerX || 0)) < .02
+      && Math.abs((previous.centerY || 0) - (camera.centerY || 0)) < .02 ? previous : camera);
   }, []);
 
   // Push state to server
@@ -626,13 +788,23 @@ export default function App({ onExitToCampaigns }) {
   };
 
   // Helper to apply incoming server state
-  const applyServerState = (data) => {
+  const applyServerState = (incomingData) => {
+    const data = hydrateSf6Campaign(incomingData);
+    if (storageReady && appRole !== 'PLAYER') {
+      createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '局域网同步覆盖前自动恢复点')
+        .then(() => listLocalRecoveryPoints().then(setLocalRecoveryPoints))
+        .catch(error => setStorageError(describeStorageError(error)));
+    }
     isServerUpdateInProgress.current = true;
     localDirtyRef.current = false;
     
     if (data.characters) setCharacters(upgradeSf6Characters(data.characters, data));
     if (data.itemPool) setItemPool(data.itemPool);
     if (data.itemTemplates) setItemTemplates(data.itemTemplates);
+    if (data.enemyBestiary) setEnemyBestiary(normalizeEnemyBestiary(data.enemyBestiary));
+    if (data.cutscenes) setCutscenes(normalizeCutscenes(data.cutscenes));
+    if (data.activeCutsceneId !== undefined) setActiveCutsceneId(data.activeCutsceneId || '');
+    if (data.playerDisplayMode) setPlayerDisplayMode(data.playerDisplayMode === 'cutscene' ? 'cutscene' : 'map');
     if (data.logs) setLogs(data.logs);
     if (data.floatingNotes) setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
     if (data.maps) setMaps(data.maps);
@@ -647,10 +819,10 @@ export default function App({ onExitToCampaigns }) {
     if (data.combatTurnOrder) setCombatTurnOrder(data.combatTurnOrder);
     if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
     if (data.metadata) setCampaignMetadata(data.metadata);
-    setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
+    setRuleset(resolveCampaignRuleset(data));
     
     lastUpdatedRef.current = data.lastUpdated;
-    safeWriteSetting('dmforge_lastUpdated', data.lastUpdated, setStorageError);
+    safeWriteSetting(lastUpdatedSettingKey, data.lastUpdated, setStorageError);
 
     setTimeout(() => {
       isServerUpdateInProgress.current = false;
@@ -679,7 +851,7 @@ export default function App({ onExitToCampaigns }) {
     const now = Date.now();
     localDirtyRef.current = true;
     lastUpdatedRef.current = now;
-    safeWriteSetting('dmforge_lastUpdated', now, setStorageError);
+    safeWriteSetting(lastUpdatedSettingKey, now, setStorageError);
 
     const handler = setTimeout(() => {
       pushCampaignToServer(now);
@@ -690,7 +862,7 @@ export default function App({ onExitToCampaigns }) {
   // adding its changing identity would retrigger this debounce on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId,
+    characters, itemPool, itemTemplates, enemyBestiary, cutscenes, activeCutsceneId, playerDisplayMode, logs, floatingNotes, maps, activeMapId,
     excelCards, activeExcelCardId, groups, isInCombat,
     combatRound, currentTurnIndex, combatParticipants, combatTurnOrder,
     customAttributeLabels,
@@ -717,7 +889,7 @@ export default function App({ onExitToCampaigns }) {
           setIsSyncConnected(true);
 
           if (data && data.lastUpdated !== undefined) {
-            const localLU = getSavedState('dmforge_lastUpdated', 0);
+            const localLU = getSavedState(lastUpdatedSettingKey, 0);
             const action = decideInitialSync({ role: appRole, serverHasState: true, serverTimestamp: data.lastUpdated, localTimestamp: localLU });
             if (action === 'pull-server') applyServerState(data);
             if (action === 'conflict') setSyncConflict({ local: getCampaignPayload(localLU || Date.now()), server: data, revision });
@@ -725,9 +897,9 @@ export default function App({ onExitToCampaigns }) {
             serverRevisionRef.current = revision;
             isSyncInitialized.current = true;
           } else {
-            const action = decideInitialSync({ role: appRole, serverHasState: false, serverTimestamp: 0, localTimestamp: getSavedState('dmforge_lastUpdated', 0) });
+            const action = decideInitialSync({ role: appRole, serverHasState: false, serverTimestamp: 0, localTimestamp: getSavedState(lastUpdatedSettingKey, 0) });
             if (action === 'initialize-server') {
-              const localLU = getSavedState('dmforge_lastUpdated', 0) || Date.now();
+              const localLU = getSavedState(lastUpdatedSettingKey, 0) || Date.now();
               serverRevisionRef.current = revision;
               pushCampaignToServer(localLU, revision);
             }
@@ -849,17 +1021,22 @@ export default function App({ onExitToCampaigns }) {
     return () => clearTimeout(timer);
   // getCampaignPayload captures precisely the campaign fields listed below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageReady, campaignMetadata, ruleset, characters, itemPool, itemTemplates, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels]);
+  }, [storageReady, campaignMetadata, ruleset, characters, itemPool, itemTemplates, enemyBestiary, cutscenes, activeCutsceneId, playerDisplayMode, logs, floatingNotes, maps, activeMapId, excelCards, activeExcelCardId, groups, isInCombat, combatRound, currentTurnIndex, combatParticipants, combatTurnOrder, customAttributeLabels]);
 
   // --- Campaign Import / Export / Reset Functions ---
   const handleExportCampaign = async () => {
+    const hasBundledRules = campaignMetadata?.templateId === SF6_RULESET.id;
     const campaignData = {
       metadata: campaignMetadata,
-      rulesetId: ruleset?.id || null,
-      ruleset,
-      characters,
+      rulesetId: hasBundledRules ? SF6_RULESET.id : null,
+      ruleset: hasBundledRules ? ruleset : null,
+      characters: hasBundledRules ? characters : characters.map(withoutSf6Sheet),
       itemPool,
       itemTemplates,
+      enemyBestiary,
+      cutscenes,
+      activeCutsceneId,
+      playerDisplayMode,
       logs,
       floatingNotes,
       maps,
@@ -922,12 +1099,16 @@ export default function App({ onExitToCampaigns }) {
       try {
         const parsed = JSON.parse(event.target.result);
         const password = parsed?.encrypted ? (window.prompt('该存档已加密，请输入导出密码：', '') ?? '') : '';
-        const data = prepareCampaign(await openCampaignExport(parsed, password));
+        const data = hydrateSf6Campaign(prepareCampaign(await openCampaignExport(parsed, password)));
         await createLocalRecoveryPoint(getCampaignPayload(lastUpdatedRef.current || Date.now()), '导入前自动恢复点');
 
         setCharacters(upgradeSf6Characters(data.characters, data));
         setItemPool(data.itemPool || []);
         setItemTemplates(data.itemTemplates || INITIAL_ITEM_TEMPLATES);
+        setEnemyBestiary(normalizeEnemyBestiary(data.enemyBestiary));
+        setCutscenes(normalizeCutscenes(data.cutscenes));
+        setActiveCutsceneId(data.activeCutsceneId || '');
+        setPlayerDisplayMode(data.playerDisplayMode === 'cutscene' ? 'cutscene' : 'map');
         setLogs(data.logs || []);
         setFloatingNotes(upgradeSf6Notes(data.floatingNotes, data));
         setMaps(data.maps);
@@ -950,7 +1131,7 @@ export default function App({ onExitToCampaigns }) {
         if (data.isPlayerViewMode !== undefined) handleSetAppRole(data.isPlayerViewMode ? 'PLAYER' : 'DM');
         if (data.customAttributeLabels) setCustomAttributeLabels(data.customAttributeLabels);
         setCampaignMetadata(data.metadata || { name: '导入的战役', templateId: 'imported', templateVersion: '1' });
-        setRuleset(data.rulesetId === SF6_RULESET.id || data.ruleset?.id === SF6_RULESET.id ? structuredClone(SF6_RULESET) : data.ruleset || null);
+        setRuleset(resolveCampaignRuleset(data));
 
         await saveCampaignSnapshot(data);
         setLocalRecoveryPoints(await listLocalRecoveryPoints());
@@ -1101,6 +1282,10 @@ export default function App({ onExitToCampaigns }) {
         setCharacters([]);
         setItemPool(resetData.itemPool);
         setItemTemplates(resetData.itemTemplates);
+        setEnemyBestiary(normalizeEnemyBestiary(resetData.enemyBestiary));
+        setCutscenes(normalizeCutscenes(resetData.cutscenes));
+        setActiveCutsceneId(resetData.activeCutsceneId || '');
+        setPlayerDisplayMode('map');
         setLogs(resetData.logs);
         setFloatingNotes(resetData.floatingNotes);
         setMaps(resetData.maps);
@@ -1120,7 +1305,7 @@ export default function App({ onExitToCampaigns }) {
         setCombatTurnOrder([]);
         setCustomAttributeLabels(resetData.customAttributeLabels);
         setCampaignMetadata(resetData.metadata);
-        setRuleset(resetData.ruleset);
+        setRuleset(resolveCampaignRuleset(resetData));
 
         setLocalRecoveryPoints(await listLocalRecoveryPoints());
         alert('出厂战役重置成功！重置前内容已保留在本机恢复点中。');
@@ -1348,6 +1533,10 @@ export default function App({ onExitToCampaigns }) {
 
     const selectedClass = ruleset?.classes?.find(entry => entry.name === saveDraft.class.trim());
     const defaultResources = ruleset?.resources?.map(resource => ({ ...resource, value: resource.max })) || [];
+    const availableSpawnPoints = ruleset?.id === SF6_RULESET.id ? (activeMap?.spawnPoints || []) : [];
+    const spawn = availableSpawnPoints.find(point => !characters.some(character => character.mapId === activeMapId && character.gridX === point.x && character.gridY === point.y))
+      || availableSpawnPoints[characters.filter(character => character.mapId === activeMapId).length % Math.max(availableSpawnPoints.length, 1)]
+      || { x: 2, y: 2 };
     const created = {
       id: 'char_' + Date.now(),
       name: saveDraft.name.trim(),
@@ -1358,8 +1547,9 @@ export default function App({ onExitToCampaigns }) {
       ac: saveDraft.ac,
       initiative: saveDraft.initiative,
       speed: saveDraft.speed,
-      gridX: 2,
-      gridY: 2,
+      gridX: spawn.x,
+      gridY: spawn.y,
+      mapId: activeMapId,
       stats: saveDraft.stats,
       savingThrows: saveDraft.savingThrows,
       skillTotals: saveDraft.skillTotals,
@@ -1373,12 +1563,14 @@ export default function App({ onExitToCampaigns }) {
       groupId: saveDraft.type === 'PC' ? 'group_pcs' : 'group_npcs',
       conditions: [],
       combatSpeedRemaining: saveDraft.speed !== undefined ? saveDraft.speed : 30,
-      combatStartGridX: 2,
-      combatStartGridY: 2,
+      combatStartGridX: spawn.x,
+      combatStartGridY: spawn.y,
       level: saveDraft.level !== undefined ? saveDraft.level : 1,
       hitDice: saveDraft.hitDice !== undefined ? saveDraft.hitDice : 'd8',
       levelHpIncreases: saveDraft.levelHpIncreases ? [...saveDraft.levelHpIncreases] : [],
       tempHp: saveDraft.tempHp !== undefined ? saveDraft.tempHp : 0
+      ,vision: { darkvision: 0, normalVisionLimit: 180, sharedWithParty: true }
+      ,facing: 0
     };
 
     setCharacters(prev => [...prev, sanitizeCharacters([created])[0]]);
@@ -1394,7 +1586,7 @@ export default function App({ onExitToCampaigns }) {
     const selectedIds = Object.keys(restParticipants).filter(id => restParticipants[id]);
     if (selectedIds.length === 0) return;
     if (restModalType === 'short') handleShortRest(selectedIds);
-    else handleLongRest(selectedIds);
+    else if (!handleLongRest(selectedIds)) return;
     setIsRestModalOpen(false);
   };
 
@@ -1456,6 +1648,7 @@ export default function App({ onExitToCampaigns }) {
             <CharacterList
               characters={characters}
               setCharacters={setCharacters}
+              setItemPool={setItemPool}
               addLog={addLog}
               onOpenAddCharModal={handleOpenAddCharModal}
               onOpenEditCharModal={handleOpenEditCharModal}
@@ -1463,10 +1656,36 @@ export default function App({ onExitToCampaigns }) {
               groups={groups}
               setGroups={setGroups}
               isInCombat={isInCombat}
+              combatParticipants={combatParticipants}
               combatTurnOrder={combatTurnOrder}
               currentTurnIndex={currentTurnIndex}
+              setCombatParticipants={setCombatParticipants}
+              setCombatTurnOrder={setCombatTurnOrder}
+              setCurrentTurnIndex={setCurrentTurnIndex}
               onOpenRestModal={handleOpenRestModal}
               customAttributeLabels={customAttributeLabels}
+              selectedCharacterId={selectedCharacterId}
+              onSelectCharacter={(id) => {
+                setSelectedCharacterId(id);
+                if (id) setIsRightSidebarCollapsed(false);
+              }}
+            />
+            <CompactPresentationControls
+              settings={presentationSettings}
+              setSettings={setPresentationSettings}
+              maps={maps}
+              cutscenes={cutscenes}
+              activeCutsceneId={activeCutsceneId}
+              connected={presentationConnected}
+              windowOpen={presentationWindowOpen}
+              onOpen={openPresentationWindow}
+              onFocus={focusPresentationWindow}
+              onRequestFullscreen={requestPresentationFullscreen}
+              onRefresh={refreshPresentationWindow}
+              onSelectCutscene={(id) => {
+                setActiveCutsceneId(id);
+                if (id) setPlayerDisplayMode('cutscene');
+              }}
             />
           </aside>
         )}
@@ -1479,10 +1698,20 @@ export default function App({ onExitToCampaigns }) {
           updateMap, isInCombat, setIsInCombat, combatRound, setCombatRound,
           currentTurnIndex, setCurrentTurnIndex, combatParticipants, setCombatParticipants,
           combatTurnOrder, setCombatTurnOrder, itemPool, setItemPool, itemTemplates,
-          setItemTemplates, groups, excelCards, setExcelCards, activeExcelCardId,
+          setItemTemplates, enemyBestiary, setEnemyBestiary, cutscenes, setCutscenes, activeCutsceneId,
+          setActiveCutsceneId, playerDisplayMode, setPlayerDisplayMode, groups, excelCards, setExcelCards, activeExcelCardId,
           setActiveExcelCardId, floatingNotes, setFloatingNotes, updateFloatingNote,
           deleteFloatingNote, onPresentationCameraChange: handlePresentationCameraChange,
           onPresentationInteractionChange: setPresentationInteraction, ruleset
+          ,onPresentCutscene: (id) => {
+            setActiveCutsceneId(id);
+            setPlayerDisplayMode('cutscene');
+            setPresentationSettings(current => ({ ...current, scene: 'story' }));
+          }
+          ,onPresentMap: () => {
+            setPlayerDisplayMode('map');
+            setPresentationSettings(current => ({ ...current, scene: isInCombat ? 'battle' : 'map' }));
+          }
         }} />
 
         {showRightRail && <ResizeHandle onMouseDown={handleRightMouseDown} title= "拖拽调整右侧栏宽度" />}
@@ -1508,11 +1737,12 @@ export default function App({ onExitToCampaigns }) {
               addFloatingNote={addFloatingNote}
               updateFloatingNote={updateFloatingNote}
               deleteFloatingNote={deleteFloatingNote}
+              selectedCharacter={characters.find(character => character.id === selectedCharacterId) || null}
             />
           </aside>
         )}
 
-        {!isPlayerViewMode && floatingNotes.filter(note => note.isOpen !== false).map(note => (
+        {!isPlayerViewMode && currentTab === 'map' && floatingNotes.filter(note => note.isOpen !== false).map(note => (
           <FloatingNote
             key={note.id}
             note={note}
@@ -1551,6 +1781,7 @@ export default function App({ onExitToCampaigns }) {
         open={isRestModalOpen}
         restType={restModalType}
         characters={characters}
+        itemPool={itemPool}
         participants={restParticipants}
         setParticipants={setRestParticipants}
         onClose={() => setIsRestModalOpen(false)}
@@ -1594,6 +1825,7 @@ export default function App({ onExitToCampaigns }) {
           settings: presentationSettings,
           setSettings: setPresentationSettings,
           characters,
+          maps,
           connected: presentationConnected,
           windowOpen: presentationWindowOpen,
           fallbackUrl: presentationFallbackUrl,
@@ -1602,6 +1834,7 @@ export default function App({ onExitToCampaigns }) {
           onFocus: focusPresentationWindow,
           onClose: closePresentationWindow,
           onRequestFullscreen: requestPresentationFullscreen
+          ,onRefresh: refreshPresentationWindow
         }}
       />
     </div>

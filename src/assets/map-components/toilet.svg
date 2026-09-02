@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Toilet</title>
+  <path d="M18 5h28v16H18z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M16 25c0-5 7-8 16-8s16 3 16 8v8c0 14-6 24-16 26-10-2-16-12-16-26v-8Z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <ellipse cx="32" cy="32" rx="10" ry="7" fill="#171311" stroke="#704080" stroke-width="1.5"/>
+  <path d="M25 10h14M42 13h1" stroke="#c58a00" stroke-width="1.5"/>
+</svg>

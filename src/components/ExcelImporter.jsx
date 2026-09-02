@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import {
   Button, IconButton, TextInput, Tabs, Toolbar, ToolbarDivider, ToolbarLabel, EmptyState
 } from '../ds';
-import { extractCharacterSheet, mergeImportedCharacter } from '../utils/characterSheetImport';
+import { extractCharacterSheet, extractPlayerCharacterExport, mergeImportedCharacter } from '../utils/characterSheetImport';
 import { calculateSf6Character, createSf6SheetData, sf6CharacterFeatureMap } from '../utils/sf6CharacterSheet';
 
-const MAX_EXCEL_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_EXCEL_FILE_BYTES = 6 * 1024 * 1024;
 const MAX_WORKBOOK_SHEETS = 50;
 const ALLOWED_EXCEL_EXTENSIONS = new Set(['xlsx', 'xls', 'xlsm', 'xlsb']);
+const ALLOWED_CHARACTER_EXTENSIONS = new Set([...ALLOWED_EXCEL_EXTENSIONS, 'json']);
 
 function validateWorkbook(wb) {
   if (!wb || !Array.isArray(wb.SheetNames)) {
@@ -463,7 +464,12 @@ export default function ExcelImporter({
   // Parse Excel file from Base64 on the fly in memory whenever selected card changes
   useEffect(() => {
     let active = true;
-    if (selectedCard && selectedCard.fileData) {
+    if (selectedCard?.kind === 'player-json') {
+      setParsedSheets(null);
+      setSheetNames([]);
+      setActiveSheetName('');
+      setParseError(null);
+    } else if (selectedCard && selectedCard.fileData) {
       setParseError(null);
       setParsedSheets(null);
       
@@ -529,11 +535,11 @@ export default function ExcelImporter({
 
   const validateCharacterCardFile = (file) => {
     const extension = file.name.split('.').pop()?.toLowerCase();
-    if (!extension || !ALLOWED_EXCEL_EXTENSIONS.has(extension)) {
-      throw new Error('仅允许导入 .xlsx、.xls、.xlsm 或 .xlsb 工作簿。');
+    if (!extension || !ALLOWED_CHARACTER_EXTENSIONS.has(extension)) {
+      throw new Error('仅允许导入 DMForge 玩家角色卡 .json 或 .xlsx、.xls、.xlsm、.xlsb 工作簿。');
     }
     if (file.size > MAX_EXCEL_FILE_BYTES) {
-      throw new Error('角色卡文件大小不能超过 2MB，请裁剪或精简 Excel 表格。');
+      throw new Error('角色卡文件大小不能超过 6MB，请裁剪图片或精简 Excel 表格。');
     }
   };
 
@@ -541,16 +547,27 @@ export default function ExcelImporter({
 
   const importCharacterCard = async (file, replaceCard = null) => {
     validateCharacterCardFile(file);
+    const extension = file.name.split('.').pop()?.toLowerCase();
     const base64 = await readFileAsBase64(file);
-    const workbook = await parseWorkbookInWorker(base64);
-    validateWorkbook(workbook);
-    const extracted = extractCharacterSheet(workbook, file.name);
+    let workbook = null;
+    let extracted;
+    if (extension === 'json') {
+      extracted = extractPlayerCharacterExport(await file.text(), file.name);
+    } else {
+      workbook = await parseWorkbookInWorker(base64);
+      validateWorkbook(workbook);
+      extracted = extractCharacterSheet(workbook, file.name);
+    }
     if (ruleset?.id === 'sf6-v0.9') {
       const selectedFeatNames = extracted.character.sheet?.selectedFeatNames || [];
       const selectedFeats = selectedFeatNames.map(name => ruleset.feats.find(feat => feat.name === name)?.id || '');
       extracted.character.sheet = createSf6SheetData({ ...extracted.character.sheet, selectedFeats });
       extracted.character = calculateSf6Character(extracted.character, ruleset);
       extracted.character.feats = sf6CharacterFeatureMap(extracted.character, ruleset);
+    } else if (extracted.character.sheet) {
+      // The bundled workbook can still be viewed/imported in a blank campaign,
+      // but its native SF6 editor data must not leak outside the default campaign.
+      delete extracted.character.sheet;
     }
     const cardId = replaceCard?.id || makeId('excel');
     const linked = characters.find(character => character.sourceExcelCardId === cardId)
@@ -575,7 +592,8 @@ export default function ExcelImporter({
       id: cardId,
       filename: file.name,
       fileData: base64,
-      sheetNames: workbook.SheetNames,
+      kind: extension === 'json' ? 'player-json' : 'excel',
+      sheetNames: workbook?.SheetNames || [],
       uploadTime: now.toLocaleString(),
       lastImportedAt: now.toISOString(),
       sizeBytes: file.size,
@@ -594,7 +612,7 @@ export default function ExcelImporter({
     setActiveExcelCardId(card.id);
     addLog?.({
       type: 'SYSTEM',
-      content: `**${replaceCard ? '更新' : '导入'} Excel 角色卡**: [${file.name}] → **${extracted.character.name}**。自动识别 ${extracted.found.length} 项字段，${replaceCard ? '已同步更新关联角色并保留地图位置与战斗状态' : '已创建关联角色'}。`,
+      content: `**${replaceCard ? '更新' : '导入'}角色卡**: [${file.name}] → **${extracted.character.name}**。自动识别 ${extracted.found.length} 项字段，${replaceCard ? '已同步更新关联角色并保留地图位置与战斗状态' : '已创建关联角色'}。`,
       timestamp: now.toLocaleTimeString()
     });
     return card;
@@ -838,14 +856,25 @@ export default function ExcelImporter({
         <SideKey code="Sheets" title= "已导入角色卡" count={excelCards.length} />
         <div style={{ padding: 'var(--space-3)' }}>
           <UploadLabel
-            accept=".xlsx,.xls,.xlsm,.xlsb"
+            accept=".json,.xlsx,.xls,.xlsm,.xlsb"
             onChange={handleFileChange}
             icon="file-xls"
             title="可一次选择多张角色卡；每个文件自动建立一个关联角色（单文件最大 2MB，最多 50 个工作表）"
             multiple
           >
-            {importingCount ? `正在导入 ${importingCount} 张…` : '导入 Excel 角色卡'}
+            {importingCount ? `正在导入 ${importingCount} 张…` : '导入玩家角色卡'}
           </UploadLabel>
+          {ruleset?.id === 'sf6-v0.9' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+              <a href="/player-character-sheet.html" target="_blank" rel="noreferrer" className="dmf-btn dmf-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)', textDecoration: 'none', fontSize: 'var(--type-meta)' }}>
+                <i className="ph-fill ph-user-square" aria-hidden="true" />
+                独立玩家页
+              </a>
+              <a href="/player-character-sheet.html" download="DMForge-玩家角色卡.html" className="dmf-btn dmf-btn-secondary" title="下载可直接发送给玩家的单文件离线版" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
+                <i className="ph-fill ph-download-simple" aria-hidden="true" />
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="no-scrollbar" style={{ maxHeight: 220, overflowY: 'auto', padding: '0 var(--space-3) var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
@@ -888,7 +917,7 @@ export default function ExcelImporter({
                     <input
                       id={`replace-${card.id}`}
                       type="file"
-                      accept=".xlsx,.xls,.xlsm,.xlsb"
+                      accept=".json,.xlsx,.xls,.xlsm,.xlsb"
                       onChange={event => handleFileChange(event, card)}
                       style={{ display: 'none' }}
                     />
@@ -999,12 +1028,12 @@ export default function ExcelImporter({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-5)', width: '100%', maxWidth: 840 }}>
               <Dropzone
                 id="main-excel-uploader"
-                accept=".xlsx,.xls,.xlsm,.xlsb"
+                accept=".json,.xlsx,.xls,.xlsm,.xlsb"
                 onChange={handleFileChange}
                 icon="file-xls"
-                title="批量导入 Excel 玩家角色卡"
-                body="每个工作簿自动建立一个关联角色，并继续保留原表格、合并单元格和多工作表查看。"
-                note="支持 XLSX / XLS / XLSM / XLSB，单文件最大 2MB"
+                title="导入 DMForge / Excel 玩家角色卡"
+                body="独立玩家页导出的 JSON 可直接建立角色；Excel 工作簿仍会保留原表格和多工作表查看。"
+                note="支持 JSON / XLSX / XLS / XLSM / XLSB，单文件最大 2MB"
                 multiple
               />
               <Dropzone
@@ -1018,15 +1047,20 @@ export default function ExcelImporter({
               />
             </div>
             {ruleset?.characterSheetTemplate && (
-              <a
-                href={ruleset.characterSheetTemplate}
-                download="DMForge-SF6-v0.9-角色卡.xlsx"
-                className="dmf-btn dmf-btn-secondary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none' }}
-              >
-                <i className="ph-fill ph-download-simple" aria-hidden="true" />
-                下载 SF6 默认角色卡
-              </a>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 'var(--space-3)' }}>
+                <a href="/player-character-sheet.html" target="_blank" rel="noreferrer" className="dmf-btn dmf-btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none' }}>
+                  <i className="ph-fill ph-user-square" aria-hidden="true" />
+                  打开独立玩家角色卡
+                </a>
+                <a href="/player-character-sheet.html" download="DMForge-玩家角色卡.html" className="dmf-btn dmf-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none' }}>
+                  <i className="ph-fill ph-download-simple" aria-hidden="true" />
+                  下载离线单文件
+                </a>
+                <a href={ruleset.characterSheetTemplate} download="DMForge-SF6-v0.9-角色卡.xlsx" className="dmf-btn dmf-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', textDecoration: 'none' }}>
+                  <i className="ph-fill ph-file-xls" aria-hidden="true" />
+                  下载 Excel 版
+                </a>
+              </div>
             )}
             <p style={{ fontSize: 'var(--type-meta)', color: 'var(--text-faint)', textAlign: 'center', lineHeight: 'var(--type-body-lh)', maxWidth: '60ch' }}>
               规则悬浮窗自适应加宽与增高，完美呈现长篇段落；电子表格规则表自动转换为高可读性管道文本表格。
@@ -1180,7 +1214,23 @@ export default function ExcelImporter({
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 'var(--space-5)', background: 'var(--surface-app)' }}>
-              {parseError ? (
+              {selectedCard.kind === 'player-json' ? (
+                <div style={{ maxWidth: 620, margin: 'var(--space-9) auto', padding: 'var(--space-8)', background: 'var(--surface-panel)', boxShadow: 'inset 0 0 0 1px var(--accent-line)', display: 'grid', gap: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <i className="ph-fill ph-check-circle" style={{ fontSize: 30, color: 'var(--accent)' }} aria-hidden="true" />
+                    <div>
+                      <h3 style={{ fontSize: 'var(--type-display-sm)' }}>独立玩家角色卡已导入</h3>
+                      <p style={{ color: 'var(--text-muted)', fontSize: 'var(--type-meta)' }}>角色已建立在 DM 角色列表中；此 JSON 不包含需要预览的电子表格页面。</p>
+                    </div>
+                  </div>
+                  <dl style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 'var(--space-2) var(--space-4)', fontSize: 'var(--type-body-sm)' }}>
+                    <dt style={{ color: 'var(--text-faint)' }}>关联角色</dt><dd>{selectedCard.characterName || '未命名'}</dd>
+                    <dt style={{ color: 'var(--text-faint)' }}>识别内容</dt><dd>{selectedCard.autoImport?.found?.join('、') || '基础角色数据'}</dd>
+                    <dt style={{ color: 'var(--text-faint)' }}>导入时间</dt><dd>{selectedCard.uploadTime}</dd>
+                  </dl>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 'var(--type-meta)', lineHeight: 1.7 }}>后续玩家再次发来更新后的 JSON 时，点击左侧该角色卡的刷新按钮即可覆盖角色卡字段，同时保留地图坐标、战斗状态与当前资源。</p>
+                </div>
+              ) : parseError ? (
                 <div
                   style={{
                     maxWidth: 520,

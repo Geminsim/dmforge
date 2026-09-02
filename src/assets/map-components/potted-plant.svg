@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Potted plant</title>
+  <path d="M18 39h28l-4 18H22z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M32 41V18M32 28c-9-1-14-6-15-14 9 0 14 5 15 14ZM32 33c9-1 14-6 15-14-9 0-14 5-15 14ZM32 22c4-4 5-9 2-15-5 4-6 9-2 15Z" fill="#2b2724" stroke="#704080" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M22 44h20" stroke="#c58a00" stroke-width="1.5"/>
+</svg>

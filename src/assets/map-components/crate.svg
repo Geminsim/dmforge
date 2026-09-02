@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Supply crate</title>
+  <path d="M6 6h52v52H6z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M12 12h40v40H12zM12 12l40 40M52 12 12 52" stroke="#8d8190" stroke-width="2"/>
+  <path d="M24 27h16v10H24z" fill="#2b2724" stroke="#c58a00" stroke-width="1.5"/>
+  <path d="M8 18h48M8 46h48" stroke="#704080" stroke-width="1"/>
+</svg>

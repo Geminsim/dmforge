@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Cryogenic pod</title>
+  <path d="M18 4h28l10 10v36L46 60H18L8 50V14L18 4Z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M20 9h24l7 8v30l-7 8H20l-7-8V17l7-8Z" fill="#5f5660" fill-opacity=".42" stroke="#704080" stroke-width="2"/>
+  <circle cx="32" cy="23" r="6" fill="#171311" stroke="#b8aa9a" stroke-width="1.5"/>
+  <path d="M22 46c1.8-10.2 5.1-15.3 10-15.3S40.2 35.8 42 46" fill="#3a332d" stroke="#b8aa9a" stroke-width="1.5"/>
+  <path d="M17 13h30M17 51h30M11 24h5M48 24h5" stroke="#c58a00" stroke-width="1.5"/>
+  <circle cx="48" cy="39" r="2" fill="#c58a00"/>
+</svg>

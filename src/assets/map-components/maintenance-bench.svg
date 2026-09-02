@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Maintenance bench</title>
+  <path d="M5 10h118v42H5z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M10 15h108v10H10z" fill="#2b2724" stroke="#704080" stroke-width="1.5"/>
+  <path d="M13 31h28v15H13zM48 31h32v15H48zM87 31h28v15H87z" fill="#2b2724" stroke="#8d8190" stroke-width="1.5"/>
+  <path d="M17 20h18M42 20h24M73 20h18M98 20h15M18 37h18M54 37h20M93 37h16" stroke="#b8aa9a" stroke-width="1"/>
+  <path d="m59 32 6 6-6 6m10-12-6 6 6 6" stroke="#c58a00" stroke-width="1.5"/>
+  <circle cx="112" cy="20" r="2" fill="#c58a00"/>
+</svg>

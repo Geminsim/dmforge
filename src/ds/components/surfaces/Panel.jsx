@@ -1,4 +1,5 @@
 import React from 'react';
+import DmforgeIcon from '../../../components/DmforgeIcon';
 
 function Brackets() {
   const s = { position: 'absolute', width: 'var(--bracket-size)', height: 'var(--bracket-size)', border: '1px solid var(--bracket-line)', pointerEvents: 'none' };
@@ -23,7 +24,7 @@ export function Panel({ title, code, icon, meta, actions, footer, children, flus
       {brackets ? <Brackets /> : null}
       {(title || code || actions) ? (
         <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', minHeight: 42, padding: '0 var(--space-4)', flexShrink: 0 }}>
-          {icon ? <i className={'ph-fill ph-' + icon} style={{ fontSize: 14, lineHeight: 1, color: 'var(--accent)' }} aria-hidden="true" /> : null}
+          {icon ? <DmforgeIcon name={icon} size={15} fallbackClass={'ph-fill ph-' + icon} style={{ color: 'var(--accent)' }} /> : null}
           {code ? <span style={{ fontFamily: 'var(--font-label)', fontSize: 'var(--type-micro)', letterSpacing: 'var(--tracking-label)', textTransform: 'uppercase', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{code}</span> : null}
           {title ? <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-display-sm)', letterSpacing: 'var(--display-tracking)', color: 'var(--text-body)', whiteSpace: 'nowrap' }}>{title}</h3> : null}
           {meta ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>{meta}</span> : null}

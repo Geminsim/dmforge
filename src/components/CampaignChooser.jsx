@@ -1,6 +1,7 @@
 import React from 'react';
 import { CAMPAIGN_TEMPLATES } from '../data/campaignTemplates';
 import { createCampaign, deleteCampaign, ensureLegacyCampaignMigration, listCampaignRecoveryPoints, listCampaigns, restoreCampaignRecoveryPoint, setActiveCampaignId } from '../utils/campaignSnapshotStore';
+import BrandMark from './BrandMark';
 
 const panel = { background: 'var(--surface-panel)', border: 'var(--border-hairline)', borderRadius: 16, padding: 20 };
 const button = { border: 'var(--border-hairline)', borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)', background: 'var(--surface-raised)', cursor: 'pointer', fontWeight: 650 };
@@ -49,7 +50,7 @@ export default function CampaignChooser({ onOpen }) {
   return <main style={{ minHeight: '100%', overflow: 'auto', background: 'var(--surface-app)', color: 'var(--text-primary)', padding: 'clamp(20px, 5vw, 72px)' }}>
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
       <header style={{ display: 'flex', gap: 18, alignItems: 'center', marginBottom: 32 }}>
-        <img src="/icon-192.png" alt="DMForge" width="76" height="76" style={{ borderRadius: 18 }} />
+        <BrandMark size={76} framed />
         <div><div style={{ color: 'var(--text-secondary)', fontSize: 13, letterSpacing: 1.5 }}>DMFORGE</div><h1 style={{ margin: '4px 0 0', fontSize: 'clamp(28px, 4vw, 44px)' }}>选择要打开的战役</h1></div>
       </header>
       {error && <div role="alert" style={{ ...panel, borderColor: 'var(--danger)', marginBottom: 20 }}>{error}</div>}

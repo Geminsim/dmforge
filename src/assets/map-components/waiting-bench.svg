@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Waiting bench</title>
+  <path d="M7 18h114v28H7z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M13 23h31v18H13zM48.5 23h31v18h-31zM84 23h31v18H84z" fill="#3a332d" stroke="#704080" stroke-width="1.5"/>
+  <path d="M7 14v36M121 14v36M31 46v7M97 46v7" stroke="#b8aa9a" stroke-width="1.5"/>
+  <circle cx="113" cy="36" r="2.5" fill="#c58a00"/>
+</svg>

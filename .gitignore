@@ -16,6 +16,14 @@ release
 campaign_state.tmp.json
 *.local
 
+# Local campaign runtime data and recovery history
+/backups/
+/campaigns/
+/emergency-recovery/
+
+# Local agent mission ledger (explicitly branch-independent)
+.claude/mission-pipeline/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

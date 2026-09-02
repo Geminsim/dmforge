@@ -17,3 +17,10 @@ test('charges double movement for difficult destination cells', () => {
   const path = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }];
   assert.equal(measurePath(path, x => x === 1), 3);
 });
+
+test('supports edge traversal rules without treating walls as filled cells', () => {
+  const blockedEdge = (fromX, fromY, toX, toY) => !(fromY === 0 && toY === 1 && fromX === 1 && toX === 1);
+  const path = findShortestPath(1, 0, 1, 1, 3, 3, () => false, null, blockedEdge);
+  assert.notDeepEqual(path, [{ x: 1, y: 0 }, { x: 1, y: 1 }]);
+  assert.deepEqual(path.at(-1), { x: 1, y: 1 });
+});

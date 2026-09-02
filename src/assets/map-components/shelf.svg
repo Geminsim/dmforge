@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Storage shelf</title>
+  <path d="M5 7h118v50H5z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M10 13h108v11H10zM10 27h108v11H10zM10 41h108v10H10z" fill="#3a332d" stroke="#8d8190" stroke-width="1"/>
+  <path d="M25 13v11M44 13v11M78 13v11M103 13v11M17 27v11M37 27v11M62 27v11M91 27v11M111 27v11M31 41v10M52 41v10M71 41v10M98 41v10" stroke="#704080" stroke-width="2"/>
+  <path d="M5 10h118M5 54h118" stroke="#c58a00" stroke-width="1"/>
+</svg>

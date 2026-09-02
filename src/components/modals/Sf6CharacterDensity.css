@@ -1,0 +1,30 @@
+.sf6-sheet { gap: var(--space-3); color: var(--text-body); }
+.sf6-sheet-title { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); text-align: left; background: var(--surface-raised); color: var(--text-body); box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px var(--line-hairline); }
+.sf6-sheet-title div { display: grid; min-width: 0; }
+.sf6-sheet-title small { color: var(--text-faint); font: var(--type-micro)/1 var(--font-label); letter-spacing: var(--tracking-label); }
+.sf6-sheet-title strong { overflow: hidden; font: var(--display-weight) var(--type-display-md)/1.25 var(--font-display); text-overflow: ellipsis; white-space: nowrap; }
+.sf6-sheet-title > span { padding: var(--space-1) var(--space-2); background: var(--surface-sunken); color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--line-hairline); font: var(--type-meta)/1.2 var(--font-mono); }
+.sf6-sheet-section { border: 0; background: var(--surface-panel); box-shadow: inset 0 0 0 1px var(--line-hairline); }
+.sf6-sheet-section > h3, .sf6-collapsible > summary { display: flex; align-items: center; gap: var(--space-2); min-height: 34px; margin: 0; padding: 0 var(--space-3); background: var(--surface-raised); color: var(--text-body); box-shadow: inset 2px 0 0 var(--accent), inset 0 -1px 0 var(--line-hairline); font: var(--weight-semibold) var(--type-body-sm)/1 var(--font-sans); letter-spacing: .02em; }
+.sf6-sheet-section > h3 > i, .sf6-collapsible > summary > i, .sf6-sheet-section > h3 > .dmforge-icon, .sf6-collapsible > summary > .dmforge-icon { color: var(--accent); font-size: 15px; }
+.sf6-sheet-section > h3 > small, .sf6-collapsible > summary > small { margin-left: auto; color: var(--text-faint); font: var(--type-micro)/1 var(--font-mono); letter-spacing: .08em; }
+.sf6-collapsible > summary { cursor: pointer; list-style: none; }
+.sf6-collapsible > summary::-webkit-details-marker { display: none; }
+.sf6-collapsible > summary::after { content: ''; width: 7px; height: 7px; margin-left: var(--space-2); border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); transition: transform var(--dur-fast) var(--ease-standard); }
+.sf6-collapsible[open] > summary::after { transform: rotate(225deg); }
+.sf6-sheet-section textarea, .sf6-sheet-section input, .sf6-sheet-section select { border: 0; background: var(--surface-sunken); color: var(--text-body); box-shadow: inset 0 0 0 1px var(--line-hairline); }
+.sf6-field, .sf6-derived { border: 0; background: var(--surface-raised); box-shadow: inset 0 0 0 1px var(--line-hairline); }
+.sf6-field > span, .sf6-derived > span { color: var(--text-muted); }
+.sf6-table-head { background: var(--surface-sunken); color: var(--text-muted); }
+.sf6-subhead { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: var(--space-2) var(--space-3); background: var(--surface-sunken); color: var(--text-body); box-shadow: inset 0 -1px 0 var(--line-hairline); }
+.sf6-subhead i { color: var(--accent); }
+.sf6-subhead small { margin-left: auto; color: var(--text-faint); font-weight: 400; }
+.sf6-save-box { justify-content: space-between; }
+.sf6-save-box > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.sf6-save-box > div { display: flex; gap: 3px; }
+.sf6-save-box button { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--meter-empty); }
+.sf6-save-box.success button.on, .sf6-save-box.success > span i, .sf6-save-box.success > span .dmforge-icon { color: var(--pigment-verdigris); }
+.sf6-save-box.failure button.on, .sf6-save-box.failure > span i, .sf6-save-box.failure > span .dmforge-icon { color: var(--pigment-madder); }
+.sf6-drive-grid button i { display: block; margin-top: 3px; color: var(--meter-empty); font-size: 17px; }
+.sf6-drive-grid button.on i { color: var(--accent); }
+@media(max-width:850px) { .sf6-sheet-title { grid-template-columns: auto minmax(0, 1fr); } .sf6-sheet-title > span { display: none; } }

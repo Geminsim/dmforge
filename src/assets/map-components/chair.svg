@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Chair</title>
+  <path d="M17 14h30v14H17z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M14 28h36v25H14z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M20 33h24v14H20z" fill="#704080" fill-opacity=".5" stroke="#8d8190" stroke-width="1.5"/>
+  <path d="M14 35H8M50 35h6M18 53v6M46 53v6" stroke="#b8aa9a" stroke-width="2"/>
+  <circle cx="32" cy="21" r="2" fill="#c58a00"/>
+</svg>

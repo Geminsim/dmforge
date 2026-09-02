@@ -44,3 +44,148 @@ input::placeholder,
 textarea::placeholder {
   font-family: var(--font-sans);
 }
+/* Approved source logo with the pre-existing contrast layer. The geometry and
+   proportions remain untouched; only the duplicate source layer lifts its dark
+   strokes from dark surfaces. */
+.dmf-logo-adaptive{position:relative;display:inline-block;background:url('/icon-192.png') center/contain no-repeat}
+.dmf-logo-adaptive::after{content:"";position:absolute;inset:0;background:url('/icon-192.png') center/contain no-repeat;filter:brightness(0) invert(1);mix-blend-mode:screen;opacity:.58;pointer-events:none}
+[data-theme="slate"] .dmf-logo-adaptive::after{opacity:.52}
+[data-theme="terminal"] .dmf-logo-adaptive::after{opacity:.64}
+
+/* Dense terrain cards keep the tactical summary visible while secondary rules
+   stay one deliberate click away. */
+.terrain-rule-details {
+  border-top: 1px solid var(--line-hairline);
+  padding-top: var(--space-2);
+}
+.terrain-rule-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 26px;
+  color: var(--text-muted);
+  font: var(--weight-semibold) var(--type-meta) var(--font-label);
+  cursor: pointer;
+  list-style: none;
+}
+.terrain-rule-details > summary::-webkit-details-marker { display: none; }
+.terrain-rule-details > summary::before {
+  content: '+';
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+.terrain-rule-details[open] > summary::before { content: '−'; }
+.terrain-rule-details > summary > span {
+  margin-left: auto;
+  color: var(--text-faint);
+  font: var(--type-micro) var(--font-mono);
+  font-weight: var(--weight-regular);
+}
+.terrain-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.terrain-rule-grid--two { grid-template-columns: repeat(2, minmax(72px, 1fr)); }
+.terrain-rule-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.item-create-details {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--line-hairline);
+}
+.item-create-details > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  color: var(--text-body);
+  font: var(--weight-semibold) var(--type-meta) var(--font-label);
+  cursor: pointer;
+  list-style: none;
+}
+.item-create-details > summary::-webkit-details-marker { display: none; }
+.item-create-details > summary i { color: var(--accent); }
+.item-create-details > summary span { margin-left: auto; color: var(--text-faint); font: var(--type-micro) var(--font-mono); }
+
+.bestiary-editor-group {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line-hairline);
+}
+.bestiary-editor-group > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  color: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  list-style: none;
+}
+.bestiary-editor-group > summary::-webkit-details-marker { display: none; }
+.bestiary-editor-group > summary::before { content: '+'; color: var(--accent); font-family: var(--font-mono); }
+.bestiary-editor-group[open] > summary::before { content: '−'; }
+.bestiary-editor-group > summary span { margin-left: auto; color: var(--text-faint); font: var(--type-micro) var(--font-mono); }
+/* Compact live director dock beneath the DM roster. */
+.stream-quick-panel {
+  flex: 0 0 auto;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-hairline);
+  background: var(--surface-raised);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .08);
+}
+.stream-quick-panel header,
+.stream-quick-actions { display: flex; align-items: center; gap: var(--space-2); }
+.stream-quick-panel header { justify-content: space-between; }
+.stream-quick-panel header > span:first-child {
+  color: var(--accent);
+  font: var(--weight-semibold) var(--type-meta) var(--font-label);
+  letter-spacing: var(--tracking-label);
+}
+.stream-quick-scenes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.stream-quick-scenes button {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 2px;
+  border: var(--border-hairline);
+  background: var(--surface-panel);
+  color: var(--text-muted);
+  font: var(--weight-semibold) var(--type-micro) var(--font-label);
+  cursor: pointer;
+}
+.stream-quick-scenes button i { font-size: 15px; }
+.stream-quick-scenes button:hover,
+.stream-quick-scenes button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.stream-quick-scenes button.paused { border-color: var(--pigment-madder); color: var(--pigment-madder); background: var(--pigment-madder-soft); }
+.stream-quick-panel > label {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-faint);
+  font: var(--weight-semibold) var(--type-micro) var(--font-label);
+}
+.stream-quick-panel select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: var(--border-hairline);
+  background: var(--surface-panel);
+  color: var(--text-body);
+  font: var(--type-meta) var(--font-body);
+}
+.stream-quick-actions > * { flex: 1; }

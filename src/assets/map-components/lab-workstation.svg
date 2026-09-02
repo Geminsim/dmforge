@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Laboratory workstation</title>
+  <path d="M5 15h118v38H5z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M13 20h42v19H13zM73 20h42v19H73z" fill="#171311" stroke="#704080" stroke-width="2"/>
+  <path d="M18 25h31M18 31h22M78 25h31M78 31h22" stroke="#8d8190" stroke-width="1"/>
+  <path d="M61 18h6v23h-6zM11 46h106M25 49h18M50 49h28M85 49h18" stroke="#b8aa9a" stroke-width="1.25"/>
+  <circle cx="112" cy="48" r="2.5" fill="#c58a00"/>
+</svg>

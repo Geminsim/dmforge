@@ -6,6 +6,7 @@ export interface MapTokenProps {
   name?: string;
   /** Overrides the two-character initial */
   label?: string;
+  image?: string;
   /** Pixel diameter — one grid cell is --map-cell (40px) */
   size?: number;
   /** Whose turn it is — steady accent ring, no pulse */

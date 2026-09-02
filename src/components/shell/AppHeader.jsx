@@ -1,4 +1,5 @@
 import { IconButton, StatusDot, ThemeSwitcher, Badge } from '../../ds';
+import BrandMark from '../BrandMark';
 
 /**
  * Fixed 56px app chrome. Left: the wordmark (the product has no logo — the
@@ -75,6 +76,9 @@ export default function AppHeader({
     >
       <span
         style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: 21,
@@ -83,7 +87,8 @@ export default function AppHeader({
           flexShrink: 0
         }}
       >
-        D<span style={{ color: 'var(--accent)' }}>M</span>Forge
+        <BrandMark size={30} />
+        <span>D<span style={{ color: 'var(--accent)' }}>M</span>Forge</span>
       </span>
 
       {/* Latin section key in the label face; the campaign name is Chinese, and

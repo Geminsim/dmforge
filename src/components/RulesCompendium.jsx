@@ -1,4 +1,7 @@
 import React from 'react';
+import DmforgeIcon from './DmforgeIcon';
+import guideMarkdown from '../../docs/DMFORGE_MAIN_PAGE_INSTRUCTIONS.md?raw';
+import { filterGuideSections, guideEntryText, parseGuideMarkdown } from '../utils/guideMarkdown';
 
 const panel = { border: 'var(--border-hairline)', borderRadius: 12, background: 'var(--surface-panel)' };
 const summaryStyle = { cursor: 'pointer', padding: '14px 16px', fontWeight: 700, color: 'var(--text-primary)' };
@@ -62,6 +65,118 @@ function SectionBody({ section }) {
   </>;
 }
 
+function GuideInline({ children }) {
+  const tokens = String(children || '').split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  return tokens.map((token, index) => {
+    const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) return <a key={`${token}-${index}`} href={link[2]} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{link[1]}</a>;
+    if (token.startsWith('**') && token.endsWith('**')) return <strong key={`${token}-${index}`} style={{ color: 'var(--text-primary)' }}>{token.slice(2, -2)}</strong>;
+    if (token.startsWith('`') && token.endsWith('`')) return <code key={`${token}-${index}`} style={{ padding: '1px 4px', borderRadius: 4, background: 'var(--surface-sunken)', color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontSize: '.92em' }}>{token.slice(1, -1)}</code>;
+    return <React.Fragment key={`${token}-${index}`}>{token}</React.Fragment>;
+  });
+}
+
+function guideContentBlocks(lines = []) {
+  const blocks = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) { index += 1; continue; }
+
+    const unordered = line.match(/^-\s+(.+)$/);
+    const ordered = line.match(/^\d+\.\s+(.+)$/);
+    if (unordered || ordered) {
+      const type = unordered ? 'ul' : 'ol';
+      const items = [];
+      while (index < lines.length) {
+        const candidate = lines[index].trim();
+        const match = type === 'ul' ? candidate.match(/^-\s+(.+)$/) : candidate.match(/^\d+\.\s+(.+)$/);
+        if (!match) break;
+        items.push(match[1]);
+        index += 1;
+      }
+      blocks.push({ type, items });
+      continue;
+    }
+
+    if (line.startsWith('> ')) {
+      const quote = [];
+      while (index < lines.length && lines[index].trim().startsWith('> ')) {
+        quote.push(lines[index].trim().slice(2));
+        index += 1;
+      }
+      blocks.push({ type: 'quote', text: quote.join(' ') });
+      continue;
+    }
+
+    const paragraph = [];
+    while (index < lines.length) {
+      const candidate = lines[index].trim();
+      if (!candidate || /^-\s+/.test(candidate) || /^\d+\.\s+/.test(candidate) || candidate.startsWith('> ')) break;
+      paragraph.push(candidate);
+      index += 1;
+    }
+    blocks.push({ type: 'paragraph', text: paragraph.join(' ') });
+  }
+  return blocks;
+}
+
+function GuideContent({ lines }) {
+  return <div style={{ display: 'grid', gap: 9, color: 'var(--text-secondary)', lineHeight: 1.72 }}>
+    {guideContentBlocks(lines).map((block, index) => {
+      if (block.type === 'ul' || block.type === 'ol') {
+        const List = block.type;
+        return <List key={`${block.type}-${index}`} style={{ margin: 0, paddingLeft: 22, display: 'grid', gap: 5 }}>{block.items.map((item, itemIndex) => <li key={`${item}-${itemIndex}`}><GuideInline>{item}</GuideInline></li>)}</List>;
+      }
+      if (block.type === 'quote') return <aside key={`quote-${index}`} style={{ padding: '10px 12px', borderLeft: '3px solid var(--pigment-ochre)', background: 'var(--pigment-ochre-soft)', color: 'var(--text-primary)' }}><GuideInline>{block.text}</GuideInline></aside>;
+      return <p key={`paragraph-${index}`} style={{ margin: 0 }}><GuideInline>{block.text}</GuideInline></p>;
+    })}
+  </div>;
+}
+
+function GuideSection({ section, query }) {
+  const normalized = query.trim().toLowerCase();
+  const sectionOwnText = [section.title, ...(section.content || [])].join('\n').toLowerCase();
+  const visibleTopics = normalized && !sectionOwnText.includes(normalized)
+    ? section.topics.filter(topic => guideEntryText(topic).includes(normalized))
+    : section.topics;
+
+  return <details open={Boolean(normalized)} style={{ ...panel, background: 'var(--surface-raised)' }}>
+    <summary style={{ ...summaryStyle, display: 'flex', alignItems: 'center', gap: 10, color: 'var(--accent)', fontSize: 17 }}>
+      <DmforgeIcon name="book-open-text" size={16} />
+      <span>{section.title}</span>
+      <span style={{ marginLeft: 'auto', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{section.topics.length ? `${section.topics.length} 项` : '说明'}</span>
+    </summary>
+    <div style={{ padding: '0 14px 14px', display: 'grid', gap: 9 }}>
+      {section.content.some(line => line.trim()) && <div style={{ padding: '0 3px 7px' }}><GuideContent lines={section.content} /></div>}
+      {visibleTopics.map(topic => <details key={topic.title} open={Boolean(normalized)} style={{ borderTop: 'var(--border-hairline)', background: 'var(--surface-panel)' }}>
+        <summary style={{ cursor: 'pointer', padding: '11px 13px', fontWeight: 650, color: 'var(--text-primary)' }}>{topic.title}</summary>
+        <div style={{ padding: '0 14px 14px' }}><GuideContent lines={topic.content} /></div>
+      </details>)}
+    </div>
+  </details>;
+}
+
+function UserGuide({ query }) {
+  const guide = React.useMemo(() => parseGuideMarkdown(guideMarkdown), []);
+  const sections = React.useMemo(() => filterGuideSections(guide.sections, query), [guide.sections, query]);
+  const hasMatches = sections.length > 0;
+
+  return <details open={Boolean(query)} style={{ ...panel, marginTop: 14 }}>
+    <summary style={{ ...summaryStyle, display: 'flex', alignItems: 'center', gap: 10, fontSize: 19 }}>
+      <DmforgeIcon name="info" size={18} />
+      <span>DMForge 使用指南</span>
+      <span style={{ marginLeft: 'auto', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>18 个主题</span>
+    </summary>
+    <div style={{ padding: '0 14px 14px', display: 'grid', gap: 9 }}>
+      {!query && <div style={{ padding: '0 4px 6px' }}><GuideContent lines={guide.introduction} /></div>}
+      {hasMatches
+        ? sections.map(section => <GuideSection key={section.title} section={section} query={query} />)
+        : <div style={{ padding: 14, color: 'var(--text-faint)', background: 'var(--surface-raised)' }}>指南中没有匹配内容。</div>}
+    </div>
+  </details>;
+}
+
 export default function RulesCompendium({ ruleset }) {
   const [query, setQuery] = React.useState('');
   if (!ruleset) return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>当前战役没有绑定规则资料库。</div>;
@@ -77,19 +192,8 @@ export default function RulesCompendium({ ruleset }) {
   return <section style={{ minHeight: 0, flex: 1, overflow: 'auto', padding: 20 }} aria-label="规则资料库">
     <header style={{ display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
       <div><h2 style={{ margin: 0 }}>{ruleset.name}</h2><div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>版本 {ruleset.version} · {ruleset.status === 'draft' ? '草案规则' : '正式规则'}</div></div>
-      <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索规则、状态、职业或专长" style={{ minWidth: 280, padding: '10px 12px', borderRadius: 8, border: 'var(--border-hairline)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
+      <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索规则、职业、状态或使用指南" style={{ minWidth: 280, padding: '10px 12px', borderRadius: 8, border: 'var(--border-hairline)', background: 'var(--surface-raised)', color: 'var(--text-primary)' }} />
     </header>
-
-    <details open style={{ ...panel, marginTop: 18 }}>
-      <summary style={{ ...summaryStyle, fontSize: 18 }}>规则目录</summary>
-      <div style={{ padding: '0 16px 16px', display: 'grid', gap: 7 }}>
-        {ruleset.sourceDocumentUrl && <a href={ruleset.sourceDocumentUrl} target="_blank" rel="noreferrer" style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, background: 'var(--accent)', color: 'var(--surface-app)', textDecoration: 'none', fontWeight: 800 }}><i className="ph-fill ph-file-pdf" aria-hidden="true" />打开完整规则书 PDF <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.85 }}>{ruleset.sourceDocument}</span></a>}
-        {Object.entries(groupedSections).map(([category, sections]) => <details key={category} style={{ borderTop: 'var(--border-hairline)' }}>
-          <summary style={{ cursor: 'pointer', padding: '10px 4px', fontWeight: 650 }}>{category}</summary>
-          <div style={{ padding: '0 4px 9px' }}>{sections.map(section => <div key={section.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '5px 0', color: 'var(--text-secondary)' }}><span>{section.title}</span><span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>P.{pageLabel(section.pages)}</span></div>)}</div>
-        </details>)}
-      </div>
-    </details>
 
     {referenceGroups.map(([category, sections]) => <details key={category} open={Boolean(normalized)} style={{ ...panel, marginTop: 14 }}>
       <summary style={{ ...summaryStyle, fontSize: 19 }}>{category}</summary>
@@ -116,6 +220,19 @@ export default function RulesCompendium({ ruleset }) {
     <details open={Boolean(normalized)} style={{ ...panel, marginTop: 14 }}>
       <summary style={{ ...summaryStyle, fontSize: 19 }}>人物状态</summary>
       <div style={{ padding: '0 18px 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>{conditions.map(condition => <article key={condition.id} style={{ padding: 12, borderLeft: '3px solid var(--accent)', background: 'var(--surface-raised)' }}><strong>{condition.name}</strong><div style={{ ...bodyText, marginTop: 5 }}>{condition.description}</div></article>)}</div>
+    </details>
+
+    {(!normalized || guideMarkdown.toLowerCase().includes(normalized)) && <UserGuide query={query} />}
+
+    <details open style={{ ...panel, marginTop: 14 }}>
+      <summary style={{ ...summaryStyle, fontSize: 18 }}>规则目录</summary>
+      <div style={{ padding: '0 16px 16px', display: 'grid', gap: 7 }}>
+        {ruleset.sourceDocumentUrl && <a href={ruleset.sourceDocumentUrl} target="_blank" rel="noreferrer" style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 9, background: 'var(--accent)', color: 'var(--surface-app)', textDecoration: 'none', fontWeight: 800 }}><DmforgeIcon name="book-open-text" size={17} />打开完整规则书 PDF <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.85 }}>{ruleset.sourceDocument}</span></a>}
+        {Object.entries(groupedSections).map(([category, sections]) => <details key={category} style={{ borderTop: 'var(--border-hairline)' }}>
+          <summary style={{ cursor: 'pointer', padding: '10px 4px', fontWeight: 650 }}>{category}</summary>
+          <div style={{ padding: '0 4px 9px' }}>{sections.map(section => <div key={section.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '5px 0', color: 'var(--text-secondary)' }}><span>{section.title}</span><span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>P.{pageLabel(section.pages)}</span></div>)}</div>
+        </details>)}
+      </div>
     </details>
 
   </section>;

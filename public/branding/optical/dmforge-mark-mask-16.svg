@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 64 64" fill="none" color="currentColor">
+  <title>DMForge monochrome optical mark 16px</title>
+  <g stroke="currentColor" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 44C16 40 15 33 17 25L15.5 17 18.5 8 28 18Q32 16 36 18L45.5 8 48.5 17 47 25C49 33 48 40 44 44"/>
+    <path d="M19.5 14 23 18 20.5 20M44.5 14 41 18 43.5 20"/>
+    <path d="M21 31Q25 27.5 28 31M36 31Q39 27.5 43 31"/>
+    <path d="M30 36Q32 38 34 36M32 38Q31 41 28.5 40M32 38Q33 41 35.5 40"/>
+    <path d="M18 34 11 33M18 38 10 40M46 34 53 33M46 38 54 40"/>
+    <path d="M20 44 14 48 17 55Q23 58 28 54M44 44 50 48 47 55Q41 58 36 54M20 44Q24 48 27 49M44 44Q40 48 37 49"/>
+    <path d="m32 43 8 5v9l-8 5-8-5v-9l8-5Z" stroke-width="3.2"/>
+    <path d="m32 43v10m-8-5 8 5 8-5m-8 5-5 6m5-6 5 6" stroke-width="2.2"/>
+  </g>
+</svg>

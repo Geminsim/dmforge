@@ -17,6 +17,8 @@
   --text-body:#e9dfcf;
   --text-muted:#a2968a;
   --text-faint:#776c63;
+  --text-primary:var(--text-body);
+  --text-secondary:var(--text-muted);
   --text-on-accent:#17110f;
   --line-hairline:rgba(233,223,207,.12);
   --line-strong:rgba(233,223,207,.24);

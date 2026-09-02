@@ -15,6 +15,7 @@ import NotesPane from '../NotesPane';
  */
 
 const PANES = [
+  { id: 'character', code: 'CHAR', label: '角色', icon: 'identification-card', title: '角色完整信息' },
   { id: 'dice', code: 'DICE', label: '掷骰', icon: 'dice-six', title: '核心掷骰器', meta: 'd4 – d100' },
   { id: 'log', code: 'LOG', label: '日志', icon: 'scroll', title: '战役历史记录' },
   { id: 'notes', code: 'NOTES', label: '笔记', icon: 'note', title: '对话笔记' }
@@ -27,13 +28,16 @@ function RightRail({
   floatingNotes,
   addFloatingNote,
   updateFloatingNote,
-  deleteFloatingNote
+  deleteFloatingNote,
+  selectedCharacter
 }) {
   const [pane, setPane] = useState('dice');
+  React.useEffect(() => { if (selectedCharacter?.id) setPane('character'); }, [selectedCharacter?.id]);
   const active = PANES.find(p => p.id === pane) || PANES[0];
 
   const meta =
-    pane === 'log' ? `${logs.length} 条`
+    pane === 'character' ? (selectedCharacter ? `Lv.${selectedCharacter.level || 1} · ${selectedCharacter.type === 'PC' ? '玩家角色' : '敌对角色'}` : '未选择')
+      : pane === 'log' ? `${logs.length} 条`
       : pane === 'notes' ? `${floatingNotes.length} 条`
         : active.meta;
 
@@ -77,6 +81,10 @@ function RightRail({
         size="md"
         items={PANES.map(p => ({ id: p.id, label: p.label, icon: p.icon }))}
       />
+
+      <div id="dmforge-character-detail-portal" style={{ display: pane === 'character' ? 'block' : 'none', minWidth: 0 }}>
+        {pane === 'character' && !selectedCharacter ? <p style={{ color: 'var(--text-faint)', textAlign: 'center' }}>点击左侧角色卡以查看完整信息。</p> : null}
+      </div>
 
       {pane === 'dice' ? <DicePane addLog={addLog} /> : null}
       {pane === 'log' ? <LogPane logs={logs} /> : null}

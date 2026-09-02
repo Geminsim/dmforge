@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node server.mjs --dev",
+    "prebuild": "node scripts/build-player-sheet.mjs",
     "build": "vite build",
+    "build:player-sheet": "node scripts/build-player-sheet.mjs",
     "lint": "eslint .",
     "test": "node --test",
     "verify": "npm run lint && npm test && npm run build",

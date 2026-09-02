@@ -1,4 +1,5 @@
 import React from 'react';
+import DmforgeIcon from '../../../../../src/components/DmforgeIcon';
 
 export function SegmentedControl({ items = [], value, onChange, size = 'sm', fullWidth = true, style }) {
   const h = size === 'md' ? 'var(--control-h)' : 'var(--control-h-sm)';
@@ -11,7 +12,7 @@ export function SegmentedControl({ items = [], value, onChange, size = 'sm', ful
             key={it.id} type="button" onClick={() => onChange && onChange(it.id)} title={it.title}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)',
-              height: h, padding: '0 var(--space-2)', minWidth: 0, overflow: 'hidden',
+              height: h, padding: '0 var(--space-3)', minWidth: 42, overflow: 'hidden',
               background: on ? 'var(--accent)' : 'var(--surface-panel)',
               color: on ? 'var(--text-on-accent)' : 'var(--text-muted)',
               border: 'none', cursor: 'pointer',
@@ -20,7 +21,7 @@ export function SegmentedControl({ items = [], value, onChange, size = 'sm', ful
               transition: 'var(--motion-control)'
             }}
           >
-            {it.icon ? <i className={'ph-fill ph-' + it.icon} style={{ fontSize: 12, lineHeight: 1, flexShrink: 0 }} aria-hidden="true" /> : null}
+            {it.icon ? <DmforgeIcon name={it.icon} size={14} fallbackClass={'ph-fill ph-' + it.icon} /> : null}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
             {it.count != null ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', opacity: 0.7, flexShrink: 0 }}>{it.count}</span> : null}
           </button>

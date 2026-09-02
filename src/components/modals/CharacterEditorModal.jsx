@@ -110,7 +110,7 @@ export default function CharacterEditorModal({
     <Modal
       open
       onClose={onClose}
-      icon="identification-card"
+      icon="character-card"
       width={1180}
       title={editingCharId ? '编辑 SF6 角色卡' : '创建 SF6 角色卡'}
       footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button icon="check" onClick={onSave}>{editingCharId ? '保存角色卡' : '创建角色'}</Button></>}
@@ -144,7 +144,7 @@ export default function CharacterEditorModal({
     <Modal
       open
       onClose={onClose}
-      icon="user-plus"
+      icon="character-card"
       width={620}
       title={editingCharId ? '修改角色属性 / 资源槽' : '新建战役角色 / 怪物 NPC'}
       footer={
@@ -177,7 +177,7 @@ export default function CharacterEditorModal({
             onChange={e => patch({ maxHp: Math.max(1, parseInt(e.target.value, 10) || 10) })}
           />
         </div>
-        {selectedClass && <Select label="子职业" value={newChar.subclass || ''} onChange={e => patch({ subclass: e.target.value })} options={[{ value: '', label: newChar.level >= 6 ? '选择子职业' : '6 级解锁（可预选）' }, ...selectedClass.subclasses.map(value => ({ value, label: value }))]} />}
+        {selectedClass && <Select label="子职业" disabled={newChar.level < 3} value={newChar.subclass || ''} onChange={e => patch({ subclass: e.target.value })} options={[{ value: '', label: newChar.level >= 3 ? '选择子职业' : '3 级解锁' }, ...selectedClass.subclasses.map(value => ({ value, label: value }))]} />}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
           <TextInput
             label="初始/当前等级 (Level)"

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Locker bank</title>
+  <rect x="4" y="10" width="120" height="44" rx="2" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M34 10v44M64 10v44M94 10v44" stroke="#704080" stroke-width="2"/>
+  <path d="M11 17h16M41 17h16M71 17h16M101 17h16M11 22h12M41 22h12M71 22h12M101 22h12" stroke="#8d8190" stroke-width="1"/>
+  <path d="M27 31v6M57 31v6M87 31v6M117 31v6" stroke="#b8aa9a" stroke-width="1.5"/>
+  <circle cx="117" cy="45" r="2.5" fill="#c58a00"/>
+</svg>

@@ -3,29 +3,30 @@ import {
   Panel, Button, IconButton, TextInput, Select, SegmentedControl,
   Badge, ItemRow, EmptyState, ToolbarLabel
 } from '../ds';
+import { CATEGORY_TONES, getEncumbrance, isWorldInfiniteItem, ITEM_CATEGORIES } from '../utils/inventoryRules';
 
-const CATEGORIES = [
-  { value: '消耗品', label: '消耗品' },
-  { value: '装备及服装', label: '装备及服装' },
-  { value: '饰品', label: '饰品' },
-  { value: '武器', label: '武器' }
-];
+const CATEGORIES = ITEM_CATEGORIES.map(value => ({ value, label: value }));
 
 // `value` above is persisted in campaign saves, so it stays as-is; only the
 // pigment mapping is new. ItemRow carries its own map for the design system's
 // vocabulary — these are this product's categories.
-const CATEGORY_TONE = {
-  '消耗品': 'verdigris',
-  '装备及服装': 'woad',
-  '饰品': 'accent',
-  '武器': 'madder'
-};
+const CATEGORY_TONE = CATEGORY_TONES;
+
+const itemDetails = item => [
+  `重量 ${Number(item.weight) || 0}kg/份`,
+  Number(item.calories) > 0 ? `${item.calories} kcal/份` : '',
+  Number(item.acBonus) ? `AC +${item.acBonus}` : '',
+  item.damageDie ? `伤害 ${item.damageDiceCount || 1}${item.damageDie}${Number(item.damageFixed) ? `+${item.damageFixed}` : ''} ${item.damageType || ''}` : '',
+  item.effectValue || ''
+].filter(Boolean).join(' · ');
 
 export default function ItemManager({ characters, itemPool, setItemPool, itemTemplates = [], setItemTemplates, addLog, groups = [] }) {
   const [newItemName, setNewItemName] = useState('');
   const [newItemCategory, setNewItemCategory] = useState('消耗品');
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemDesc, setNewItemDesc] = useState('');
+  const [editingItemId, setEditingItemId] = useState('');
+  const [editDraft, setEditDraft] = useState(null);
 
   // Keyed by item id. These used to be one shared target/quantity pair for the
   // whole screen, so picking a recipient on one row also armed every other
@@ -87,7 +88,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
             if (worldItemsMap.has(normName)) {
               const existing = worldItemsMap.get(normName);
               // Sum quantities
-              existing.quantity += item.quantity;
+              if (!isWorldInfiniteItem(existing)) existing.quantity += item.quantity;
               // Combine or keep descriptions
               if (item.description && !existing.description) {
                 existing.description = item.description;
@@ -127,12 +128,16 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
 
     const trimmedName = newItemName.trim();
 
+    const matchedTemplate = itemTemplates.find(t => t.name.trim().toLowerCase() === trimmedName.toLowerCase());
     const newItem = {
+      ...(matchedTemplate ? structuredClone(matchedTemplate) : {}),
       id: 'item_' + Date.now(),
       name: trimmedName,
       category: newItemCategory,
       quantity: parseInt(newItemQty, 10) || 1,
       description: newItemDesc.trim(),
+      usage: matchedTemplate?.usage || '由 DM 编辑具体使用方式。',
+      weight: Number(matchedTemplate?.weight) || 0,
       ownerId: 'WORLD' // WORLD represents unacquired world loot
     };
 
@@ -141,7 +146,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
       if (existingIdx > -1) {
         const updated = [...prev];
         const existing = updated[existingIdx];
-        const newQty = existing.quantity + (parseInt(newItemQty, 10) || 1);
+        const newQty = isWorldInfiniteItem(existing) ? existing.quantity : existing.quantity + (parseInt(newItemQty, 10) || 1);
         
         let mergedDesc = existing.description;
         const newDescTrimmed = newItemDesc.trim();
@@ -169,11 +174,11 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     if (setItemTemplates) {
       setItemTemplates(prev => {
         const filtered = prev.filter(t => t.name.toLowerCase() !== trimmedName.toLowerCase());
-        return [...filtered, {
-          name: trimmedName,
-          category: newItemCategory,
-          description: newItemDesc.trim()
-        }];
+        const template = structuredClone(newItem);
+        delete template.id;
+        delete template.ownerId;
+        delete template.quantity;
+        return [...filtered, template];
       });
     }
 
@@ -195,10 +200,11 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     const character = characters.find(c => c.id === charId);
     if (!item || !character) return;
 
-    const qtyToMove = Math.min(qty, item.quantity);
+    const infinite = isWorldInfiniteItem(item);
+    const qtyToMove = infinite ? Math.max(1, Number(qty) || 1) : Math.min(qty, item.quantity);
 
     // Deduct from world pool
-    setItemPool(prev => {
+    if (!infinite) setItemPool(prev => {
       return prev.map(i => {
         if (i.id === itemId) {
           return { ...i, quantity: i.quantity - qtyToMove };
@@ -306,6 +312,37 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
     }
   };
 
+  const startEditingItem = item => {
+    setEditingItemId(item.id);
+    setEditDraft(structuredClone(item));
+  };
+
+  const saveItemEdit = () => {
+    if (!editingItemId || !editDraft?.name?.trim()) return;
+    const originalName = itemPool.find(item => item.id === editingItemId)?.name;
+    const normalized = {
+      ...editDraft,
+      name: editDraft.name.trim(),
+      quantity: Math.max(1, Number(editDraft.quantity) || 1),
+      weight: Math.max(0, Number(editDraft.weight) || 0),
+      calories: Math.max(0, Number(editDraft.calories) || 0),
+      acBonus: Number(editDraft.acBonus) || 0,
+      damageDiceCount: Math.max(1, Number(editDraft.damageDiceCount) || 1),
+      damageFixed: Number(editDraft.damageFixed) || 0,
+      infinite: editDraft.ownerId === 'WORLD' && Boolean(editDraft.infinite)
+    };
+    setItemPool(previous => previous.map(item => item.id === editingItemId ? normalized : item));
+    if (setItemTemplates) setItemTemplates(previous => {
+      const template = structuredClone(normalized);
+      delete template.id;
+      delete template.ownerId;
+      delete template.quantity;
+      return [...previous.filter(item => item.name !== originalName && item.name !== normalized.name), template];
+    });
+    setEditingItemId('');
+    setEditDraft(null);
+  };
+
   const deleteItemFromPool = (itemId) => {
     const item = itemPool.find(i => i.id === itemId);
     if (!item) return;
@@ -391,7 +428,9 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
         scroll
         bodyStyle={{ padding: 'var(--panel-pad)', gap: 'var(--space-5)', flex: 1, minHeight: 0, overflowY: 'auto' }}
       >
-        <form onSubmit={addItemToWorld} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <details className="item-create-details">
+          <summary><i className="ph-fill ph-plus" aria-hidden="true" />新增世界物品 <span>模板或自定义</span></summary>
+        <form onSubmit={addItemToWorld} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', paddingTop: 'var(--space-3)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-3)' }}>
             <TextInput
               size="sm"
@@ -433,6 +472,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
           </div>
           <Button type="submit" icon="plus" title= "把这件物品加入世界物品池（未分配给任何角色）">添加至物品池</Button>
         </form>
+        </details>
 
         <details open={showTemplateManager} onToggle={e => setShowTemplateManager(e.currentTarget.open)}>
           <summary style={{ cursor: 'pointer', fontSize: 'var(--type-meta)', color: 'var(--text-muted)' }}>
@@ -473,17 +513,12 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
           </div>
         </details>
 
-        <SegmentedControl
+        <Select
+          size="sm"
+          label="按物品分类筛选"
           value={selectedFilterTab}
-          onChange={setSelectedFilterTab}
-          items={[
-            { id: '全部', label: '全部', count: worldItems.length },
-            ...CATEGORIES.map(cat => ({
-              id: cat.value,
-              label: cat.label,
-              count: worldItems.filter(i => i.category === cat.value).length
-            }))
-          ]}
+          onChange={event => setSelectedFilterTab(event.target.value)}
+          options={[{ value: '全部', label: `全部（${worldItems.length}）` }, ...CATEGORIES.filter(cat => worldItems.some(item => item.category === cat.value)).map(cat => ({ value: cat.value, label: `${cat.label}（${worldItems.filter(item => item.category === cat.value).length}）` }))]}
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
@@ -504,10 +539,33 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                   <ItemRow
                     name={item.name}
                     category={item.category}
-                    quantity={item.quantity}
+                    quantity={isWorldInfiniteItem(item) ? '∞' : item.quantity}
                     description={item.description}
-                    actions={<IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title= "彻底删除物品" />}
+                    usage={item.usage}
+                    details={itemDetails(item)}
+                    actions={<><IconButton icon="pencil-simple" size="sm" onClick={() => startEditingItem(item)} title="编辑全部物品数值" /><IconButton icon="trash" size="sm" tone="danger" onClick={() => deleteItemFromPool(item.id)} title= "彻底删除物品" /></>}
                   />
+                  {editingItemId === item.id && editDraft && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)', background: 'var(--surface-sunken)', boxShadow: 'inset 0 0 0 1px var(--accent-line)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 'var(--space-2)' }}>
+                        <TextInput size="sm" label="名称" value={editDraft.name} onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))} />
+                        <Select size="sm" label="分类" value={editDraft.category} onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))} options={CATEGORIES} />
+                        <TextInput size="sm" type="number" label="重量 kg/份" value={editDraft.weight ?? 0} onChange={e => setEditDraft(d => ({ ...d, weight: e.target.value }))} />
+                        <TextInput size="sm" type="number" label="热量 kcal/份" value={editDraft.calories ?? 0} onChange={e => setEditDraft(d => ({ ...d, calories: e.target.value }))} />
+                      </div>
+                      <TextInput size="sm" label="物品说明" value={editDraft.description || ''} onChange={e => setEditDraft(d => ({ ...d, description: e.target.value }))} />
+                      <TextInput size="sm" label="使用说明" value={editDraft.usage || ''} onChange={e => setEditDraft(d => ({ ...d, usage: e.target.value }))} />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 'var(--space-2)' }}>
+                        <TextInput size="sm" type="number" label="AC 加值" value={editDraft.acBonus ?? 0} onChange={e => setEditDraft(d => ({ ...d, acBonus: e.target.value }))} />
+                        <TextInput size="sm" type="number" label="伤害骰数" value={editDraft.damageDiceCount ?? 1} onChange={e => setEditDraft(d => ({ ...d, damageDiceCount: e.target.value }))} />
+                        <Select size="sm" label="伤害骰" value={editDraft.damageDie || ''} onChange={e => setEditDraft(d => ({ ...d, damageDie: e.target.value }))} options={[{ value: '', label: '无' }, ...['d4','d6','d8','d10','d12','d20'].map(value => ({ value, label: value }))]} />
+                        <TextInput size="sm" type="number" label="固定伤害" value={editDraft.damageFixed ?? 0} onChange={e => setEditDraft(d => ({ ...d, damageFixed: e.target.value }))} />
+                        <TextInput size="sm" label="伤害类型" value={editDraft.damageType || ''} onChange={e => setEditDraft(d => ({ ...d, damageType: e.target.value }))} />
+                      </div>
+                      <TextInput size="sm" label="其他默认数值/效果" value={editDraft.effectValue || ''} onChange={e => setEditDraft(d => ({ ...d, effectValue: e.target.value }))} />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}><Button size="sm" variant="secondary" onClick={() => { setEditingItemId(''); setEditDraft(null); }}>取消</Button><Button size="sm" icon="check" onClick={saveItemEdit}>保存物品定义</Button></div>
+                    </div>
+                  )}
                   <div
                     style={{
                       display: 'grid',
@@ -602,6 +660,7 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                 const charItems = charSortBy === 'name'
                   ? [...rawCharItems].sort((a, b) => a.name.localeCompare(b.name, 'zh'))
                   : rawCharItems;
+                const encumbrance = getEncumbrance(char, itemPool);
 
                 return (
                   <div key={char.id} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
@@ -614,6 +673,18 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                         {charItems.length}
                       </span>
                     </div>
+
+                    {char.type === 'PC' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', background: 'var(--surface-sunken)', boxShadow: `inset 2px 0 0 ${encumbrance.overCapacity ? 'var(--pigment-madder)' : encumbrance.warning ? 'var(--pigment-ochre)' : 'var(--pigment-verdigris)'}` }}>
+                        <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-muted)' }}>负重</span>
+                        <div style={{ position: 'relative', height: 7, background: 'var(--surface-panel)', boxShadow: 'inset 0 0 0 1px var(--line-hairline)' }}>
+                          <span style={{ position: 'absolute', inset: 0, right: `${Math.max(0, 100 - Math.min(100, encumbrance.ratio * 100))}%`, background: encumbrance.overCapacity ? 'var(--pigment-madder)' : encumbrance.warning ? 'var(--pigment-ochre)' : 'var(--pigment-verdigris)' }} />
+                          <span title="80% 预警线" style={{ position: 'absolute', left: '80%', top: -2, bottom: -2, width: 1, background: 'var(--text-body)' }} />
+                        </div>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-micro)', color: encumbrance.overCapacity ? 'var(--pigment-madder)' : 'var(--text-body)' }}>{encumbrance.carried}/{encumbrance.capacity}kg · 80%={encumbrance.warningAt}kg</span>
+                        {encumbrance.overCapacity && <span style={{ gridColumn: '1 / -1', fontSize: 'var(--type-micro)', color: 'var(--pigment-madder)' }}>超重：{encumbrance.penaltyText}</span>}
+                      </div>
+                    )}
 
                     {charItems.length === 0 ? (
                       <EmptyState compact icon="backpack" text= "背包空空如也" />
@@ -633,13 +704,15 @@ export default function ItemManager({ characters, itemPool, setItemPool, itemTem
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
-                              <span style={{ fontSize: 'var(--type-body-sm)', color: 'var(--text-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: 'var(--type-body-sm)', color: ({ madder: 'var(--pigment-madder)', verdigris: 'var(--pigment-verdigris)', woad: 'var(--pigment-woad)', accent: 'var(--accent)', ochre: 'var(--pigment-ochre)', amber: 'var(--pigment-ochre)' }[CATEGORY_TONE[item.category]] || 'var(--text-body)'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {item.name}
                               </span>
                               <Badge size="sm" tone={CATEGORY_TONE[item.category] || 'neutral'}>{item.category}</Badge>
                               <span aria-hidden="true" style={{ flex: 1, borderTop: 'var(--rule-dot)' }} />
                               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--type-numeral-sm)', color: 'var(--text-body)' }}>×{item.quantity}</span>
                             </div>
+
+                            {(itemDetails(item) || item.usage) && <div style={{ fontSize: 'var(--type-micro)', color: 'var(--text-muted)', lineHeight: 'var(--type-body-lh)' }}>{itemDetails(item)}{item.usage ? `${itemDetails(item) ? ' · ' : ''}使用：${item.usage}` : ''}</div>}
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: 'var(--space-2)', alignItems: 'center' }}>
                               <Select

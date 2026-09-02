@@ -14,6 +14,7 @@ function DicePane({ addLog }) {
   const [customFormula, setCustomFormula] = useState('');
   const [history, setHistory] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [dicePool, setDicePool] = useState({});
 
   const parseAndRoll = (formulaStr) => {
     const cleanFormula = formulaStr.toLowerCase().replace(/\s+/g, '');
@@ -91,9 +92,22 @@ function DicePane({ addLog }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!customFormula.trim()) return;
-    parseAndRoll(customFormula);
+    const diceFormula = COMMON_DICE.filter(sides => dicePool[sides]).map(sides => `${dicePool[sides]}d${sides}`).join('+');
+    const extra = customFormula.trim();
+    const formula = diceFormula && extra ? `${diceFormula}${/^[+-]/.test(extra) ? '' : '+'}${extra}` : (diceFormula || extra);
+    if (!formula) return;
+    parseAndRoll(formula);
+    setDicePool({});
+    setCustomFormula('');
   };
+
+  const queuedCount = Object.values(dicePool).reduce((total, count) => total + count, 0);
+  const changeDie = (sides, amount) => setDicePool(previous => {
+    const next = Math.max(0, Math.min(99, (previous[sides] || 0) + amount));
+    const updated = { ...previous, [sides]: next };
+    if (!next) delete updated[sides];
+    return updated;
+  });
 
   const latest = history[0];
   const older = historyOpen ? history.slice(1) : history.slice(1, 2);
@@ -102,18 +116,23 @@ function DicePane({ addLog }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', minWidth: 0 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 'var(--space-3)' }}>
         {COMMON_DICE.map(sides => (
-          <DiceButton key={sides} sides={sides} onClick={() => parseAndRoll(`1d${sides}`)} />
+          <DiceButton key={sides} sides={sides} count={dicePool[sides] || 0} onClick={() => changeDie(sides, 1)} title={`添加一个 d${sides} 到待掷骰池`} />
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 'var(--space-3)', minWidth: 0 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', minHeight: 26 }}>
+        {COMMON_DICE.filter(sides => dicePool[sides]).map(sides => <button type="button" key={sides} onClick={() => changeDie(sides, -1)} title={`移除一个 d${sides}`} style={{ border: 'var(--border-hairline)', background: 'var(--accent-soft)', color: 'var(--accent)', padding: '4px 8px', cursor: 'pointer' }}>{dicePool[sides]}d{sides} ×</button>)}
+        {!queuedCount ? <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>点击上方骰子加入待掷骰池</span> : null}
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-3)', minWidth: 0 }}>
         <TextInput
           mono
           value={customFormula}
           onChange={(e) => setCustomFormula(e.target.value)}
-          placeholder="自定义公式如: 2d6+4 或 2d20kh1+5"
+          placeholder="可选附加公式或固定值，如 +4"
         />
-        <Button type="submit" icon="dice-six" title="投掷自定义公式" />
+        <Button type="submit" icon="dice-six" disabled={!queuedCount && !customFormula.trim()} title="一次投掷待掷骰池中的所有骰子">掷骰{queuedCount ? `（${queuedCount}）` : ''}</Button>
       </form>
 
       {latest ? (

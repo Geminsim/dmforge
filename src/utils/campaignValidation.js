@@ -1,3 +1,5 @@
+import { TERRAIN_FEATURE_PRESETS } from './terrainRules.js';
+
 export const CURRENT_SCHEMA_VERSION = 2;
 export const MAX_CAMPAIGN_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_CAMPAIGN_COLLECTION_ITEMS = 10_000;
@@ -71,6 +73,11 @@ function validateCharacter(character, path) {
   for (const key of ['hp', 'maxHp', 'tempHp', 'ac', 'initiative', 'speed', 'gridX', 'gridY', 'combatSpeedRemaining', 'combatStartGridX', 'combatStartGridY', 'level']) {
     asNumber(character[key], `${path}.${key}`, { min: -1e6, max: 1e6 });
   }
+  asNumber(character.eyeHeight, `${path}.eyeHeight`, { min: 0.5, max: 1_000 });
+  asNumber(character.elevation, `${path}.elevation`, { min: 0, max: 10_000 });
+  asNumber(character.footprintCells, `${path}.footprintCells`, { min: 0.25, max: 8 });
+  const sizeCategory = asString(character.sizeCategory, `${path}.sizeCategory`, false, 30);
+  if (sizeCategory && !['minuscule', 'tiny', 'small', 'medium', 'large', 'huge', 'gargantuan'].includes(sizeCategory)) error(`${path}.sizeCategory`, '人物体型无效');
   if (character.mapId) asId(character.mapId, `${path}.mapId`);
   if (character.groupId) asId(character.groupId, `${path}.groupId`);
   asArray(character.resources, `${path}.resources`).forEach((resource, index) => {
@@ -126,8 +133,87 @@ function validateMap(map, path) {
     } else asNumber(terrain.radius, `${itemPath}.radius`, { required: true, min: 0.1, max: 10_000 });
     asBoolean(terrain.isSecret, `${itemPath}.isSecret`);
     asBoolean(terrain.isImpassable, `${itemPath}.isImpassable`);
+    asBoolean(terrain.blocksVision, `${itemPath}.blocksVision`);
+    asString(terrain.color, `${itemPath}.color`, false, 40);
+    const customColor = asString(terrain.customColor, `${itemPath}.customColor`, false, 20);
+    if (customColor && !/^#[0-9a-f]{6}$/i.test(customColor)) error(`${itemPath}.customColor`, '必须是六位十六进制颜色');
+    const hazardLevel = asString(terrain.hazardLevel, `${itemPath}.hazardLevel`, false, 40);
+    if (hazardLevel && !['none', 'fire', 'toxic', 'cold', 'difficult', 'arcane'].includes(hazardLevel)) error(`${itemPath}.hazardLevel`, '灾害级无效');
+    const featureType = asString(terrain.featureType, `${itemPath}.featureType`, false, 40);
+    if (featureType && !Object.hasOwn(TERRAIN_FEATURE_PRESETS, featureType)) error(`${itemPath}.featureType`, '构件类型无效');
+    const featureState = asString(terrain.featureState, `${itemPath}.featureState`, false, 20);
+    if (featureState && !['open', 'closed', 'ajar', 'locked', 'broken'].includes(featureState)) error(`${itemPath}.featureState`, '构件状态无效');
+    const placement = asString(terrain.placement, `${itemPath}.placement`, false, 20);
+    if (placement && !['area', 'edge'].includes(placement)) error(`${itemPath}.placement`, '构件放置类型无效');
+    const orientation = asString(terrain.orientation, `${itemPath}.orientation`, false, 20);
+    if (orientation && !['horizontal', 'vertical', 'free'].includes(orientation)) error(`${itemPath}.orientation`, '构件方向无效');
+    if (placement === 'edge' && orientation === 'free') {
+      asNumber(terrain.endX, `${itemPath}.endX`, { required: true, min: 0, max: 100_000 });
+      asNumber(terrain.endY, `${itemPath}.endY`, { required: true, min: 0, max: 100_000 });
+    }
+    asNumber(terrain.length, `${itemPath}.length`, { min: 0.1, max: 10_000 });
+    asNumber(terrain.thickness, `${itemPath}.thickness`, { min: 0.01, max: 100 });
+    asNumber(terrain.baseHeight, `${itemPath}.baseHeight`, { min: 0, max: 10_000 });
+    asNumber(terrain.obstacleHeight, `${itemPath}.obstacleHeight`, { min: 0, max: 10_000 });
+    const movementMode = asString(terrain.movementMode, `${itemPath}.movementMode`, false, 30);
+    if (movementMode && !['walkable', 'blocked', 'difficult', 'climbable'].includes(movementMode)) error(`${itemPath}.movementMode`, '穿越模式无效');
+    const visionMode = asString(terrain.visionMode, `${itemPath}.visionMode`, false, 30);
+    if (visionMode && !['transparent', 'partial', 'blocked', 'oneWay'].includes(visionMode)) error(`${itemPath}.visionMode`, '视野模式无效');
+    const coverLevel = asString(terrain.coverLevel, `${itemPath}.coverLevel`, false, 30);
+    if (coverLevel && !['none', 'half', 'threeQuarters', 'full'].includes(coverLevel)) error(`${itemPath}.coverLevel`, '掩体等级无效');
+    asBoolean(terrain.transmitsLight, `${itemPath}.transmitsLight`);
+    asBoolean(terrain.transmitsAttacks, `${itemPath}.transmitsAttacks`);
+    asBoolean(terrain.destructible, `${itemPath}.destructible`);
+    asBoolean(terrain.discoveredByParty, `${itemPath}.discoveredByParty`);
+    asNumber(terrain.maxHp, `${itemPath}.maxHp`, { min: 1, max: 1_000_000 });
+    asNumber(terrain.currentHp, `${itemPath}.currentHp`, { min: 0, max: 1_000_000 });
+    asNumber(terrain.visionDirection, `${itemPath}.visionDirection`, { min: -3600, max: 3600 });
+    asNumber(terrain.apertureAngle, `${itemPath}.apertureAngle`, { min: 5, max: 175 });
+    asNumber(terrain.labelX, `${itemPath}.labelX`, { min: 0, max: 100_000 });
+    asNumber(terrain.labelY, `${itemPath}.labelY`, { min: 0, max: 100_000 });
+    asNumber(terrain.labelMaxWidth, `${itemPath}.labelMaxWidth`, { min: 4, max: 1000 });
+    asBoolean(terrain.suppressLabel, `${itemPath}.suppressLabel`);
+    asBoolean(terrain.suppressOutline, `${itemPath}.suppressOutline`);
+    for (const key of ['trapTrigger', 'trapCheck', 'trapEffect', 'trapDuration', 'trapDisarm']) {
+      asString(terrain[key], `${itemPath}.${key}`, false, 2_000);
+    }
   });
   uniqueIds(terrains, `${path}.terrainAreas`);
+  const drawings = asArray(map.drawings, `${path}.drawings`);
+  if (drawings.length > 500) error(`${path}.drawings`, '地图标注超过 500 笔限制');
+  drawings.forEach((stroke, index) => {
+    const itemPath = `${path}.drawings[${index}]`;
+    asObject(stroke, itemPath);
+    asId(stroke.id, `${itemPath}.id`);
+    const color = asString(stroke.color, `${itemPath}.color`, true, 20);
+    if (!/^#[0-9a-f]{6}$/i.test(color)) error(`${itemPath}.color`, '必须是六位十六进制颜色');
+    asNumber(stroke.width, `${itemPath}.width`, { required: true, min: 1, max: 24 });
+    const points = asArray(stroke.points, `${itemPath}.points`, true);
+    if (!points.length || points.length > 2_000) error(`${itemPath}.points`, '每笔必须包含 1..2000 个点');
+    points.forEach((point, pointIndex) => {
+      const pointPath = `${itemPath}.points[${pointIndex}]`;
+      asObject(point, pointPath);
+      asNumber(point.x, `${pointPath}.x`, { required: true, min: 0, max: map.width });
+      asNumber(point.y, `${pointPath}.y`, { required: true, min: 0, max: map.height });
+    });
+  });
+  uniqueIds(drawings, `${path}.drawings`);
+  if (map.vision !== undefined) {
+    asObject(map.vision, `${path}.vision`);
+    asBoolean(map.vision.enabled, `${path}.vision.enabled`);
+    asBoolean(map.vision.rememberExplored, `${path}.vision.rememberExplored`);
+    const publicMode = asString(map.vision.publicMode, `${path}.vision.publicMode`, false, 20);
+    if (publicMode && !['player', 'bright', 'dark'].includes(publicMode)) error(`${path}.vision.publicMode`, '必须是 player、bright 或 dark');
+    asNumber(map.vision.ceilingHeight, `${path}.vision.ceilingHeight`, { min: 1, max: 10_000 });
+    asNumber(map.vision.visionRangeCap, `${path}.vision.visionRangeCap`, { min: 1, max: 180 });
+    if (map.vision.exploredTerrainStates !== undefined) asObject(map.vision.exploredTerrainStates, `${path}.vision.exploredTerrainStates`);
+    if (map.vision.memoryInitialCells !== undefined) asObject(map.vision.memoryInitialCells, `${path}.vision.memoryInitialCells`);
+    if (map.vision.memoryInitialTerrainStates !== undefined) asObject(map.vision.memoryInitialTerrainStates, `${path}.vision.memoryInitialTerrainStates`);
+    if (map.vision.memoryCurrentCells !== undefined) asObject(map.vision.memoryCurrentCells, `${path}.vision.memoryCurrentCells`);
+    if (map.vision.memoryCurrentTerrainStates !== undefined) asObject(map.vision.memoryCurrentTerrainStates, `${path}.vision.memoryCurrentTerrainStates`);
+    if (map.vision.manualVisibleCells !== undefined) asObject(map.vision.manualVisibleCells, `${path}.vision.manualVisibleCells`);
+    if (map.vision.manualHiddenCells !== undefined) asObject(map.vision.manualHiddenCells, `${path}.vision.manualHiddenCells`);
+  }
 }
 
 function validateNamedEntity(value, path, type) {
@@ -164,7 +250,8 @@ export function migrateCampaign(value) {
     ...source,
     schemaVersion: CURRENT_SCHEMA_VERSION,
     characters: source.characters ?? [], maps: source.maps ?? [], floatingNotes: source.floatingNotes ?? [],
-    itemPool: source.itemPool ?? [], itemTemplates: source.itemTemplates ?? [], logs: source.logs ?? [],
+    itemPool: source.itemPool ?? [], itemTemplates: source.itemTemplates ?? [], enemyBestiary: source.enemyBestiary ?? [], cutscenes: source.cutscenes ?? [], logs: source.logs ?? [],
+    activeCutsceneId: source.activeCutsceneId ?? '', playerDisplayMode: source.playerDisplayMode === 'cutscene' ? 'cutscene' : 'map',
     excelCards: source.excelCards ?? [], groups: source.groups ?? [], combatParticipants: source.combatParticipants ?? [],
     combatTurnOrder: source.combatTurnOrder ?? [], customAttributeLabels: source.customAttributeLabels ?? {},
     isInCombat: source.isInCombat ?? false, combatRound: source.combatRound ?? 1, currentTurnIndex: source.currentTurnIndex ?? 0
@@ -193,6 +280,24 @@ export function assertValidCampaign(campaign) {
   items.forEach((value, index) => validateNamedEntity(value, `campaign.itemPool[${index}]`, 'item'));
   uniqueIds(items, 'campaign.itemPool');
   asArray(campaign.itemTemplates, 'campaign.itemTemplates').forEach((value, index) => validateNamedEntity(value, `campaign.itemTemplates[${index}]`, 'template'));
+  const enemies = asArray(campaign.enemyBestiary, 'campaign.enemyBestiary');
+  enemies.forEach((value, index) => {
+    validateNamedEntity(value, `campaign.enemyBestiary[${index}]`, 'enemy');
+    asNumber(value.level, `campaign.enemyBestiary[${index}].level`, { integer: true, min: 1, max: 10 });
+    asArray(value.skills, `campaign.enemyBestiary[${index}].skills`);
+  });
+  uniqueIds(enemies, 'campaign.enemyBestiary');
+  const cutscenes = asArray(campaign.cutscenes, 'campaign.cutscenes');
+  cutscenes.forEach((value, index) => {
+    validateNamedEntity(value, `campaign.cutscenes[${index}]`, 'cutscene');
+    asString(value.title, `campaign.cutscenes[${index}].title`, false, 500);
+    asString(value.subtitle, `campaign.cutscenes[${index}].subtitle`, false, 1_000);
+    asString(value.mediaUrl, `campaign.cutscenes[${index}].mediaUrl`, false, 8_000_000);
+    asString(value.mediaType, `campaign.cutscenes[${index}].mediaType`, false, 20);
+    asString(value.effect, `campaign.cutscenes[${index}].effect`, false, 30);
+    asString(value.transition, `campaign.cutscenes[${index}].transition`, false, 30);
+  });
+  const cutsceneIds = uniqueIds(cutscenes, 'campaign.cutscenes');
   asArray(campaign.logs, 'campaign.logs').forEach((value, index) => validateNamedEntity(value, `campaign.logs[${index}]`, 'log'));
   const cards = asArray(campaign.excelCards, 'campaign.excelCards');
   cards.forEach((value, index) => validateNamedEntity(value, `campaign.excelCards[${index}]`, 'excel'));
@@ -200,6 +305,8 @@ export function assertValidCampaign(campaign) {
 
   if (campaign.activeMapId !== undefined && !mapIds.has(campaign.activeMapId)) error('campaign.activeMapId', '引用不存在的地图');
   if (campaign.activeExcelCardId && !cardIds.has(campaign.activeExcelCardId)) error('campaign.activeExcelCardId', '引用不存在的 Excel 卡片');
+  if (campaign.activeCutsceneId && !cutsceneIds.has(campaign.activeCutsceneId)) error('campaign.activeCutsceneId', '引用不存在的过场');
+  if (!['map', 'cutscene'].includes(campaign.playerDisplayMode)) error('campaign.playerDisplayMode', '未知玩家展示模式');
   characters.forEach((character, index) => {
     if (character.mapId && !mapIds.has(character.mapId)) error(`campaign.characters[${index}].mapId`, '引用不存在的地图');
     if (character.groupId && !groupIds.has(character.groupId)) error(`campaign.characters[${index}].groupId`, '引用不存在的分组');

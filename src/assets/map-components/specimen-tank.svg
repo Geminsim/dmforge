@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Transparent specimen tank</title>
+  <circle cx="32" cy="32" r="27" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <circle cx="32" cy="32" r="21" fill="#5f5660" fill-opacity=".36" stroke="#704080" stroke-width="2"/>
+  <path d="M19 17h26M19 47h26M15 27v10M49 27v10" stroke="#b8aa9a" stroke-width="1.25"/>
+  <path d="M27 38c0-6 10-6 10-12M25 29c6 1 8 7 13 8" stroke="#8d8190" stroke-width="1"/>
+  <circle cx="46" cy="45" r="2.5" fill="#c58a00"/>
+</svg>

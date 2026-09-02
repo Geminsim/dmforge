@@ -5,20 +5,21 @@ import { Tabs, EmptyState } from '../ds';
 const MapSystem = lazy(() => import('./MapSystem'));
 const ExcelImporter = lazy(() => import('./ExcelImporter'));
 const RulesCompendium = lazy(() => import('./RulesCompendium'));
+const EnemyBestiary = lazy(() => import('./EnemyBestiary'));
+const CutsceneWorkspace = lazy(() => import('./CutsceneWorkspace'));
 
 /**
  * The centre column — the only region that changes with the active tab.
  *
- * Tabs render in the plate grammar's bracket form (`[ 1ft 战术地图 ]`, active
- * state inverted into the accent); the emoji that used to stand in for icons
- * are Phosphor glyphs now.
+ * Workspace tabs keep only the scan-friendly destination label. Detailed names
+ * remain available as native tooltips for first-time users.
  */
 
-const WORKSPACES = [
-  { id: 'map', label: '1ft 战术地图', icon: 'map-trifold' },
-  { id: 'items', label: '物品流转中心', icon: 'backpack' },
-  { id: 'excel', label: '玩家卡与规则书导入', icon: 'table' },
-  { id: 'rules', label: '规则资料库', icon: 'books' }
+const BASE_WORKSPACES = [
+  { id: 'map', label: '战术地图', title: '1ft 战术地图', icon: 'map-trifold' },
+  { id: 'cutscene', label: '过场', title: '过场展示', icon: 'film-strip' },
+  { id: 'items', label: '物品', title: '物品流转中心', icon: 'backpack' },
+  { id: 'excel', label: '导入', title: '玩家卡与规则书导入', icon: 'table' }
 ];
 
 function ModuleFallback() {
@@ -35,8 +36,14 @@ export default function CampaignWorkspace({
   itemTemplates, setItemTemplates, groups, excelCards, setExcelCards,
   activeExcelCardId, setActiveExcelCardId, floatingNotes, setFloatingNotes,
   updateFloatingNote, deleteFloatingNote, onPresentationCameraChange, onPresentationInteractionChange,
-  presentationInteraction, presentationCamera, presentationCameraMode, ruleset
+  presentationInteraction, presentationCamera, presentationCameraMode, ruleset,
+  enemyBestiary, setEnemyBestiary, cutscenes, setCutscenes, activeCutsceneId,
+  setActiveCutsceneId, playerDisplayMode, setPlayerDisplayMode, onPresentCutscene, onPresentMap
 }) {
+  const workspaces = ruleset?.id === 'sf6-v0.9'
+    ? [...BASE_WORKSPACES, { id: 'bestiary', label: '图鉴', title: '敌人图鉴', icon: 'skull' }, { id: 'rules', label: '资料库', title: '规则资料库', icon: 'books' }]
+    : BASE_WORKSPACES;
+
   return (
     <main
       style={{
@@ -51,7 +58,7 @@ export default function CampaignWorkspace({
       }}
     >
       {!isPlayerViewMode && (
-        <Tabs value={currentTab} onChange={setCurrentTab} items={WORKSPACES} />
+        <Tabs value={currentTab} onChange={setCurrentTab} items={workspaces} />
       )}
       <Suspense fallback={<ModuleFallback />}>
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -62,7 +69,7 @@ export default function CampaignWorkspace({
               isInCombat, setIsInCombat, combatRound, setCombatRound, currentTurnIndex,
               setCurrentTurnIndex, combatParticipants, setCombatParticipants,
               combatTurnOrder, setCombatTurnOrder, onPresentationCameraChange,
-              onPresentationInteractionChange, presentationInteraction, presentationCamera, presentationCameraMode
+              onPresentationInteractionChange, presentationInteraction, presentationCamera, presentationCameraMode, itemPool
             }} />
           )}
           {currentTab === 'items' && !isPlayerViewMode && (
@@ -75,7 +82,9 @@ export default function CampaignWorkspace({
               characters, setCharacters, activeMapId, ruleset
             }} />
           )}
-          {currentTab === 'rules' && !isPlayerViewMode && <RulesCompendium ruleset={ruleset} />}
+          {currentTab === 'rules' && !isPlayerViewMode && ruleset?.id === 'sf6-v0.9' && <RulesCompendium ruleset={ruleset} />}
+          {currentTab === 'bestiary' && !isPlayerViewMode && ruleset?.id === 'sf6-v0.9' && <EnemyBestiary {...{ enemyBestiary, setEnemyBestiary, characters, setCharacters, itemPool, setItemPool, activeMapId, maps, addLog, ruleset }} />}
+          {currentTab === 'cutscene' && <CutsceneWorkspace {...{ cutscenes, setCutscenes, activeCutsceneId, setActiveCutsceneId, playerDisplayMode, setPlayerDisplayMode, onPresentCutscene, onPresentMap, isPlayerViewMode }} />}
         </div>
       </Suspense>
     </main>

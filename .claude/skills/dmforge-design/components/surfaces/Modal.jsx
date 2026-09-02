@@ -1,4 +1,5 @@
 import React from 'react';
+import DmforgeIcon from '../../../../../src/components/DmforgeIcon';
 
 export function Modal({ open = true, title, icon, onClose, footer, children, width = 560, style }) {
   if (!open) return null;
@@ -13,12 +14,12 @@ export function Modal({ open = true, title, icon, onClose, footer, children, wid
         background: 'var(--surface-panel)', boxShadow: 'inset 0 0 0 1px var(--bracket-line), var(--shadow-modal)', animation: 'dmf-rise-in var(--dur-base) var(--ease-out)', ...style
       }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-4) var(--space-5)', borderBottom: 'var(--border-hairline)' }}>
-          {icon ? <i className={'ph-fill ph-' + icon} style={{ fontSize: 18, lineHeight: 1, color: 'var(--accent)' }} aria-hidden="true" /> : null}
+          {React.isValidElement(icon) ? icon : icon ? <DmforgeIcon name={icon} size={18} fallbackClass={'ph-fill ph-' + icon} style={{ color: 'var(--accent)' }} /> : null}
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 'var(--display-weight)', fontSize: 'var(--type-display-md)', letterSpacing: 'var(--display-tracking)' }}>{title}</h2>
           <span style={{ flex: 1 }} />
           {onClose ? (
             <button type="button" onClick={onClose} title="关闭面板" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: 'none', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <i className="ph-fill ph-x" style={{ fontSize: 14 }} aria-hidden="true" />
+              <DmforgeIcon name="close" size={15} fallbackClass="ph-fill ph-x" />
             </button>
           ) : null}
         </header>

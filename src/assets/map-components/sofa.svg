@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Sofa</title>
+  <path d="M10 14h108v38H10z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M17 8h94l7 8H10l7-8Z" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M17 21h45v23H17zM66 21h45v23H66z" fill="#704080" fill-opacity=".45" stroke="#8d8190" stroke-width="1.5"/>
+  <path d="M10 19 4 25v20l6 7M118 19l6 6v20l-6 7" fill="#3a332d" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M20 48h88" stroke="#c58a00" stroke-width="1.5"/>
+</svg>

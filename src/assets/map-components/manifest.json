@@ -1,0 +1,300 @@
+{
+  "version": 2,
+  "coordinateSystem": "orthographic-top-down",
+  "anchor": "center",
+  "gridBasis": "1 footprint unit = 1 tactical grid cell",
+  "palette": {
+    "outlineWarmGray": "#b8aa9a",
+    "bodyBrownBlack": "#2b2724",
+    "bodyRaised": "#3a332d",
+    "surfaceDark": "#171311",
+    "functionalPurple": "#704080",
+    "statusGold": "#c58a00"
+  },
+  "stateColorGuidance": {
+    "normal": "Keep the source palette.",
+    "active": "Increase functionalPurple opacity or replace the smallest status marker with statusGold; do not add glow.",
+    "locked": "Use statusGold on the latch or access marker only.",
+    "alarm": "Replace functionalPurple status surfaces with the theme madder pigment; keep geometry and outline unchanged.",
+    "offline": "Desaturate functionalPurple to #5f5660 and remove the statusGold marker.",
+    "damaged": "Lower body fill contrast and add a separate crack decal; do not recolor the full object red.",
+    "selected": "Selection rings belong to the map UI layer and must not be baked into these SVGs."
+  },
+  "components": [
+    {
+      "id": "cryo-pod",
+      "file": "cryo-pod.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 4, "height": 5 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "threeQuarters",
+      "stateColors": { "closed": "functionalPurple", "open": "statusGold", "occupied": "retain warm-gray silhouette", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "main-console",
+      "file": "main-console.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 20, "height": 7 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "partial",
+      "cover": "threeQuarters",
+      "stateColors": { "standby": "functionalPurple", "unlocked": "statusGold", "alarm": "alarm", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "maintenance-bench",
+      "file": "maintenance-bench.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 10, "height": 3 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "partial",
+      "cover": "threeQuarters",
+      "stateColors": { "powered": "functionalPurple", "repairing": "statusGold", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "shelf",
+      "file": "shelf.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 8, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "blocked",
+      "cover": "full",
+      "stateColors": { "full": "functionalPurple dividers", "halfEmpty": "offline on empty bays", "searched": "statusGold on one bay", "collapsed": "damaged" }
+    },
+    {
+      "id": "cabinet",
+      "file": "cabinet.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "partial",
+      "cover": "half",
+      "stateColors": { "closed": "normal", "open": "functionalPurple", "locked": "locked", "empty": "offline" }
+    },
+    {
+      "id": "crate",
+      "file": "crate.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "partial",
+      "cover": "half",
+      "stateColors": { "sealed": "statusGold latch", "open": "functionalPurple", "looted": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "chair",
+      "file": "chair.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 1, "height": 1 },
+      "anchor": "center",
+      "movement": "difficult",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "normal": "normal", "occupied": "statusGold marker", "overturned": "damaged" }
+    },
+    {
+      "id": "sofa",
+      "file": "sofa.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "half",
+      "stateColors": { "normal": "functionalPurple upholstery", "searched": "statusGold seam", "damaged": "damaged" }
+    },
+    {
+      "id": "bed",
+      "file": "bed.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "half",
+      "stateColors": { "made": "functionalPurple blanket", "used": "lower functionalPurple opacity", "occupied": "statusGold marker", "damaged": "damaged" }
+    },
+    {
+      "id": "sink",
+      "file": "sink.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "working": "functionalPurple fixture", "running": "statusGold drain marker", "broken": "damaged" }
+    },
+    {
+      "id": "toilet",
+      "file": "toilet.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 1, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "normal": "normal", "inUse": "statusGold marker", "broken": "damaged" }
+    },
+    {
+      "id": "security-camera",
+      "file": "security-camera.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 1, "height": 1 },
+      "anchor": "center",
+      "movement": "transparent-mounted",
+      "vision": "sensor-source",
+      "cover": "none",
+      "stateColors": { "active": "statusGold lens", "alert": "alarm", "offline": "offline", "destroyed": "damaged" }
+    },
+    {
+      "id": "alarm-light",
+      "file": "alarm-light.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 1, "height": 1 },
+      "anchor": "center",
+      "movement": "transparent-mounted",
+      "vision": "light-source",
+      "cover": "none",
+      "stateColors": { "idle": "functionalPurple dome", "alert": "alarm", "offline": "offline", "destroyed": "damaged" }
+    },
+    {
+      "id": "scanner-zone",
+      "file": "scanner-zone.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 16, "height": 6 },
+      "anchor": "center",
+      "movement": "walkable-trigger",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "idle": "functionalPurple boundary", "scanning": "statusGold markers", "denied": "alarm", "disabled": "offline" }
+    },
+    {
+      "id": "gas-vent",
+      "file": "gas-vent.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 1 },
+      "anchor": "center",
+      "movement": "walkable-mounted",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "idle": "normal", "active": "statusGold fasteners with separate gas-area overlay", "sealed": "functionalPurple grate", "damaged": "damaged" }
+    },
+    {
+      "id": "lab-workstation",
+      "file": "lab-workstation.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "partial",
+      "cover": "threeQuarters",
+      "stateColors": { "standby": "functionalPurple screens", "active": "statusGold indicator", "locked": "locked", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "specimen-tank",
+      "file": "specimen-tank.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 3, "height": 3 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "threeQuarters",
+      "stateColors": { "sealed": "functionalPurple glass ring", "occupied": "retain warm-gray specimen lines", "open": "statusGold access marker", "drained": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "server-rack",
+      "file": "server-rack.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 3 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "blocked",
+      "cover": "full",
+      "stateColors": { "online": "functionalPurple bays with statusGold indicators", "busy": "statusGold indicators", "alarm": "alarm", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "locker-bank",
+      "file": "locker-bank.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "blocked",
+      "cover": "full",
+      "stateColors": { "closed": "normal", "open": "functionalPurple selected door", "locked": "statusGold latch", "searched": "offline selected door", "damaged": "damaged" }
+    },
+    {
+      "id": "medical-cart",
+      "file": "medical-cart.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 1 },
+      "anchor": "center",
+      "movement": "difficult-movable",
+      "vision": "partial",
+      "cover": "half",
+      "stateColors": { "stocked": "functionalPurple drawers with statusGold marker", "opened": "statusGold drawer edge", "empty": "offline", "contaminated": "alarm", "damaged": "damaged" }
+    },
+    {
+      "id": "vending-machine",
+      "file": "vending-machine.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 2, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "blocked",
+      "cover": "full",
+      "stateColors": { "powered": "functionalPurple display with statusGold button", "dispensing": "statusGold outlet", "empty": "offline display", "jammed": "alarm", "damaged": "damaged" }
+    },
+    {
+      "id": "potted-plant",
+      "file": "potted-plant.svg",
+      "canvas": "64x64",
+      "recommendedFootprint": { "width": 1, "height": 1 },
+      "anchor": "center",
+      "movement": "difficult-movable",
+      "vision": "transparent",
+      "cover": "none",
+      "stateColors": { "healthy": "functionalPurple leaves", "searched": "statusGold pot seam", "wilted": "offline", "overturned": "damaged" }
+    },
+    {
+      "id": "waiting-bench",
+      "file": "waiting-bench.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "transparent",
+      "cover": "half",
+      "stateColors": { "normal": "functionalPurple seat dividers", "occupied": "statusGold seat marker", "searched": "statusGold seam", "damaged": "damaged" }
+    },
+    {
+      "id": "generator",
+      "file": "generator.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 2 },
+      "anchor": "center",
+      "movement": "blocked",
+      "vision": "blocked",
+      "cover": "full",
+      "stateColors": { "standby": "functionalPurple service panels", "running": "statusGold indicator", "overloaded": "alarm", "offline": "offline", "damaged": "damaged" }
+    },
+    {
+      "id": "portable-barricade",
+      "file": "portable-barricade.svg",
+      "canvas": "128x64",
+      "recommendedFootprint": { "width": 4, "height": 1 },
+      "anchor": "center",
+      "movement": "blocked-movable",
+      "vision": "partial",
+      "cover": "threeQuarters",
+      "stateColors": { "deployed": "functionalPurple hazard slashes with statusGold marker", "folded": "offline", "locked": "locked", "damaged": "damaged" }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
-import { createSf6SheetData } from './sf6CharacterSheet.js';
+import { createSf6SheetData, normalizeSf6ResourcesForLevel } from './sf6CharacterSheet.js';
+import { safeCharacterImage } from './characterImages.js';
 
 const CORE_STATS = [
   ['力量 (Physical)', ['力量', 'strength', 'str', 'physical']],
@@ -58,6 +59,14 @@ const at = (sheet, address) => {
   return point ? sheet?.cells.get(`${point.r}:${point.c}`)?.value : undefined;
 };
 
+function parseLegacyDamage(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/(\d+)\s*d\s*(4|6|8|10|12|20)(?:\s*([+-])\s*(\d+))?/i);
+  if (!match) return { damageType: text };
+  const remaining = text.replace(match[0], '').replace(/^[\s/、,，·]+/, '').trim();
+  return { diceCount: Number(match[1]), die: `d${match[2]}`, fixedDamage: match[4] ? Number(match[4]) * (match[3] === '-' ? -1 : 1) : 0, damageType: remaining };
+}
+
 function extractSf6Template(sheets, filename) {
   const card = sheets.find(sheet => sheet.name === '角色卡');
   const classes = sheets.find(sheet => sheet.name === '职业模板');
@@ -85,7 +94,7 @@ function extractSf6Template(sheets, filename) {
     inventory: String(at(card, 'H3') || '').trim(), biography: String(at(card, 'H6') || '').trim(),
     statBonuses: Object.fromEntries(statNames.map((name, index) => [name, numberFrom(at(card, `D${index + 10}`), { min: -100, max: 100 }) ?? 0])),
     drive: ['C26','D26','E26','F26','H26','I26'].map(address => !['', '□', '0', 'false'].includes(String(at(card, address) ?? '').trim().toLowerCase())),
-    attacks: Array.from({ length: 6 }, (_, index) => ({ name: String(at(card, `B${29 + index}`) || '').trim(), attackBonus: String(at(card, `D${29 + index}`) || '').trim(), damageType: String(at(card, `F${29 + index}`) || '').trim() })),
+    attacks: Array.from({ length: 6 }, (_, index) => ({ name: String(at(card, `B${29 + index}`) || '').trim(), attackBonus: String(at(card, `D${29 + index}`) || '').trim(), ...parseLegacyDamage(at(card, `F${29 + index}`)) })),
     attackNotes: String(at(card, 'H29') || '').trim(),
     skillProficiencies: Object.fromEntries(skillIds.map((id, index) => [id, at(card, `D${38 + index}`) === true || Number(at(card, `D${38 + index}`)) === 1])),
     selectedFeatNames: ['C68','C69','C70'].map(address => String(at(card, address) || '').trim())
@@ -149,7 +158,65 @@ function hpPair(value) {
 }
 
 function fallbackName(filename) {
-  return String(filename || '未命名角色卡').replace(/\.(xlsx|xls|xlsm|xlsb)$/i, '').trim() || '未命名角色卡';
+  return String(filename || '未命名角色卡').replace(/\.(xlsx|xls|xlsm|xlsb|json)$/i, '').trim() || '未命名角色卡';
+}
+
+const PLAYER_CARD_FORMAT = 'dmforge-player-character-v1';
+
+function safeText(value, max = 10_000) {
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+/** Parse the offline player sheet export without trusting arbitrary object fields. */
+export function extractPlayerCharacterExport(source, filename = '') {
+  let payload;
+  try {
+    payload = typeof source === 'string' ? JSON.parse(source) : source;
+  } catch {
+    throw new Error('玩家角色卡 JSON 格式无效。');
+  }
+  if (!payload || payload.format !== PLAYER_CARD_FORMAT || !payload.character || Array.isArray(payload.character)) {
+    throw new Error('这不是 DMForge 独立玩家角色卡导出文件。');
+  }
+  const raw = payload.character;
+  const rawSheet = raw.sheet && typeof raw.sheet === 'object' && !Array.isArray(raw.sheet) ? raw.sheet : {};
+  const sheet = createSf6SheetData({
+    playerName: safeText(rawSheet.playerName, 200),
+    background: safeText(rawSheet.background, 500),
+    personality: safeText(rawSheet.personality, 1_000),
+    gender: safeText(rawSheet.gender, 100),
+    inventory: safeText(rawSheet.inventory),
+    biography: safeText(rawSheet.biography),
+    avatarImage: safeCharacterImage(rawSheet.avatarImage),
+    portraitImage: safeCharacterImage(rawSheet.portraitImage),
+    statBonuses: Object.fromEntries(Object.entries(rawSheet.statBonuses || {}).map(([key, value]) => [safeText(key, 30), Math.max(0, Math.min(10, Number(value) || 0))])),
+    deathSaveSuccesses: Math.max(0, Math.min(3, Number(rawSheet.deathSaveSuccesses) || 0)),
+    deathSaveFailures: Math.max(0, Math.min(3, Number(rawSheet.deathSaveFailures) || 0)),
+    drive: Array.from({ length: 6 }, (_, index) => Boolean(rawSheet.drive?.[index])),
+    attacks: Array.from({ length: 6 }, (_, index) => rawSheet.attacks?.[index] || {}),
+    skillProficiencies: Object.fromEntries(Object.entries(rawSheet.skillProficiencies || {}).filter(([, value]) => Boolean(value)).slice(0, 5).map(([key]) => [safeText(key, 40), true])),
+    acOverride: Object.hasOwn(rawSheet, 'acOverride')
+      ? (rawSheet.acOverride === null || rawSheet.acOverride === '' ? null : Math.max(0, Math.min(100, Number(rawSheet.acOverride) || 0)))
+      : (Number.isFinite(Number(raw.ac)) ? Math.max(0, Math.min(100, Number(raw.ac))) : null),
+    selectedFeats: Array.from({ length: 3 }, (_, index) => safeText(rawSheet.selectedFeats?.[index], 100)),
+    selectedFeatNames: Array.from({ length: 3 }, (_, index) => safeText(rawSheet.selectedFeatNames?.[index], 200))
+  });
+  const maxHp = Math.max(1, Math.min(1_000_000, Number(raw.maxHp) || 1));
+  const character = {
+    name: safeText(raw.name, 200) || fallbackName(filename), type: 'PC',
+    class: safeText(raw.class, 100) || '未识别职业', subclass: safeText(raw.subclass, 100),
+    race: safeText(raw.race, 100) || '人类', alignment: safeText(raw.alignment, 100),
+    level: Math.max(1, Math.min(10, Number(raw.level) || 1)),
+    hp: Math.max(0, Math.min(maxHp, Number(raw.hp) || 0)), maxHp,
+    tempHp: Math.max(0, Math.min(1_000_000, Number(raw.tempHp) || 0)), sheet
+  };
+  return {
+    character,
+    found: ['姓名', '职业', '子职业', '等级', '六维属性', '战斗数据', '技能', '专长'],
+    warnings: character.class === '未识别职业' ? ['未识别职业，导入后请在角色编辑器中确认'] : [],
+    sheetCount: 0,
+    format: PLAYER_CARD_FORMAT
+  };
 }
 
 export function extractCharacterSheet(workbook, filename = '') {
@@ -203,6 +270,7 @@ export function extractCharacterSheet(workbook, filename = '') {
 export function mergeImportedCharacter(existing, imported, { cardId, mapId, now = Date.now() } = {}) {
   const base = existing || {};
   const maxHp = Math.max(1, imported.maxHp ?? base.maxHp ?? 1);
+  const level = imported.level ?? base.level ?? 1;
   return {
     ...base,
     id: base.id || `char_${now}`,
@@ -210,6 +278,8 @@ export function mergeImportedCharacter(existing, imported, { cardId, mapId, now 
     type: imported.type || base.type || 'PC',
     class: imported.class || base.class || '未识别职业',
     subclass: imported.subclass || base.subclass || '',
+    race: imported.race || base.race || '',
+    alignment: imported.alignment || base.alignment || '',
     hp: Math.min(maxHp, Math.max(0, imported.hp ?? base.hp ?? maxHp)),
     maxHp,
     ac: imported.ac ?? base.ac ?? 10,
@@ -220,22 +290,24 @@ export function mergeImportedCharacter(existing, imported, { cardId, mapId, now 
     mapId: base.mapId || mapId,
     stats: { ...(base.stats || {}), ...(imported.stats || {}) },
     feats: imported.feats || base.feats || { '角色卡导入': '由 Excel 角色卡自动建立，可在角色编辑器中继续调整。' },
-    resources: imported.resources || base.resources || [
+    resources: normalizeSf6ResourcesForLevel(imported.resources || base.resources || [
       { name: '动作', max: 1, value: 1, resetType: 'turn' },
       { name: '附赠动作', max: 1, value: 1, resetType: 'turn' },
       { name: '反应', max: 1, value: 1, resetType: 'turn' },
       { name: '斗气', max: 6, value: 6, resetType: 'short_rest' },
       { name: '超级必杀槽', max: 1, value: 1, resetType: 'long_rest' }
-    ],
+    ], level),
     conditions: base.conditions || [],
     groupId: base.groupId || 'group_pcs',
     combatSpeedRemaining: imported.speed ?? base.combatSpeedRemaining ?? base.speed ?? 30,
     combatStartGridX: base.combatStartGridX ?? base.gridX ?? 2,
     combatStartGridY: base.combatStartGridY ?? base.gridY ?? 2,
-    level: imported.level ?? base.level ?? 1,
+    level,
     hitDice: imported.hitDice || base.hitDice || 'd8',
     levelHpIncreases: base.levelHpIncreases || [],
     tempHp: imported.tempHp ?? base.tempHp ?? 0,
+    avatarImage: imported.avatarImage || imported.sheet?.avatarImage || base.avatarImage || base.sheet?.avatarImage || '',
+    portraitImage: imported.portraitImage || imported.sheet?.portraitImage || base.portraitImage || base.sheet?.portraitImage || '',
     sheet: imported.sheet || base.sheet,
     savingThrows: imported.savingThrows || base.savingThrows,
     skillTotals: imported.skillTotals || base.skillTotals,

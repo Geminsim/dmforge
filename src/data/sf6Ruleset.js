@@ -1,4 +1,5 @@
 import { SF6_WORKBOOK_DATA } from './sf6WorkbookData.js';
+import { SF6_091_CLASS_FEATURE_OVERRIDES, SF6_091_EXTRA_FEATS, SF6_091_FEAT_OVERRIDES, SF6_091_SECTIONS } from './sf6Rulebook091.js';
 
 export const SF6_ATTRIBUTE_LABELS = {
   strength: '力量', speed: '速度', endurance: '耐力', control: '控制', precision: '精密', charisma: '魅力'
@@ -30,7 +31,13 @@ export const SF6_CONDITIONS = [
   ['ice', '冰冻', 'stack', '每层移动距离 -20%，5 层触发冰暴。'],
   ['fire', '燃烧', 'stack', '移动路径留下火焰并造成环境伤害。'],
   ['electric', '电击', 'stack', '叠层产生电击相关附加效果。']
-].map(([id, name, timing, description]) => ({ id, name, timing, description, source: '规则书 v0.9', automation: 'basic' }));
+].map(([id, name, timing, description]) => ({ id, name, timing, description, source: '规则书 v0.9.1', automation: 'basic' }));
+
+const updateFeature = feature => ({
+  ...feature,
+  description: SF6_091_CLASS_FEATURE_OVERRIDES[feature.name.replace(/^\d+级\s*\|\s*/, '')] || feature.description,
+  source: '规则书 v0.9.1'
+});
 
 export const SF6_CLASSES = [
   { id: 'martial-artist', name: '武道者', stats: [15,10,14,12,13,8], saves: ['力量','速度'], hitDice: 'd8', ac: 10, speed: 30, subclasses: ['正统派','邪修派','隐士'] },
@@ -46,17 +53,30 @@ export const SF6_CLASSES = [
     ? { ...authored.subclasses, 荣誉行刑官: authored.subclasses['荣誉行刑官'] || authored.subclasses['荣耀行刑官'] }
     : authored.subclasses;
   if (entry.id === 'executioner') delete subclassFeatures['荣耀行刑官'];
-  return { ...entry, attributeOrder: Object.keys(SF6_ATTRIBUTE_LABELS), features: authored.baseFeatures, subclassFeatures, source: '角色卡/规则书 v0.9' };
+  return {
+    ...entry,
+    attributeOrder: Object.keys(SF6_ATTRIBUTE_LABELS),
+    features: authored.baseFeatures.map(updateFeature),
+    subclassFeatures: Object.fromEntries(Object.entries(subclassFeatures).map(([name, features]) => [name, features.map(updateFeature)])),
+    source: '角色卡/规则书 v0.9.1'
+  };
 });
 
-export const SF6_FEATS = SF6_WORKBOOK_DATA.feats.map(feat => ({
+export const SF6_FEATS = [...SF6_WORKBOOK_DATA.feats.map(feat => ({
   ...feat,
-  description: feat.minimumLevel === 5 ? feat.description.replace(/\s*（[^）]+）\s*$/, '').trim() : feat.description,
-  source: '角色卡/规则书 v0.9'
-}));
+  description: SF6_091_FEAT_OVERRIDES[feat.name] || feat.description,
+  source: '规则书 v0.9.1'
+})), ...SF6_091_EXTRA_FEATS].sort((a, b) => a.minimumLevel - b.minimumLevel);
 
-export const SF6_RULE_SECTIONS = [
-  { id: 'setting', category: '背景故事', title: '世界格斗大赛', pages: [1], summary: '2–4 名格斗家来到蒙彼利埃参加五年一度的世界格斗大赛，并被卷入赛事之外的事件。' },
+export const LEGACY_SF6_RULE_SECTIONS = [
+  { id: 'setting', category: '背景故事', title: '世界新人格斗大赛', pages: [1], summary: '来自世界各地的 32 名新人格斗家通过地方资格赛，在从未完全公开彼此实力的情况下参加世界级单败淘汰赛。', details: [
+    { title: '参赛者与赛事规模', text: '玩家均是首次参加世界级比赛的新人格斗家，已经赢得各自地区的资格赛，并作为 32 名种子选手之一来到举办城市。所谓“新人”只表示从未参加世界级赛事，而不代表缺乏实战经验。由于选手此前没有公开展示全部实力，彼此的门派、招式和底牌仍然未知，这也是赛事最重要的观赏性来源。' },
+    { title: '比赛制度', text: '正式比赛采用一对一格斗与单败淘汰制。玩家在第一章开始前已经完成报名，并且已经超过自由退赛期限。赛前 VR 模拟竞技不属于正式淘汰赛，而是让参赛者熟悉对手、展示流派并建立关系的热身活动。' },
+    { title: '冠军与门派收益', text: '赢得世界新人格斗大赛不仅会带来高价值道具，还会让获胜者与其门派共同获得新的特性和技能。赛事因此同时关系到个人声望、门派传承与未来的格斗道路。' },
+    { title: '退赛限制与主办方惩罚', text: '退赛期限结束后，只有经过证明的身体原因或获批的紧急状况才能合法退赛。无理由退赛者会遭到主办方永久禁赛，并失去获得经验的资格；主办方还能追踪其在世界各地发生的战斗，派出无人机进行干扰。这项严苛制度是第一章冲突的重要背景。' },
+    { title: '第一章：从赛场到研究所', text: '玩家在赛前 VR 竞技场相识并进行一场不消耗现实资源的模拟战。赛后，一名敌视赛事主办方的巨型西装男子提出以退赛换取秘密训练；无论玩家接受、拒绝或产生分歧，众人最终都会被其势力控制并运往研究所。冠军依靠“温热石吊坠”的状态重置能力从冷冻睡眠仓醒来，继而营救队友、探索研究所并设法突围。' },
+    { title: '研究所的秘密', text: '研究所表面拥有普通研究员、安保队伍与中央控制室，实质上是改造士兵研发基地。其人员深入研究不同格斗领域，并试图把有潜力的新人格斗家改造成失去独立思考能力的杀戮机器。第一章以玩家离开研究所围墙、发现自己已身处远离城市的荒郊野岭而结束。' }
+  ] },
   { id: 'turn-economy', category: '战斗方式', title: '回合资源', pages: [1,2], summary: '角色通过动作、附赠动作、反应、移动力、斗气与超级必杀槽安排每轮行动。', details: [
     { title: '动作与附赠动作', text: '每名角色通常拥有 1 个动作与 1 个附赠动作，并在自己的回合开始时恢复。动作主要用于普通技、必杀技与其他主要行动；轻攻击等明确注明的动作可以由附赠动作执行。已经消耗的资源不会在同一回合自然再次获得，除非能力明确返还。' },
     { title: '反应', text: '每名角色通常拥有 1 个反应，并在自己的回合开始时恢复。完美防御、斗气反攻、抢招等能力会消耗反应。反应发生在触发事件满足时，不需要等到自己的回合。' },
@@ -129,10 +149,12 @@ export const SF6_RULE_SECTIONS = [
   ] }
 ];
 
+export const SF6_RULE_SECTIONS = SF6_091_SECTIONS;
+
 export const SF6_RULESET = {
-  id: 'sf6-v0.9', name: 'SF6 风格回合制 TRPG', version: '0.9', status: 'draft',
-  sourceDocument: '（sf6）dnd跑团 v 0.9.pdf', attributes: SF6_ATTRIBUTE_LABELS,
-  sourceDocumentUrl: '/templates/sf6-rulebook-v0.9.pdf',
+  id: 'sf6-v0.9', name: 'SF6 风格回合制 TRPG', version: '0.9.1', status: 'draft',
+  sourceDocument: 'sf6 dnd规则 v 0.9.1.pdf', attributes: SF6_ATTRIBUTE_LABELS,
+  sourceDocumentUrl: '/templates/sf6-rulebook-v0.9.1.pdf',
   characterSheetTemplate: '/templates/角色卡.xlsx',
   resources: SF6_RESOURCES, conditions: SF6_CONDITIONS, classes: SF6_CLASSES,
   feats: SF6_FEATS, sections: SF6_RULE_SECTIONS,

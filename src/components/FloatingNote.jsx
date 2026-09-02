@@ -1,5 +1,6 @@
 import React from 'react';
 import { NOTE_TONES, colorForTone, toneForNote } from '../utils/noteTone';
+import DmforgeIcon from './DmforgeIcon';
 
 /**
  * A note the DM drags around on top of the map.
@@ -129,7 +130,7 @@ function FloatingNote({ note, onClose, onUpdate }) {
           userSelect: 'none'
         }}
       >
-        <i className="ph-fill ph-note" style={{ fontSize: 12, color: TONE_VAR(tone) }} aria-hidden="true" />
+        <DmforgeIcon name="note" size={13} style={{ color: TONE_VAR(tone) }} />
         <input
           type="text"
           value={note.title}
@@ -154,7 +155,7 @@ function FloatingNote({ note, onClose, onUpdate }) {
           style={iconBtn}
           title={note.isMinimized ? '展开' : '折叠'}
         >
-          <i className={`ph-fill ph-${note.isMinimized ? 'arrows-out-simple' : 'minus'}`} style={{ fontSize: 11 }} aria-hidden="true" />
+          <DmforgeIcon name={note.isMinimized ? 'fit-view' : 'remove'} size={13} fallbackClass={`ph-fill ph-${note.isMinimized ? 'arrows-out-simple' : 'minus'}`} />
         </button>
         <button
           type="button"
@@ -162,7 +163,7 @@ function FloatingNote({ note, onClose, onUpdate }) {
           style={{ ...iconBtn, color: 'var(--pigment-madder)' }}
           title="关闭笔记 (可在列表重新打开)"
         >
-          <i className="ph-fill ph-x" style={{ fontSize: 11 }} aria-hidden="true" />
+          <DmforgeIcon name="close" size={13} />
         </button>
       </header>
 

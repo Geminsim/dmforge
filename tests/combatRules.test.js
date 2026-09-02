@@ -1,9 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceCombatTurn, effectiveArmorClass, processTurnEndConditions, processTurnStartConditions, resetResourcesForRest, resetTurnResources, rollInitiative, spendResource, tickRoundConditions } from '../src/utils/combatRules.js';
+import { advanceCombatTurn, effectiveArmorClass, prepareCharacterForCombat, processTurnEndConditions, processTurnStartConditions, removeCombatantFromState, resetResourcesForRest, resetTurnResources, rollInitiative, spendResource, tickRoundConditions } from '../src/utils/combatRules.js';
 
 test('wraps turn order and increments the round', () => {
   assert.deepEqual(advanceCombatTurn(2, 4, 3), { nextIndex: 0, nextRound: 5, wrapped: true });
+});
+
+test('removing a defeated combatant clears participation and keeps the turn index valid', () => {
+  assert.deepEqual(removeCombatantFromState('b', ['a', 'b', 'c'], [{ id: 'a' }, { id: 'b' }, { id: 'c' }], 2), {
+    combatParticipants: ['a', 'c'],
+    combatTurnOrder: [{ id: 'a' }, { id: 'c' }],
+    currentTurnIndex: 1
+  });
+  assert.equal(removeCombatantFromState('c', ['a', 'c'], [{ id: 'a' }, { id: 'c' }], 1).currentTurnIndex, 0);
+  assert.equal(removeCombatantFromState('only', ['only'], [{ id: 'only' }], 0).currentTurnIndex, 0);
 });
 
 test('resets movement and only turn resources', () => {
@@ -38,10 +48,16 @@ test('spending the last drive enters burnout and applies AC penalty', () => {
   assert.equal(effectiveArmorClass(result), 11);
 });
 
-test('short rest restores drive and clears resource-created burnout', () => {
+test('short rest restores three drive and clears resource-created burnout', () => {
   const result = resetResourcesForRest({ resources: [{ name: '斗气', value: 0, max: 6, resetType: 'short_rest' }], conditions: [{ id: 'burnout', name: '斗气枯竭', duration: 'permanent' }] }, 'short');
-  assert.equal(result.resources[0].value, 6);
+  assert.equal(result.resources[0].value, 3);
   assert.deepEqual(result.conditions, []);
+});
+
+test('level six characters recover three drive when combat begins', () => {
+  const resource = { name: '斗气', value: 1, max: 6, resetType: 'short_rest' };
+  assert.equal(prepareCharacterForCombat({ level: 5, resources: [resource] }).resources[0].value, 1);
+  assert.equal(prepareCharacterForCombat({ level: 6, resources: [resource] }).resources[0].value, 4);
 });
 
 test('long rest restores the single super meter slot', () => {

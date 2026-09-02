@@ -1,7 +1,9 @@
+import { effectiveSpeed } from './inventoryRules.js';
+
 export function resetTurnResources(character) {
   return {
     ...character,
-    combatSpeedRemaining: character.speed ?? 30,
+    combatSpeedRemaining: effectiveSpeed(character),
     combatStartGridX: character.gridX ?? 2,
     combatStartGridY: character.gridY ?? 2,
     resources: (character.resources || []).map(resource =>
@@ -10,9 +12,24 @@ export function resetTurnResources(character) {
   };
 }
 
+export function prepareCharacterForCombat(character) {
+  const prepared = resetTurnResources(character);
+  if ((Number(character.level) || 1) < 6) return prepared;
+  return {
+    ...prepared,
+    resources: (prepared.resources || []).map(resource => resource.name === '斗气'
+      ? { ...resource, value: Math.min(resource.max, (resource.value || 0) + 3) }
+      : resource)
+  };
+}
+
 export function resetResourcesForRest(character, restType) {
   const allowed = restType === 'long' ? new Set(['turn', 'short_rest', 'long_rest']) : new Set(['turn', 'short_rest']);
-  const resources = (character.resources || []).map(resource => allowed.has(resource.resetType) ? { ...resource, value: resource.max } : resource);
+  const resources = (character.resources || []).map(resource => {
+    if (!allowed.has(resource.resetType)) return resource;
+    if (restType === 'short' && resource.name === '斗气') return { ...resource, value: Math.min(resource.max, (resource.value || 0) + 3) };
+    return { ...resource, value: resource.max };
+  });
   const drive = resources.find(resource => resource.name === '斗气');
   return { ...character, resources, conditions: (character.conditions || []).filter(condition => !(condition.id === 'burnout' && (!drive || drive.value > 0))) };
 }
@@ -45,7 +62,7 @@ export function processTurnStartConditions(character) {
     if (conditionMatches(condition, ['hard-knockdown'], ['强制倒地'])) { removed.push(condition); movementMultiplier = 0.5; return false; }
     return true;
   });
-  const speed = character.speed ?? 30;
+  const speed = effectiveSpeed(character);
   return { character: { ...character, conditions, combatSpeedRemaining: Math.floor(speed * movementMultiplier), combatStartGridX: character.gridX ?? 2, combatStartGridY: character.gridY ?? 2 }, removed, movementMultiplier };
 }
 
@@ -89,6 +106,16 @@ export function advanceCombatTurn(currentTurnIndex, combatRound, orderLength) {
   const nextIndex = (currentTurnIndex + 1) % orderLength;
   const wrapped = nextIndex === 0;
   return { nextIndex, nextRound: wrapped ? combatRound + 1 : combatRound, wrapped };
+}
+
+export function removeCombatantFromState(characterId, combatParticipants = [], combatTurnOrder = [], currentTurnIndex = 0) {
+  const removedIndex = combatTurnOrder.findIndex(entry => (typeof entry === 'string' ? entry : entry?.id) === characterId);
+  const nextOrder = combatTurnOrder.filter(entry => (typeof entry === 'string' ? entry : entry?.id) !== characterId);
+  const nextParticipants = combatParticipants.filter(entry => (typeof entry === 'string' ? entry : entry?.id) !== characterId);
+  let nextIndex = Math.max(0, Number(currentTurnIndex) || 0);
+  if (removedIndex >= 0 && removedIndex < nextIndex) nextIndex -= 1;
+  if (nextIndex >= nextOrder.length) nextIndex = 0;
+  return { combatParticipants: nextParticipants, combatTurnOrder: nextOrder, currentTurnIndex: nextIndex };
 }
 
 export function rollInitiative(characters, participantIds, random = Math.random) {

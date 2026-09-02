@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Bed</title>
+  <path d="M5 7h118v50H5z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M12 12h104v40H12z" fill="#5f5660" stroke="#8d8190" stroke-width="1.5"/>
+  <path d="M13 13h28v38H13z" fill="#3a332d" stroke="#b8aa9a" stroke-width="1.5"/>
+  <path d="M47 13h68v38H47z" fill="#704080" fill-opacity=".28" stroke="#8d8190" stroke-width="1"/>
+  <path d="M8 7v50M120 7v50M52 18h55M52 24h38" stroke="#c58a00" stroke-width="1"/>
+</svg>

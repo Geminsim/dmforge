@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>DMForge 玩家角色卡</title>
+  <style>__STYLE__</style>
+  <style>
+    main,.panel,.two-col>*{min-width:0}.table-scroll{width:100%;max-width:100%}
+    .logo-adaptive{position:relative;display:inline-block;width:42px;height:42px;flex:0 0 auto;background:var(--logo) center/contain no-repeat}
+    .logo-adaptive::after{content:"";position:absolute;inset:0;background:var(--logo) center/contain no-repeat;filter:brightness(0) invert(1);mix-blend-mode:screen;opacity:.58;pointer-events:none}
+    .hero-logo{width:74px;height:74px}.sheet-title>.logo-adaptive{width:74px;height:74px}
+    h2 small{float:right;color:#bec7dd;font-size:10px;letter-spacing:0;text-transform:none}.section-hint{margin:-7px 0 10px;color:var(--faint);font-size:11px}
+    .skill.is-background{background:rgba(217,169,40,.07)}.skill em{margin-left:6px;color:var(--gold);font-size:9px;font-style:normal}.skill input:disabled{opacity:.8}
+    .character-images{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(300px,1.3fr);gap:14px}.image-upload{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;padding:12px;border:1px solid var(--line);background:#0c101a;border-radius:8px}.image-preview{width:112px;height:112px;display:grid;place-items:center;overflow:hidden;border:1px dashed #58627a;border-radius:50%;color:var(--faint);background:#080b12}.image-upload.portrait .image-preview{width:120px;height:168px;border-radius:7px}.image-preview img{width:100%;height:100%;object-fit:cover}.image-controls{display:flex;flex-wrap:wrap;gap:8px}.image-controls strong,.image-controls small{width:100%;display:block}.image-controls small{color:var(--muted);line-height:1.55}.image-controls label{display:inline-flex;width:auto;padding:8px 12px;border:1px solid var(--line);border-radius:7px;background:var(--raised);color:var(--text);cursor:pointer}.image-controls input{display:none}
+    .crop-overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:18px;background:rgba(0,0,0,.78)}.crop-dialog{width:min(440px,100%);padding:18px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 24px 70px #000}.crop-dialog h2{margin:-18px -18px 10px}.crop-dialog p{color:var(--muted);font-size:12px}.crop-dialog canvas{display:block;width:min(320px,100%);height:auto;margin:14px auto;border-radius:50%;background:#080b12;box-shadow:0 0 0 2px var(--violet)}.crop-dialog label{grid-template-columns:90px 1fr;align-items:center;margin-top:8px}.crop-dialog input[type=range]{padding:0}.crop-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+    [hidden]{display:none!important}.view-switch{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.view-switch button{border:0;border-radius:0}.view-switch button.active{background:var(--violet);color:#100d18}.rules-header{display:flex;align-items:end;justify-content:space-between;gap:20px;border-color:#503d7b}.rules-header span{color:var(--violet);font-size:10px;letter-spacing:.18em;font-weight:800}.rules-header h1{margin:3px 0;font-size:30px}.rules-header p{margin:0;color:var(--muted);font-size:12px}.rules-header label{width:min(420px,100%)}.rules-content{display:grid;gap:12px}.rule-group,.rule-entry{border:1px solid var(--line);border-radius:9px;background:linear-gradient(145deg,rgba(23,28,43,.98),rgba(15,19,30,.98))}.rule-group>summary,.rule-entry>summary{cursor:pointer;padding:13px 15px;font-weight:800}.rule-group>summary{font-size:18px}.rule-entry>summary{color:var(--violet)}.rule-body{padding:0 16px 16px}.rule-body>p{color:var(--muted);line-height:1.75}.rule-detail{padding:11px 0;border-top:1px solid var(--line)}.rule-detail h4{margin:0 0 6px;color:var(--gold);font-size:14px;text-decoration:underline;text-underline-offset:3px}.rule-detail p{margin:0;color:#c8cede;font-size:12px;line-height:1.75;white-space:pre-wrap}.rule-page{float:right;color:var(--faint);font:10px ui-monospace,Consolas,monospace}.class-meta{color:var(--muted);font-size:11px}.subclass-title{margin:16px 0 0;padding:8px;border-left:3px solid var(--violet);background:#0c101a}.rule-empty{padding:24px;text-align:center;color:var(--faint)}.rule-source-link{display:inline-flex;margin-top:4px;padding:9px 13px;border-radius:8px;background:var(--violet);color:#100d18;text-decoration:none;font-weight:800}.rule-source-link:hover{filter:brightness(1.08)}
+    @media(max-width:560px){.brand .logo-adaptive{width:34px;height:34px}.hero-logo,.sheet-title>.logo-adaptive{width:52px;height:52px}.rules-header{align-items:stretch;flex-direction:column}.view-switch{width:100%}.view-switch button{flex:1}}
+    @media(max-width:680px){.character-images{grid-template-columns:1fr}.image-upload{grid-template-columns:1fr}.image-preview{margin:auto}}
+    @media print{.logo-adaptive::after{display:none}}
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand"><span class="logo-adaptive" style="--logo:url('__LOGO__')" role="img" aria-label="DMForge"></span><div><strong>DMForge</strong><span>独立玩家角色卡 · SF6 v0.9.1</span></div></div>
+    <div class="actions">
+      <span class="view-switch"><button type="button" data-view="sheet" class="active">角色卡</button><button type="button" data-view="rules">规则参考</button></span>
+      <span id="save-status" class="save-status">已在本机自动保存</span>
+      <button type="button" data-action="import">导入角色卡</button>
+      <button type="button" data-action="export" class="primary">导出给 DM</button>
+      <button type="button" data-action="print">打印</button>
+      <button type="button" data-action="reset" class="danger">清空</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+  <div class="notice"><strong>离线使用</strong> 所有填写内容仅保存在当前浏览器；无需联网，也不会与 DM 页面实时同步。请定期点击“导出给 DM”保存备份。</div>
+  <main id="sheet-view">
+    <section class="sheet-title panel">
+      <span class="logo-adaptive hero-logo" style="--logo:url('__LOGO__')" aria-hidden="true"></span>
+      <div><span>PLAYER DOSSIER</span><h1 id="sheet-heading">未命名角色</h1></div>
+      <label>等级<input id="level" data-path="level" type="number" min="1" max="10" value="3"></label>
+      <label>熟练加值<output id="pb">+2</output></label>
+    </section>
+
+    <details class="panel collapsible-panel">
+      <summary><h2>角色形象</h2><span>头像与肖像</span></summary>
+      <div class="character-images">
+        <div class="image-upload avatar"><div id="avatar-preview" class="image-preview"><span>角色头像</span></div><div class="image-controls"><strong>角色头像</strong><small>用于地图棋子和角色缩略图，建议上传正方形图片。</small><label>选择头像<input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button type="button" data-remove-image="avatarImage">移除</button></div></div>
+        <div class="image-upload portrait"><div id="portrait-preview" class="image-preview"><span>角色肖像</span></div><div class="image-controls"><strong>角色肖像</strong><small>用于角色资料参考，建议上传竖版全身或半身像。</small><label>选择肖像<input id="portrait-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button type="button" data-remove-image="portraitImage">移除</button></div></div>
+      </div>
+    </details>
+
+    <section class="panel">
+      <h2>基本信息</h2>
+      <div class="form-grid identity-grid">
+        <label>角色姓名<input data-path="name" maxlength="80"></label>
+        <label>玩家姓名<input data-path="sheet.playerName" maxlength="80"></label>
+        <label>背景出身<select id="background-select" data-path="sheet.background"></select></label>
+        <label>阵营 / 国籍<select id="alignment-select" data-path="alignment"></select></label>
+        <label>职业<select id="class-select" data-path="class"></select></label>
+        <label>子职业<select id="subclass-select" data-path="subclass"></select></label>
+        <label>种族<input data-path="race" value="人类" maxlength="80"></label>
+        <label>性别<input data-path="sheet.gender" maxlength="80"></label>
+        <label>性格（MBTI）<select id="personality-select" data-path="sheet.personality"></select></label>
+      </div>
+    </section>
+
+    <div class="two-col">
+      <section class="panel"><h2>六维属性</h2><div class="table-scroll"><table id="stats-table"><thead><tr><th>属性</th><th>基础</th><th>提升</th><th>当前</th><th>调整值</th><th>豁免熟练</th><th>豁免</th></tr></thead><tbody></tbody></table></div></section>
+      <section class="panel"><h2>战斗数据</h2><div id="combat-grid" class="combat-grid"></div><h3>斗气槽</h3><div id="drive-track" class="drive-track" aria-label="斗气槽"></div></section>
+    </div>
+
+    <section class="panel"><h2>攻击与施法</h2><div class="table-scroll"><table id="attacks-table"><thead><tr><th>#</th><th>招式名称</th><th>命中加值</th><th>骰数</th><th>伤害骰</th><th>固定值</th><th>伤害类型</th><th>效果描述 / 备注</th></tr></thead><tbody></tbody></table></div></section>
+
+    <div class="two-col lower-grid">
+      <section class="panel"><h2>技能 <small id="skill-count">出身 0 项 + 自选 0 / 3</small></h2><p class="section-hint">背景出身附带的两项熟练不占名额并固定保留；除此之外还可自选最多 3 项。</p><div id="skills-grid" class="skills-grid"></div></section>
+      <section class="panel"><h2>装备 / 物品栏</h2><textarea data-path="sheet.inventory" class="inventory" rows="15" placeholder="装备、消耗品与携带物品……"></textarea></section>
+    </div>
+
+    <details class="panel collapsible-panel"><summary><h2>职业与子职业特性</h2><span>按等级计算</span></summary><div id="features" class="prose empty">选择职业后自动显示当前等级可用特性。</div></details>
+    <details class="panel collapsible-panel"><summary><h2>专长</h2><span>名称与效果</span></summary><div id="feats-grid" class="feats-grid"></div></details>
+    <details class="panel collapsible-panel"><summary><h2>人物简介</h2><span>背景资料</span></summary><textarea data-path="sheet.biography" rows="8" maxlength="10000" placeholder="外貌、经历、人物关系与其他参考信息……"></textarea></details>
+  </main>
+  <main id="rules-view" hidden>
+    <section class="rules-header panel">
+      <div><span>RULES COMPENDIUM</span><h1>玩家规则参考</h1><p>与 DM 默认战役使用同一份 v0.9.1 规则数据。</p></div>
+      <label>快速搜索<input id="rules-search" type="search" placeholder="搜索战斗、状态、职业或专长"></label>
+    </section>
+    <section id="rules-content" class="rules-content"></section>
+  </main>
+  <footer>DMForge 独立玩家角色卡 · 单文件离线版 · 导出的 JSON 可在 DM 页面“玩家角色卡中心”直接导入</footer>
+  <div id="avatar-cropper" class="crop-overlay" role="dialog" aria-modal="true" aria-label="裁剪角色头像" hidden><div class="crop-dialog"><h2>裁剪角色头像</h2><p>调整缩放与位置，让需要的部分进入圆形预览区域。保存结果仍为标准正方形图片。</p><canvas id="crop-canvas" width="320" height="320"></canvas><label>放大 / 缩小<input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="1"></label><label>水平位置<input id="crop-x" type="range" min="-100" max="100" value="0"></label><label>垂直位置<input id="crop-y" type="range" min="-100" max="100" value="0"></label><div class="crop-actions"><button type="button" data-crop-action="cancel">取消</button><button type="button" data-crop-action="confirm" class="primary">应用头像</button></div></div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script>window.DMFORGE_RULES=__RULES__;</script>
+  <script>__SCRIPT__</script>
+</body>
+</html>

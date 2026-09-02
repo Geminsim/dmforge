@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Main control console</title>
+  <path d="M8 10h112l5 8v36H3V18l5-8Z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="M12 15h28v18H12zM46 15h36v18H46zM88 15h28v18H88z" fill="#171311" stroke="#704080" stroke-width="2"/>
+  <path d="M16 20h20M16 25h12M51 20h26M51 25h18M93 20h18M93 25h13" stroke="#8d8190" stroke-width="1"/>
+  <path d="M10 39h108M18 44h13M36 44h13M54 44h13M72 44h13M90 44h20M18 49h8M31 49h8M44 49h8M57 49h8M70 49h8M83 49h8" stroke="#b8aa9a" stroke-width="1.25"/>
+  <circle cx="111" cy="48" r="2.5" fill="#c58a00"/>
+</svg>

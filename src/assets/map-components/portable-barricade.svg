@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64" fill="none" shape-rendering="geometricPrecision">
+  <title>Portable barricade</title>
+  <path d="M8 20h112v24H8z" fill="#2b2724" stroke="#b8aa9a" stroke-width="2"/>
+  <path d="m16 22 18 20M40 22l18 20M64 22l18 20M88 22l18 20" stroke="#704080" stroke-width="4"/>
+  <path d="M23 44 14 55M105 44l9 11M5 55h20M103 55h20" stroke="#b8aa9a" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="115" cy="27" r="3" fill="#c58a00"/>
+</svg>

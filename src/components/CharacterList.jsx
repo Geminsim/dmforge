@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { normalizeSf6ResourcesForLevel } from '../utils/sf6CharacterSheet';
+import { removeCombatantFromState } from '../utils/combatRules';
+import { compactCharacterName } from '../utils/characterNames';
+import { effectiveSpeed } from '../utils/inventoryRules';
 import {
   Button, IconButton, TextInput, Select, Badge, StatPill,
   ResourceSlot, EmptyState, CharacterCard
 } from '../ds';
+import { characterAvatar } from '../utils/characterImages';
 
 function CharacterList({ 
   characters, 
   setCharacters, 
+  setItemPool,
   addLog, 
   onOpenAddCharModal, 
   onOpenEditCharModal, 
@@ -15,11 +22,16 @@ function CharacterList({
   setGroups,
   isInCombat = false,
   combatTurnOrder = [],
+  combatParticipants = [],
   currentTurnIndex = 0,
+  setCombatTurnOrder,
+  setCombatParticipants,
+  setCurrentTurnIndex,
   onOpenRestModal,
-  customAttributeLabels = {}
+  customAttributeLabels = {},
+  selectedCharacterId = null,
+  onSelectCharacter
 }) {
-  const [expandedCharId, setExpandedCharId] = useState(null);
   
   // Custom Character Grouping states
   const [newGroupName, setNewGroupName] = useState('');
@@ -229,7 +241,8 @@ function CharacterList({
             level: nextLevel,
             maxHp: c.maxHp + rolledHp,
             hp: c.hp + rolledHp,
-            levelHpIncreases: newHistory
+            levelHpIncreases: newHistory,
+            resources: c.sheet ? normalizeSf6ResourcesForLevel(c.resources, nextLevel) : c.resources
           };
         }
         return c;
@@ -267,7 +280,8 @@ function CharacterList({
             level: nextLevel,
             maxHp: newMax,
             hp: newHp,
-            levelHpIncreases: newHistory
+            levelHpIncreases: newHistory,
+            resources: c.sheet ? normalizeSf6ResourcesForLevel(c.resources, nextLevel) : c.resources
           };
         }
         return c;
@@ -449,6 +463,7 @@ function CharacterList({
   const handleDeleteCharacter = (charId, charName) => {
     if (window.confirm(`确定要彻底从本战役中移除角色/NPC [${charName}] 吗？`)) {
       setCharacters(prev => prev.filter(c => c.id !== charId));
+      setItemPool?.(previous => previous.filter(item => item.ownerId !== charId));
       if (addLog) {
         addLog({
           type: 'COMBAT',
@@ -459,17 +474,25 @@ function CharacterList({
     }
   };
 
-  const handleRemoveFromMap = (charId, charName) => {
-    setCharacters(prev => prev.map(c => {
-      if (c.id === charId) {
-        return { ...c, mapId: null };
-      }
-      return c;
-    }));
+  const handleRemoveFromMap = (character) => {
+    const isDefeatedEnemy = isInCombat && character.type === 'NPC' && Number(character.hp) <= 0;
+    if (isDefeatedEnemy) {
+      const nextCombat = removeCombatantFromState(character.id, combatParticipants, combatTurnOrder, currentTurnIndex);
+      setCharacters(prev => prev.filter(c => c.id !== character.id));
+      setItemPool?.(previous => previous.filter(item => item.ownerId !== character.id));
+      setCombatParticipants?.(nextCombat.combatParticipants);
+      setCombatTurnOrder?.(nextCombat.combatTurnOrder);
+      setCurrentTurnIndex?.(nextCombat.currentTurnIndex);
+      onSelectCharacter?.(null);
+    } else {
+      setCharacters(prev => prev.map(c => c.id === character.id ? { ...c, mapId: null } : c));
+    }
     if (addLog) {
       addLog({
         type: 'COMBAT',
-        content: `角色 [${charName}] 已手动从地图移出。`,
+        content: isDefeatedEnemy
+          ? `**死亡单位清理**：[${character.name}] 在 HP 归零后被移出地图，已同时从角色列表与战斗顺序删除。`
+          : `角色 [${character.name}] 已手动从地图移出。`,
         timestamp: new Date().toLocaleTimeString()
       });
     }
@@ -520,7 +543,7 @@ function CharacterList({
   };
 
   const toggleExpand = (id) => {
-    setExpandedCharId(id === expandedCharId ? null : id);
+    onSelectCharacter?.(id === selectedCharacterId ? null : id);
   };
 
   const groupTone = (group) =>
@@ -615,6 +638,15 @@ function CharacterList({
         <TextInput size="sm" mono type="number" label= "移动速度 (Speed ft)" value={char.speed !== undefined ? char.speed : 30} onChange={e => handleUpdateBasicInfo(char.id, 'speed', parseInt(e.target.value, 10) || 0)} />
         <TextInput size="sm" mono type="number" label= "临时生命 (Temp HP)" value={char.tempHp !== undefined ? char.tempHp : 0} onChange={e => handleUpdateBasicInfo(char.id, 'tempHp', Math.max(0, parseInt(e.target.value, 10) || 0))} />
       </section>
+
+      {char.type === 'PC' && char.encumbrance && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-3)', background: 'var(--surface-sunken)', boxShadow: `inset 3px 0 0 ${char.encumbrance.overCapacity ? 'var(--pigment-madder)' : char.encumbrance.warning ? 'var(--pigment-ochre)' : 'var(--pigment-verdigris)'}` }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-2)' }}><strong>角色负重</strong><span style={{ flex: 1 }} /><span style={{ fontFamily: 'var(--font-mono)', color: char.encumbrance.overCapacity ? 'var(--pigment-madder)' : 'var(--text-body)' }}>{char.encumbrance.carried}/{char.encumbrance.capacity}kg</span></div>
+          <div style={{ position: 'relative', height: 8, background: 'var(--surface-panel)', boxShadow: 'inset 0 0 0 1px var(--line-hairline)' }}><span style={{ position: 'absolute', inset: 0, right: `${Math.max(0, 100 - Math.min(100, char.encumbrance.ratio * 100))}%`, background: char.encumbrance.overCapacity ? 'var(--pigment-madder)' : char.encumbrance.warning ? 'var(--pigment-ochre)' : 'var(--pigment-verdigris)' }} /><span title="负重上限 80% 预警线" style={{ position: 'absolute', left: '80%', top: -2, bottom: -2, width: 1, background: 'var(--text-body)' }} /></div>
+          <span style={{ fontSize: 'var(--type-micro)', color: 'var(--text-muted)' }}>耐力 {char.stats?.耐力 ?? char.stats?.['体质 (Fortitude)'] ?? 10} × 5kg；80% 预警线 {char.encumbrance.warningAt}kg。</span>
+          {char.encumbrance.overCapacity && <span style={{ fontSize: 'var(--type-meta)', color: 'var(--pigment-madder)' }}>{char.encumbrance.penaltyText}</span>}
+        </section>
+      )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         {renderSheetKey('等级与生命骰')}
@@ -821,10 +853,10 @@ function CharacterList({
           size="sm"
           icon="map-pin-simple-area"
           fullWidth
-          onClick={() => handleRemoveFromMap(char.id, char.name)}
-          title= "把此棋子从当前地图上移除（角色卡保留）"
+          onClick={() => handleRemoveFromMap(char)}
+          title={isInCombat && char.type === 'NPC' && Number(char.hp) <= 0 ? '移出并清理这名死亡敌人' : '把此棋子从当前地图上移除（角色卡保留）'}
         >
-          手动从地图移出
+          {isInCombat && char.type === 'NPC' && Number(char.hp) <= 0 ? '移出并清理死亡单位' : '手动从地图移出'}
         </Button>
       )}
 
@@ -838,6 +870,9 @@ function CharacterList({
 
   return (
     <>
+      {selectedCharacterId && characters.some(character => character.id === selectedCharacterId) && document.getElementById('dmforge-character-detail-portal')
+        ? createPortal(renderExpandedSheet(characters.find(character => character.id === selectedCharacterId)), document.getElementById('dmforge-character-detail-portal'))
+        : null}
       <div
         style={{
           flexShrink: 0,
@@ -867,9 +902,7 @@ function CharacterList({
           </span>
         </div>
 
-        <Button icon="user-plus" fullWidth onClick={onOpenAddCharModal} title= "新建一张角色卡（玩家角色、NPC 或怪物）">
-          新建战役角色 / 怪物
-        </Button>
+        <Button icon="identification-card" fullWidth onClick={onOpenAddCharModal} title= "新建一张角色卡（玩家角色、NPC 或怪物）">新建战役角色 / 怪物</Button>
 
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
           <Button
@@ -982,7 +1015,7 @@ function CharacterList({
                     <EmptyState compact icon="users-three" text= "拖动角色到此处以移动分组" />
                   ) : (
                     groupChars.map(char => {
-                      const isExpanded = expandedCharId === char.id;
+                      const isExpanded = selectedCharacterId === char.id;
                       const isActiveChar = isInCombat && combatTurnOrder[currentTurnIndex]?.id === char.id;
                       const conditionLabels = (char.conditions || []).map(c => c.name);
 
@@ -997,11 +1030,41 @@ function CharacterList({
                               return;
                             }
                             e.dataTransfer.setData('text/plain', char.id);
+                            e.dataTransfer.setData('application/x-dmforge-character', JSON.stringify({ id: char.id, source: 'roster' }));
+                            e.dataTransfer.effectAllowed = 'move';
+                            const dragImage = document.createElement('canvas');
+                            dragImage.width = 30;
+                            dragImage.height = 30;
+                            dragImage.style.position = 'fixed';
+                            dragImage.style.left = '-100px';
+                            dragImage.style.top = '-100px';
+                            dragImage.style.pointerEvents = 'none';
+                            const context = dragImage.getContext('2d');
+                            if (context) {
+                              context.beginPath();
+                              context.arc(15, 15, 13, 0, Math.PI * 2);
+                              context.fillStyle = char.type === 'PC' ? '#4267a9' : '#a64552';
+                              context.fill();
+                              context.strokeStyle = '#f5d66f';
+                              context.lineWidth = 2;
+                              context.stroke();
+                              context.fillStyle = '#fff';
+                              context.font = 'bold 11px sans-serif';
+                              context.textAlign = 'center';
+                              context.textBaseline = 'middle';
+                              context.fillText(compactCharacterName(char.name || '棋子').slice(0, 2), 15, 15);
+                            }
+                            document.body.appendChild(dragImage);
+                            e.dataTransfer.setDragImage(dragImage, 15, 15);
+                            window.setTimeout(() => dragImage.remove(), 0);
+                            window.dispatchEvent(new CustomEvent('dmforge:character-drag-start', { detail: { id: char.id } }));
                           }}
+                          onDragEnd={() => window.dispatchEvent(new CustomEvent('dmforge:character-drag-end'))}
                           style={{ cursor: 'grab' }}
                         >
                           <CharacterCard
-                            name={char.name}
+                            name={compactCharacterName(char.name)}
+                            avatar={characterAvatar(char)}
                             kind={char.type === 'PC' ? 'PC' : 'MONSTER'}
                             level={char.level || 1}
                             klass={char.class && char.class !== '无职业' ? char.class : undefined}
@@ -1009,7 +1072,7 @@ function CharacterList({
                             maxHp={char.maxHp}
                             tempHp={char.tempHp || 0}
                             conditions={conditionLabels}
-                            speedRemaining={char.speed !== undefined ? char.speed : 30}
+                            speedRemaining={effectiveSpeed(char)}
                             activeTurn={isActiveChar}
                             selected={isExpanded}
                             onSelect={() => toggleExpand(char.id)}
@@ -1026,12 +1089,11 @@ function CharacterList({
                                 style={{ flex: '0 0 auto' }}
                               />
                               <i
-                                className={`ph-fill ph-caret-${isExpanded ? 'up' : 'down'}`}
+                                className="ph-fill ph-caret-right"
                                 style={{ fontSize: 11, color: 'var(--text-faint)' }}
                                 aria-hidden="true"
                               />
                             </div>
-                            {isExpanded && renderExpandedSheet(char)}
                           </CharacterCard>
                         </div>
                       );

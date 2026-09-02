@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCharacterSheet, mergeImportedCharacter } from '../src/utils/characterSheetImport.js';
+import { extractCharacterSheet, extractPlayerCharacterExport, mergeImportedCharacter } from '../src/utils/characterSheetImport.js';
 
 function workbook(cells, name = '角色卡') {
   return { SheetNames: [name], Sheets: { [name]: cells } };
@@ -99,7 +99,34 @@ test('recognizes the bundled SF6 template layout and recalculates formula-owned 
   assert.equal(result.character.sheet.drive[0], true);
   assert.equal(result.character.sheet.drive[1], false);
   assert.equal(result.character.sheet.attacks[0].name, '百裂脚');
+  assert.equal(result.character.sheet.attacks[0].diceCount, 1);
+  assert.equal(result.character.sheet.attacks[0].die, 'd6');
+  assert.equal(result.character.sheet.attacks[0].damageType, '物理');
   assert.equal(result.character.sheet.skillProficiencies.athletics, true);
   assert.equal(result.character.sheet.selectedFeatNames[0], '波动之拳');
   assert.match(result.warnings.join(' '), /#NAME/);
+});
+
+test('imports a standalone DMForge player card and rejects unrelated JSON', () => {
+  const result = extractPlayerCharacterExport({
+    format: 'dmforge-player-character-v1',
+    character: {
+      name: '嘉米', class: '军士', subclass: '灵动型', level: 5, race: '人类', alignment: '中立', hp: 21, maxHp: 30, ac: 18,
+      sheet: {
+        playerName: '玩家B', avatarImage: 'data:image/png;base64,YQ==', portraitImage: 'javascript:alert(1)', statBonuses: { 力量: 2, 速度: 3 }, drive: [true, true, false, false, false, false],
+        attacks: [{ name: '螺旋箭', diceCount: 2, die: 'd6', fixedDamage: 1, damageType: '物理', description: '推进攻击' }],
+        skillProficiencies: { acrobatics: true, athletics: true, stealth: true, survival: true, perception: true, insight: true }, selectedFeats: ['feat-a', '', '']
+      }
+    }
+  }, 'cammy.json');
+  assert.equal(result.character.name, '嘉米');
+  assert.equal(result.character.level, 5);
+  assert.equal(result.character.race, '人类');
+  assert.equal(result.character.sheet.acOverride, 18);
+  assert.equal(Object.values(result.character.sheet.skillProficiencies).filter(Boolean).length, 5);
+  assert.equal(result.character.sheet.attacks[0].description, '推进攻击');
+  assert.equal(result.character.sheet.drive.filter(Boolean).length, 2);
+  assert.equal(result.character.sheet.avatarImage, 'data:image/png;base64,YQ==');
+  assert.equal(result.character.sheet.portraitImage, '');
+  assert.throws(() => extractPlayerCharacterExport({ format: 'some-other-json', character: {} }), /不是 DMForge/);
 });
