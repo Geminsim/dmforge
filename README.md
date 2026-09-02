@@ -1,141 +1,363 @@
 # DMForge
 
-DMForge 是一个面向桌面跑团主持人（DM）的本地优先战役辅助台。它整合了战术地图、角色与物品管理、回合战斗、掷骰、日志、浮动笔记、Excel 角色卡和局域网玩家展示端。
+**A local-first campaign, tactical-map, and presentation workspace for tabletop role-playing games.**
 
-完整界面与功能说明见 [DMForge 主页面完整使用指南](docs/DMFORGE_MAIN_PAGE_INSTRUCTIONS.md)。
+**Un espace local de gestion de campagne, de carte tactique et de présentation pour les jeux de rôle sur table.**
 
-## 当前开发阶段
+[English](#english) · [Français](#français)
 
-项目进入“稳定化里程碑”，暂缓增加大型功能。当前优先级依次为：
+![DMForge campaign selection screen](docs/screenshots/campaign-selection.png)
 
-1. 保证 Lint、测试和生产构建持续通过。
-2. 加固存档、局域网同步和外部 Excel 文件输入。
-3. 拆分大型组件，补充战斗轮转、地图移动和同步冲突测试。
-4. 完成稳定性验证后，再考虑账户、数据库或公网协作能力。
+---
 
-## 本地运行
+## English
 
-需要 Node.js 22 或兼容版本。
+### Problem
 
-### Windows 一键启动（推荐）
+Running a tactical tabletop role-playing campaign usually requires several disconnected tools: character sheets, battle maps, initiative trackers, inventory notes, fog-of-war utilities, rule references, and a separate screen for players or streaming. This fragmentation slows down the game, creates inconsistent information between the Game Master and players, and makes recovery difficult when a browser tab, local file, or network connection fails.
 
-双击 `run.bat` 即可。应用默认开启局域网能力，不再区分两个启动模式：
+DMForge brings campaign preparation, live tactical control, player presentation, and recoverable local storage into one application. It remains usable without Docker, an internet connection, or a third-party account.
 
-- 本机浏览器会通过启动链接自动取得同步令牌。
-- 启动窗口会分别显示主持人可写链接和玩家只读链接；玩家链接不能修改或恢复服务器存档。
-- 其他设备打开配对链接后会自动保存令牌，URL 中的令牌随即被清除。
-- 如果同步服务不可达或令牌无效，应用自动降级为单机模式，继续使用本地存档并在后台重试。
+### Users
 
-首次运行会自动执行依赖安装和生产构建；之后直接启动独立 Node 服务。主持人令牌和玩家只读令牌分别保存在 `.dmforge-sync-token`、`.dmforge-read-token`，请勿公开主持人令牌，也不要删除正在使用的令牌文件。
+- **Game Masters / Dungeon Masters** preparing maps, characters, encounters, notes, rules, items, enemies, and cutscenes.
+- **Players at the table** using a read-only tactical map and public character information.
+- **Remote participants and spectators** watching the presentation window through Discord, a television, projector, or screen-sharing software.
+- **Campaign authors** creating original rules, bestiaries, item catalogues, and reusable templates.
+- **Small local groups** wanting LAN synchronisation without a public cloud service.
 
-关闭启动窗口或按 `Ctrl+C` 即可停止服务。
+The current application and bundled SF6 campaign primarily serve a Chinese-speaking play group; repository documentation is provided in English and French.
 
-### 命令行运行
+### Requirements
+
+#### Core functions
+
+- One launch method that uses LAN synchronisation when available and falls back to standalone local use.
+- Campaign selection with a built-in SF6 campaign and a blank-campaign option.
+- Tactical maps with centred tokens, multiple creature sizes, A* routes, movement costs, walls, doors, windows, furniture, cover, traps, and destructible components.
+- Lighting, flashlights, line of sight, fog-of-war memory, manual vision controls, and a separate DM-only preview.
+- Round-based combat with initiative, resources, conditions, rests, movement limits, and defeated-enemy cleanup.
+- Native and imported character sheets, avatar cropping, derived values, attacks, feats, skills, inventory, and encumbrance.
+- A structured enemy bestiary, multilingual random names, reusable templates, and direct placement.
+- A world item pool with equipment, consumables, weight, calories, armour bonuses, damage values, transfers, and long-rest rations.
+- A player/presentation window for maps, combat, party overview, cutscenes, pause screens, public character details, and filtered history.
+- Automatic and manual backups, encrypted exports, schema migration, validation, conflict handling, and recovery points.
+- A searchable rules library and a detailed in-application DMForge guide.
+
+#### Constraints
+
+- Node.js 22 or a compatible newer version.
+- Validated campaign JSON is limited to 10 MB.
+- Only trusted `.xlsx`, `.xls`, `.xlsm`, and `.xlsb` files should be imported; file, sheet, row, and column limits are enforced.
+- LAN synchronisation is single-process and file-backed, with separate Game Master write and player read-only tokens.
+- There is no public account system, hosted database, or field-level collaborative merge.
+- Plain HTTP is intended for trusted LANs; configure HTTPS for less trusted networks.
+- ETag conflicts stop synchronisation until the Game Master chooses the local or server version.
+- Server campaign files and rolling backups are local plain-text JSON; use password-encrypted exports for off-device transfer.
+
+### Solution
+
+DMForge provides three connected surfaces:
+
+1. **Game Master workspace** — campaign editing, encounters, maps, vision, notes, logs, items, bestiary, rules, backups, and presentation direction.
+2. **Player view** — a read-only map and public-information surface that cannot overwrite campaign data.
+3. **Presentation view** — an isolated local window for streaming or projection, with scene selection, camera following, collapsible sidebars, filtered information, and reconnection handling.
+
+The local-first storage design uses transactional IndexedDB snapshots in the browser and atomic versioned JSON files in the Node service. It keeps rolling backups, automatically falls back to local mode, detects sync conflicts, and supports SHA-256-checked exports with optional AES-256-GCM encryption. Large JSON operations run in Web Workers to reduce interface stalls.
+
+The default campaign adds structured SF6 rules, original story content, character creation, enemies, items, three tactical maps, cutscenes, and campaign artwork. Blank campaigns keep the general tools without campaign-specific rules or content.
+
+#### Quick start
+
+On Windows, double-click `run.bat`. For development:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-浏览器访问 `http://localhost:5173`。直接运行命令行服务时，可通过以下变量决定监听范围：
+Open `http://127.0.0.1:5173`.
 
-局域网模式必须同时设置监听地址与同步令牌：
+For LAN access:
 
 ```powershell
 $env:DMFORGE_HOST='0.0.0.0'
-$env:DMFORGE_SYNC_TOKEN='请替换为足够长的随机令牌'
-$env:DMFORGE_READ_TOKEN='请替换为另一个足够长的随机只读令牌'
+$env:DMFORGE_SYNC_TOKEN='replace-with-a-long-random-write-token'
+$env:DMFORGE_READ_TOKEN='replace-with-a-different-read-only-token'
 npm run dev
 ```
 
-其他设备可以在“系统设置”中输入同一个令牌，也可以使用带 `#syncToken=...` 的配对链接。未设置令牌时，服务拒绝监听非本机地址。
+Docker remains optional through `run-docker.bat`.
 
-Windows + Docker 用户仍可运行 `run-docker.bat` 启动生产容器，但普通本地与便携启动均不依赖 Docker。
-
-## 构建 Windows 便携版
-
-在已安装 Node.js 的开发电脑上运行：
+#### Windows portable build
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 ```
 
-构建脚本会先运行完整质量门禁，然后生成：
+The build produces `release/DMForge-portable/` and a Windows x64 ZIP. After extraction, `DMForge.exe` runs without Node.js, npm, or Docker on the target computer. Run `install-start-menu.bat` to add a Start menu shortcut.
 
-```text
-release/DMForge-portable/
-release/DMForge-portable-windows-x64.zip
-```
+### Technology
 
-把 ZIP 解压到普通可写目录后，用户可直接双击 `DMForge.exe`，不需要选择模式，也不需要安装 Node.js、npm 或 Docker。它会静默启动本地服务、等待就绪并打开浏览器；重复点击只会再次打开应用，不会重复启动服务。便携包内含构建机器当前使用的 Windows x64 `node.exe`。
+| Area | Technology | Purpose |
+|---|---|---|
+| Interface | React 19, JavaScript, JSX, HTML5, CSS | Game Master, player, presentation, character-sheet, and rules-library interfaces |
+| Build | Vite 8 | Development server, production build, assets, and code splitting |
+| Local service | Node.js HTTP service | Local API, LAN sync, backups, tokens, and static delivery |
+| Tactical system | `react-zoom-pan-pinch`, custom geometry, A* | Camera, routes, creature footprints, movement cost, and collisions |
+| Browser storage | IndexedDB and limited `localStorage` | Transactional snapshots and settings |
+| Server storage | Versioned JSON files | Atomic persistence and rolling backups |
+| API | JSON endpoints such as `/api/campaign` and `/api/backups` | Synchronisation, ETags, backup listing, and restoration |
+| Spreadsheets | SheetJS `xlsx` and Web Workers | Trusted character-sheet and reference imports |
+| Graphics | SVG, PNG, WebP | Branding, icons, tactical furniture, maps, and cutscenes |
+| Security | Web Crypto, AES-256-GCM, SHA-256, schema validation | Encryption, integrity, migration, and unsafe-data rejection |
+| Testing | Node test runner, ESLint, Vite build, browser review | Logic, quality, integration, and visual verification |
 
-要加入 Windows 开始菜单，双击 `install-start-menu.bat`。随后在开始菜单搜索“DMForge”，右键即可选择“固定到开始”或“固定到任务栏”。应用目录移动后应重新运行安装脚本；可用 `uninstall-start-menu.bat` 移除入口。`run.bat` 继续保留为启动故障排查入口。
+**SQL:** not used in the current release. IndexedDB and validated JSON match the standalone/small-LAN workflow.
 
-便携版的战役状态、滚动备份和令牌都保存在解压后的应用目录中。升级时应先备份以下文件：
+**XML:** not used as an application data format; SVG assets are XML-based graphics.
 
-- `campaign_state.json`
-- `campaign_state_backup.json`
-- `.dmforge-sync-token`
-- `.dmforge-read-token`
-- `backups/`
+**API:** DMForge exposes a small local JSON API, not a public cloud API.
 
-不要把便携包安装在只读目录（例如受保护的 `Program Files` 子目录），否则无法保存战役状态。
+**AI tools:** used during development, but no AI model is required at runtime and no campaign data is automatically sent to an AI service.
 
-## 验证
+### Testing
 
 ```bash
 npm run verify
 ```
 
-该命令依次运行 ESLint、Node 测试和 Vite 生产构建。
+The quality gate runs ESLint, automated Node tests, standalone player-sheet generation, and a production Vite build. The current verified baseline contains **125 passing tests** covering persistence, migration, encrypted exports, recovery, sync decisions, character calculations, enemies, inventory, movement, pathfinding, terrain, doors, vision, fog memory, presentation filtering, camera sync, player-sheet builds, and guide parsing.
 
-## 数据与同步
+Fixes follow this process:
 
-- 战役状态保存在 IndexedDB 单事务快照中；每次保存同时保留上一版本，设置项才使用 `localStorage`。容量不足会在设置页明确提示。
-- 独立 Node 服务通过 `/api/campaign` 将状态写入 `campaign_state.json`。
-- 覆盖前会 fsync 并原子替换文件，同时保留近期、每小时和每日滚动备份；主存档损坏时自动隔离并回退到最新有效备份。
-- 设置面板可浏览并恢复本机/服务器备份；导入前自动建立恢复点。
-- 导出包包含格式版本、schema、时间、修订号和 SHA-256 校验，可选用密码进行 AES-256-GCM 加密。
-- `campaign_state.json` 与服务器滚动备份仍是本机明文文件，请限制数据目录访问权限；需要离机保存或传输时使用密码加密导出。
-- 局域网同步区分主持人写令牌与玩家只读令牌；ETag 冲突会暂停上传并要求选择本机或服务器版本，不再静默覆盖。
-- schema v2 会迁移旧存档，并深层校验实体、重复 ID、跨对象引用、数量、字符串长度和危险对象键；战役 JSON 上限为 10MB。
-- 大型同步/导出 JSON 在 Web Worker 中序列化，避免 Excel 数据阻塞主界面。
+1. Reproduce the smallest reliable failure.
+2. Add a deterministic regression test where possible.
+3. Correct the underlying state, geometry, validation, synchronisation, or rendering rule.
+4. Run the focused test and then `npm run verify`.
+5. Perform browser checks for layout, map interaction, long text, camera behaviour, and responsive density.
+6. Preserve a recovery path before destructive import, restore, reset, or sync operations.
 
-## Discord 直播展示页
+### Screenshots / Demo
 
-在应用右上角点击“直播展示”，或在“系统设置”里的“Discord 直播展示窗口”打开独立展示页。Discord 直播时只共享该展示窗口或标签页，不要共享主持人主窗口。
+#### Actual application start screen
 
-- 支持战斗直播、战术地图、队伍概览、剧情画面和暂停画面五种场景，切换后会实时同步。
-- 镜头可跟随当前行动角色、跟随 DM 地图镜头，或由展示页独立缩放和拖动；可调整字号、字幕、公开事件、角色可见性和阻挡格可见性。
-- 战斗与地图场景直接复用应用原有的玩家展示端：地图控制、战斗行动顺序、当前角色状态、动作/法术资源、棋子和地形会保持同一布局。DM 拖动棋子时，路径、目标格、路线受阻及剩余移动力提示也会实时出现在直播页。
-- 默认不会发送 DM 笔记、秘密地形、隐藏角色、私有事件、完整人物卡或局域网同步令牌。玩家本来可见的阻挡格默认同步，以保证路线和移动力估算一致；DM 仍可在直播设置中关闭显示。
-- 展示页使用随机会话 ID，并优先通过另一个本机回环域名打开，使它不能读取主持页的本地存储。URL 中不包含同步令牌。
-- 浏览器拦截弹窗时，使用设置区出现的“在新标签页打开”按钮；该按钮仍会保留与主持页的实时连接。
-- 浏览器通常要求用户手势才能进入全屏。收到全屏请求后，如展示页仍显示提示，请在展示页点击“进入全屏”。
+Captured from the current local build at `1440 × 1000`:
 
-展示页依赖主持人页面持续运行。主持页关闭或连接中断后，展示页会显示断线提示；重新打开主持页并使用同一浏览器会话时可自动恢复连接。公开事件仅包含明确标记为 `visibility: "public"` 的日志。
+![Actual DMForge start screen](docs/screenshots/campaign-selection.png)
 
-### 可选 HTTPS
+#### Bundled tactical-map example
 
-局域网环境若需要传输加密，可提供 PEM 证书和私钥。两个变量必须同时设置：
+![Research facility tactical-map artwork](public/campaigns/sf6/chapter-1/maps/research-hall-1f-background-v2.png)
 
-```powershell
-$env:DMFORGE_TLS_CERT='C:\certs\dmforge-cert.pem'
-$env:DMFORGE_TLS_KEY='C:\certs\dmforge-key.pem'
-npm start
+#### Bundled cutscene example
+
+![Cryolab awakening cutscene](public/campaigns/sf6/chapter-1/cutscenes/05-cryolab-awakening.webp)
+
+For an interactive demo, run `npm ci` and `npm run dev`, create **World Fighting Tournament**, open **Tactical Map**, and use **Player View** or **Presentation Window**. The standalone player sheet is available at `/player-character-sheet.html` and in `player-sheet-dist/`.
+
+### Your contribution
+
+The project owner:
+
+- Defined the product problem, tabletop workflow, priorities, and acceptance criteria.
+- Authored the SF6-inspired rules, original campaign world, chapters, encounters, items, enemies, and narrative direction.
+- Chose the local-first/LAN-fallback model instead of requiring Docker or a hosted service.
+- Directed map, combat-resource, fog-memory, player-information, presentation, character-sheet, and backup interactions.
+- Selected and refined the cat-and-die identity, colours, icons, map artwork, and interface density.
+- Supplied rulebooks, character workbooks, campaign notes, saves, and reproducible defect reports.
+- Reviewed the running application, rejected unsuitable changes, and made final product decisions.
+- Required recovery points, explicit conflict resolution, read-only player access, privacy filtering, and regression testing.
+
+The repository records the resulting engineering work: architecture, components, tactical geometry, visibility rules, validation, synchronisation, backup systems, tests, assets, documentation, and packaging. AI-assisted changes were accepted only after owner review and automated or visual verification.
+
+### AI usage
+
+AI tools assisted with requirements analysis, implementation planning, React and utility code, regression tests, documentation, geometry and visibility analysis, visual concepts, campaign artwork, icons, map assets, UI-density review, and targeted debugging.
+
+AI output was verified through source review, comparison with the owner's rules, deterministic tests, production builds, browser checks, validation against supplied PDF/Excel/save data, Git history, rollback documentation, recoverable backups, and owner approval.
+
+No AI model runs inside DMForge, no AI account is required, and DMForge does not automatically transmit campaign content to an AI provider.
+
+### Additional documentation
+
+- [Complete DMForge user guide](docs/DMFORGE_MAIN_PAGE_INSTRUCTIONS.md)
+- [Character-card import notes](docs/character-card-import.md)
+- [Frontend rollback reference](docs/frontend/UI_ROLLBACK.md)
+
+---
+
+## Français
+
+### Problème
+
+Une campagne tactique de jeu de rôle utilise souvent plusieurs outils séparés : fiches de personnage, cartes, initiative, inventaire, notes, brouillard de guerre, règles et écran de diffusion. Cette fragmentation ralentit la partie, crée des informations incohérentes entre le maître de jeu et les joueurs et complique la récupération après une panne de fichier, d'onglet ou de réseau.
+
+DMForge réunit préparation, contrôle tactique en direct, affichage joueur et stockage local récupérable. L'application reste utilisable sans Docker, sans Internet et sans compte tiers.
+
+### Utilisateurs
+
+- **Maîtres de jeu** préparant cartes, personnages, rencontres, notes, règles, objets, ennemis et cinématiques.
+- **Joueurs autour de la table** utilisant une carte et des informations publiques en lecture seule.
+- **Participants à distance et spectateurs** regardant la fenêtre de présentation par Discord, téléviseur, projecteur ou partage d'écran.
+- **Auteurs de campagnes** créant règles originales, bestiaires, catalogues et modèles réutilisables.
+- **Petits groupes en réseau local** souhaitant une synchronisation LAN sans cloud public.
+
+L'application et la campagne SF6 intégrée servent principalement un groupe sinophone ; la documentation du dépôt est en anglais et en français.
+
+### Exigences
+
+#### Fonctions principales
+
+- Un seul lancement, avec synchronisation LAN lorsqu'elle est disponible et repli automatique en mode local.
+- Sélection d'une campagne SF6 intégrée ou d'une campagne vide.
+- Cartes tactiques avec pions centrés, tailles multiples, itinéraires A*, coûts de déplacement, murs, portes, fenêtres, mobilier, couverts, pièges et objets destructibles.
+- Éclairage, lampe torche, lignes de vue, mémoire du brouillard, contrôle manuel et aperçu réservé au maître de jeu.
+- Combat par rounds avec initiative, ressources, états, repos, limites de déplacement et suppression des ennemis vaincus.
+- Fiches natives ou importées, recadrage d'avatar, valeurs calculées, attaques, dons, compétences, inventaire et encombrement.
+- Bestiaire structuré, noms aléatoires multilingues, modèles réutilisables et placement direct.
+- Réserve mondiale d'objets avec équipement, consommables, poids, calories, armure, dégâts, transferts et rations.
+- Fenêtre joueur/de présentation pour cartes, combat, groupe, cinématiques, pause, détails publics et historique filtré.
+- Sauvegardes automatiques et manuelles, exports chiffrés, migration, validation, conflits et points de récupération.
+- Bibliothèque de règles et guide DMForge détaillé avec recherche.
+
+#### Contraintes
+
+- Node.js 22 ou version compatible plus récente.
+- Campagne JSON validée limitée à 10 Mo.
+- Import uniquement de classeurs `.xlsx`, `.xls`, `.xlsm` et `.xlsb` fiables, avec limites de taille et de contenu.
+- Synchronisation LAN mono-processus sur fichiers, avec jetons distincts d'écriture et de lecture seule.
+- Aucun compte public, base hébergée ou fusion collaborative champ par champ.
+- HTTP réservé aux LAN de confiance ; HTTPS recommandé ailleurs.
+- Les conflits ETag interrompent la synchronisation jusqu'au choix du maître de jeu.
+- Les fichiers serveur sont du JSON local en clair ; utiliser les exports chiffrés pour les transferts externes.
+
+### Solution
+
+DMForge propose trois surfaces :
+
+1. **Espace du maître de jeu** — campagne, rencontres, cartes, vision, notes, journaux, objets, bestiaire, règles, sauvegardes et diffusion.
+2. **Vue joueur** — carte et informations publiques en lecture seule, sans écriture dans la campagne.
+3. **Vue de présentation** — fenêtre locale isolée pour diffusion ou projection, avec scènes, suivi de caméra, panneaux repliables, filtrage et reconnexion.
+
+Le stockage local utilise des instantanés IndexedDB transactionnels et des fichiers JSON versionnés écrits atomiquement par le service Node. DMForge conserve des sauvegardes tournantes, revient au mode local en cas de panne réseau, détecte les conflits et propose des exports contrôlés par SHA-256 avec chiffrement AES-256-GCM facultatif. Les opérations JSON importantes utilisent des Web Workers.
+
+La campagne par défaut contient règles SF6 structurées, histoire originale, personnages, ennemis, objets, trois cartes, cinématiques et illustrations. Une campagne vide conserve uniquement les outils généraux.
+
+#### Démarrage rapide
+
+Sous Windows, double-cliquez sur `run.bat`. Pour le développement :
+
+```bash
+npm ci
+npm run dev
 ```
 
-一键启动器默认仍使用 HTTP，适合可信家庭局域网；跨不可信网络使用时应配置 HTTPS，且不要直接暴露到公网。
+Ouvrez `http://127.0.0.1:5173`.
 
-如需把程序与存档分开（例如安装目录只读或升级便携包），可设置 `$env:DMFORGE_DATA_DIR='D:\DMForge-Data'`。`campaign_state.json`、隔离的损坏文件和 `backups/` 都会写入该目录。
+Pour l'accès LAN :
 
-## Excel 安全限制
+```powershell
+$env:DMFORGE_HOST='0.0.0.0'
+$env:DMFORGE_SYNC_TOKEN='remplacer-par-un-long-jeton-ecriture-aleatoire'
+$env:DMFORGE_READ_TOKEN='remplacer-par-un-autre-jeton-lecture-seule'
+npm run dev
+```
 
-仅支持 `.xlsx`、`.xls`、`.xlsm` 和 `.xlsb`，单文件最大 2MB，最多 50 个工作表；渲染范围还会限制为最多 501 行、101 列。`xlsx` 依赖目前仍有上游未修复的安全公告，因此只应导入可信来源的工作簿。
+Docker reste facultatif avec `run-docker.bat`.
 
-## 已知限制
+#### Version portable Windows
 
-- 当前是单进程、文件式局域网同步，提供令牌级读写权限和显式冲突选择，但不提供账户系统或字段级自动合并。
-- UI 组件仍然偏大，后续应优先拆分 `MapSystem`、`App` 和 `ExcelImporter`。
-- 自动化测试覆盖存档校验、迁移、损坏恢复、冲突、断电故障点及加密导出；复杂地图交互仍需继续扩展端到端覆盖。
-- 生产构建的主 JavaScript 包较大，后续需要按地图和 Excel 模块进行懒加载拆包。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
+```
+
+La construction produit `release/DMForge-portable/` et une archive ZIP Windows x64. Après extraction, `DMForge.exe` fonctionne sans Node.js, npm ou Docker sur l'ordinateur cible. `install-start-menu.bat` ajoute un raccourci au menu Démarrer.
+
+### Technologie
+
+| Domaine | Technologie | Utilisation |
+|---|---|---|
+| Interface | React 19, JavaScript, JSX, HTML5, CSS | Interfaces maître de jeu, joueur, présentation, fiches et règles |
+| Construction | Vite 8 | Développement, production, ressources et découpage du code |
+| Service local | Service HTTP Node.js | API locale, LAN, sauvegardes, jetons et fichiers statiques |
+| Système tactique | `react-zoom-pan-pinch`, géométrie, A* | Caméra, itinéraires, empreintes, coûts et collisions |
+| Stockage navigateur | IndexedDB et `localStorage` limité | Instantanés et réglages |
+| Stockage serveur | Fichiers JSON versionnés | Persistance atomique et sauvegardes tournantes |
+| API | `/api/campaign`, `/api/backups` en JSON | Synchronisation, ETags, sauvegarde et restauration |
+| Tableurs | SheetJS `xlsx`, Web Workers | Import de fiches et de références fiables |
+| Graphisme | SVG, PNG, WebP | Identité, icônes, mobilier, cartes et cinématiques |
+| Sécurité | Web Crypto, AES-256-GCM, SHA-256, validation | Chiffrement, intégrité, migration et rejet des données dangereuses |
+| Tests | Tests Node, ESLint, Vite, contrôle navigateur | Logique, qualité, intégration et visuel |
+
+**SQL :** non utilisé ; IndexedDB et JSON validé conviennent au fonctionnement autonome/LAN.
+
+**XML :** non utilisé comme format de données ; les SVG sont des graphismes fondés sur XML.
+
+**API :** petite API JSON locale, pas d'API cloud publique.
+
+**Outils d'IA :** utilisés pendant le développement, mais aucun modèle n'est requis à l'exécution et aucune campagne n'est envoyée automatiquement à un service d'IA.
+
+### Tests
+
+```bash
+npm run verify
+```
+
+Ce contrôle lance ESLint, les tests Node, la génération de la fiche joueur et la construction Vite. La référence actuelle contient **125 tests réussis** couvrant persistance, migration, chiffrement, récupération, synchronisation, personnages, ennemis, inventaire, déplacement, A*, terrain, portes, vision, mémoire du brouillard, présentation, caméra, fiche autonome et guide.
+
+Processus de correction :
+
+1. Reproduire le défaut avec le scénario minimal fiable.
+2. Ajouter un test de non-régression déterministe lorsque possible.
+3. Corriger la règle d'état, de géométrie, de validation, de synchronisation ou de rendu.
+4. Exécuter le test ciblé puis `npm run verify`.
+5. Contrôler dans le navigateur la mise en page, les cartes, les textes longs, la caméra et le responsive.
+6. Préserver une récupération avant import, restauration, réinitialisation ou synchronisation destructrice.
+
+### Captures d'écran / Démonstration
+
+#### Écran réel de démarrage
+
+Capture de la version locale actuelle en `1440 × 1000` :
+
+![Écran réel de démarrage DMForge](docs/screenshots/campaign-selection.png)
+
+#### Exemple de carte tactique intégrée
+
+![Carte tactique du centre de recherche](public/campaigns/sf6/chapter-1/maps/research-hall-1f-background-v2.png)
+
+#### Exemple de cinématique intégrée
+
+![Réveil dans le laboratoire cryogénique](public/campaigns/sf6/chapter-1/cutscenes/05-cryolab-awakening.webp)
+
+Pour la démonstration interactive, exécutez `npm ci` puis `npm run dev`, créez **World Fighting Tournament**, ouvrez **Tactical Map** et utilisez **Player View** ou **Presentation Window**. La fiche autonome est disponible à `/player-character-sheet.html` et dans `player-sheet-dist/`.
+
+### Votre contribution
+
+Le propriétaire du projet :
+
+- A défini le problème, le déroulement, les priorités et les critères d'acceptation.
+- A écrit les règles inspirées de SF6, l'univers original, les chapitres, rencontres, objets, ennemis et la direction narrative.
+- A choisi le modèle local avec repli LAN plutôt qu'une dépendance à Docker ou à un service hébergé.
+- A dirigé les interactions de carte, combat, mémoire du brouillard, informations joueur, présentation, fiches et sauvegardes.
+- A sélectionné et affiné l'identité du chat et du dé, les couleurs, icônes, cartes et la densité de l'interface.
+- A fourni livres de règles, classeurs, notes, sauvegardes et rapports de défauts reproductibles.
+- A contrôlé l'application, rejeté les changements inadaptés et pris les décisions finales.
+- A exigé récupération, conflits explicites, lecture seule, confidentialité et tests de non-régression.
+
+Le dépôt conserve le travail d'ingénierie résultant : architecture, composants, géométrie, visibilité, validation, synchronisation, sauvegardes, tests, ressources, documentation et empaquetage. Les changements assistés par IA n'ont été acceptés qu'après vérification par le propriétaire et contrôle automatisé ou visuel.
+
+### Utilisation de l'IA
+
+Les outils d'IA ont aidé à analyser les exigences, planifier l'implémentation, rédiger et restructurer composants React, modules, tests et documentation, analyser géométrie et vision, produire certains concepts et éléments visuels sous direction artistique, examiner la densité de l'interface et cibler les régressions.
+
+Les résultats ont été vérifiés par relecture du code, comparaison avec les règles du propriétaire, tests déterministes, constructions de production, contrôles navigateur, validation avec PDF/Excel/sauvegardes fournis, historique Git, documentation de retour arrière et approbation finale.
+
+Aucun modèle d'IA ne s'exécute dans DMForge, aucun compte d'IA n'est requis et aucun contenu de campagne n'est transmis automatiquement à un fournisseur d'IA.
+
+### Documentation complémentaire
+
+- [Guide complet d'utilisation de DMForge](docs/DMFORGE_MAIN_PAGE_INSTRUCTIONS.md)
+- [Notes d'importation des fiches](docs/character-card-import.md)
+- [Référence de retour arrière de l'interface](docs/frontend/UI_ROLLBACK.md)
