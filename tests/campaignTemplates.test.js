@@ -89,6 +89,13 @@ test('built-in SF6 campaign is valid, empty of demo actors, and includes chapter
   assert.equal(campaign.enemyBestiary.length, 21);
   assert.equal(campaign.metadata.bestiaryVersion, 'sf6-security-roster-v3-complete-loadouts');
   assert.ok(campaign.ruleset.sections.find(section => section.id === 'setting')?.details?.length >= 3);
+  const setting = campaign.ruleset.sections.find(section => section.id === 'setting');
+  assert.match(setting?.summary || '', /虚拟八角笼/);
+  assert.doesNotMatch(setting?.summary || '', /冷冻仓|研究所|绑架/);
+  assert.equal(setting?.details?.find(detail => detail.title === '枪械与超常格斗')?.text, '这个世界的成熟格斗家会以斗气、超常体魄和招式技巧抵消常规枪械的致命性，因此枪械不能简单跳过战斗并直接造成剧情性死亡。');
+  assert.equal(campaign.ruleset.sections.find(section => section.id === 'character-origins')?.details?.length, 16);
+  assert.equal(campaign.ruleset.sections.find(section => section.id === 'character-nationalities')?.details?.length, 31);
+  assert.equal(campaign.ruleset.sections.find(section => section.id === 'character-personalities')?.details?.filter(detail => /^[EI][NS][TF][JP]/.test(detail.title)).length, 16);
   assert.ok(campaign.ruleset.feats.filter(feat => feat.minimumLevel === 5).every(feat => !/（[^）]+）\s*$/.test(feat.description)));
   assert.ok(campaign.ruleset.sections.filter(section => section.category !== '背景故事' && !['专长', '职业与子职业', '人物状态'].includes(section.category)).every(section => section.details?.length > 0));
   assert.match(campaign.ruleset.sections.find(section => section.id === 'normals')?.details?.find(detail => detail.title === '轻攻击')?.text || '', /1d4/);
@@ -99,7 +106,7 @@ test('built-in SF6 campaign is valid, empty of demo actors, and includes chapter
     ...Object.values(entry.subclassFeatures).flat()
   ]);
   assert.match(allClassFeatures.find(feature => feature.name.includes('走火入魔'))?.description || '', /所有以你为目标的攻击也会获得优势骰/);
-  assert.match(campaign.ruleset.sections.find(section => section.id === 'setting')?.details?.find(detail => detail.title === '枪械与超常格斗')?.text || '', /不能简单跳过战斗并直接造成剧情性死亡/);
+  assert.match(setting?.details?.find(detail => detail.title === '枪械与超常格斗')?.text || '', /不能简单跳过战斗并直接造成剧情性死亡/);
 });
 
 test('built-in map migration replaces legacy cell walls while preserving custom maps and backgrounds', () => {

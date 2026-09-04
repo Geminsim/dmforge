@@ -12,6 +12,10 @@ function pageLabel(pages = []) {
   return pages.length === 1 ? `${pages[0]}` : `${pages[0]}–${pages.at(-1)}`;
 }
 
+function sourceLabel(pages = []) {
+  return pages.length ? `P.${pageLabel(pages)}` : '补充资料';
+}
+
 function Feature({ feature }) {
   return <article style={{ padding: '11px 0 14px', borderBottom: 'var(--border-hairline)' }}>
     <h5 style={{ margin: '0 0 6px', fontSize: 15, color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: 4 }}>{feature.name}</h5>
@@ -198,7 +202,7 @@ export default function RulesCompendium({ ruleset }) {
     {referenceGroups.map(([category, sections]) => <details key={category} open={Boolean(normalized)} style={{ ...panel, marginTop: 14 }}>
       <summary style={{ ...summaryStyle, fontSize: 19 }}>{category}</summary>
       <div style={{ padding: '0 18px 18px', display: 'grid', gap: 8 }}>
-        {sections.map(section => category === '战斗方式' ? <details key={section.id} open={Boolean(normalized)} style={{ ...panel, background: 'var(--surface-raised)' }}><summary style={{ ...summaryStyle, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, color: 'var(--accent)', fontSize: 17 }}><span style={{ textDecoration: 'underline', textUnderlineOffset: 4 }}>{section.title}</span><span style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>P.{pageLabel(section.pages)}</span></summary><div style={{ padding: '0 16px 16px' }}><SectionBody section={section} /></div></details> : <article key={section.id} style={{ padding: '13px 14px 15px', borderLeft: '3px solid var(--accent)', background: 'var(--surface-raised)' }}><div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}><h3 style={{ margin: 0, fontSize: 18, color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: 4 }}>{section.title}</h3><span style={{ flex: '0 0 auto', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>P.{pageLabel(section.pages)}</span></div><SectionBody section={section} /></article>)}
+        {sections.map(section => ['战斗方式', '角色创建'].includes(category) ? <details key={section.id} open={Boolean(normalized)} style={{ ...panel, background: 'var(--surface-raised)' }}><summary style={{ ...summaryStyle, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, color: 'var(--accent)', fontSize: 17 }}><span style={{ textDecoration: 'underline', textUnderlineOffset: 4 }}>{section.title}</span><span style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{sourceLabel(section.pages)}</span></summary><div style={{ padding: '0 16px 16px' }}><SectionBody section={section} /></div></details> : <article key={section.id} style={{ padding: '13px 14px 15px', borderLeft: '3px solid var(--accent)', background: 'var(--surface-raised)' }}><div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}><h3 style={{ margin: 0, fontSize: 18, color: 'var(--accent)', textDecoration: 'underline', textUnderlineOffset: 4 }}>{section.title}</h3><span style={{ flex: '0 0 auto', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{sourceLabel(section.pages)}</span></div><SectionBody section={section} /></article>)}
       </div>
     </details>)}
 
